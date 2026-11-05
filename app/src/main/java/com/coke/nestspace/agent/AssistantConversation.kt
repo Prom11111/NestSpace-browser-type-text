@@ -386,6 +386,7 @@ object AssistantConversation {
                     usedSkills.forEach { store.recordOutcome(it, success) }
                 }
             }
+            HeadlessMirrorWindow.hide()
             advanceAfterRun(app, onFinished, outcome, answer)
         }
     }

@@ -97,6 +97,7 @@ open class StageAActivity : Activity() {
     private var pipAttempted = false
     private var pipActive = false
     private var mirrorDisplayId = -1
+    private var mirrorRequested = false
     private var mirrorMode = false
     private var mirrorBackDone = false
     private var mirrorPresentation: Presentation? = null
@@ -126,7 +127,22 @@ open class StageAActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (intent.getIntExtra(EXTRA_MIRROR_DISPLAY_ID, -1) >= 0) {
+        headless = intent.getBooleanExtra(EXTRA_HEADLESS, false)
+        // Child hosts (target startActivity) may be built before the mirror id
+        // is propagated through the session. Join the live mirror instead of
+        // entering PiP and leaving a second floating window behind.
+        val intentMirrorId = intent.getIntExtra(EXTRA_MIRROR_DISPLAY_ID, -1)
+        var requestedMirrorId = intentMirrorId
+        if (headless) {
+            // SurfaceView may recreate its Surface (and therefore the
+            // VirtualDisplay) right after creation. The shared preference
+            // always points at the newest one; the intent extra can be stale
+            // by the time this host starts.
+            val liveMirrorId = HeadlessMirrorWindow.storedDisplayId(this)
+            if (liveMirrorId >= 0) requestedMirrorId = liveMirrorId
+        }
+        mirrorRequested = requestedMirrorId >= 0 || intentMirrorId >= 0
+        if (mirrorRequested) {
             setTheme(R.style.Theme_Virtual_Container_Mirror)
         }
         super.onCreate(savedInstanceState)
@@ -134,8 +150,19 @@ open class StageAActivity : Activity() {
         active = this
         ContainerProcessPool.markCurrentSlot(slotIndexFor(javaClass))
         ContainerProcessPool.markSlotProcess(this, slotIndexFor(javaClass))
-        headless = intent.getBooleanExtra(EXTRA_HEADLESS, false)
-        mirrorDisplayId = intent.getIntExtra(EXTRA_MIRROR_DISPLAY_ID, -1)
+        mirrorDisplayId = requestedMirrorId
+        val displayManager = getSystemService(DisplayManager::class.java)
+        if (mirrorDisplayId >= 0 && displayManager?.getDisplay(mirrorDisplayId) == null) {
+            Log.w(TAG, "mirror display $mirrorDisplayId is gone")
+            mirrorDisplayId = if (intentMirrorId >= 0 &&
+                intentMirrorId != requestedMirrorId &&
+                displayManager?.getDisplay(intentMirrorId) != null
+            ) {
+                intentMirrorId
+            } else {
+                -1
+            }
+        }
         val frame = HeadlessScaleFrame(this)
         root = frame
         if (mirrorDisplayId >= 0) {
@@ -220,6 +247,18 @@ open class StageAActivity : Activity() {
         targetStartScheduled = true
         val frame = root ?: return
         val launchIntent = Intent(intent)
+        if (mirrorMode) {
+            // The 1x1 mirror host is sent to the back and its own window is
+            // never drawn, so onPreDraw would never fire. Child hosts created
+            // by target navigation would stay empty and cover the live mirror
+            // with a blank Presentation. Start the target on the next turn.
+            frame.post {
+                if (isFinishing || isDestroyed) return@post
+                handleIntent(launchIntent, savedState)
+                session?.headless = headless
+            }
+            return
+        }
         frame.viewTreeObserver.addOnPreDrawListener(
             object : android.view.ViewTreeObserver.OnPreDrawListener {
                 override fun onPreDraw(): Boolean {
@@ -261,6 +300,19 @@ open class StageAActivity : Activity() {
         val display = manager.getDisplay(id) ?: return false
         return runCatching {
             val presentation = Presentation(this, display)
+            // Target navigation creates a new host on top. Keep its
+            // Presentation translucent until the new target draws, so the
+            // previous page stays visible instead of a black frame.
+            presentation.window?.let { window ->
+                window.setBackgroundDrawable(
+                    android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+                )
+                window.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+                window.clearFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND
+                )
+                window.decorView.setBackgroundColor(Color.TRANSPARENT)
+            }
             val content = FrameLayout(presentation.context)
             presentation.setContentView(content)
             presentation.show()
@@ -272,6 +324,50 @@ open class StageAActivity : Activity() {
             mirrorPresentation = null
             mirrorRoot = null
             false
+        }
+    }
+
+    /**
+     * The mirror SurfaceView can replace its Surface while the panel settles
+     * (or when the assistant window relayouts), which creates a new
+     * VirtualDisplay. Follow the newest display id and move the target view
+     * onto it; otherwise the host would keep drawing into a dead display and
+     * the small window would stay blank.
+     */
+    private fun refreshMirrorDisplay() {
+        if (!mirrorRequested || isFinishing || isDestroyed) return
+        val currentId = HeadlessMirrorWindow.storedDisplayId(this)
+        if (currentId < 0 || currentId == mirrorDisplayId) return
+        if (getSystemService(DisplayManager::class.java)?.getDisplay(currentId) == null) return
+        Log.i(TAG, "mirror display changed $mirrorDisplayId -> $currentId")
+        val target = current
+        val oldRoot = mirrorRoot
+        oldRoot?.removeAllViews()
+        mirrorPresentation?.dismiss()
+        mirrorPresentation = null
+        mirrorRoot = null
+        mirrorDisplayId = currentId
+        mirrorMode = setupMirrorPresentation(currentId)
+        if (!mirrorMode) return
+        val parameters = window.attributes
+        parameters.width = 1
+        parameters.height = 1
+        window.attributes = parameters
+        window.setGravity(Gravity.TOP or Gravity.START)
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        window.addFlags(
+            android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        )
+        val newRoot = mirrorRoot ?: return
+        if (target != null && !target.isFinishing) {
+            newRoot.addView(
+                target.window.decorView,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
         }
     }
 
@@ -427,6 +523,10 @@ open class StageAActivity : Activity() {
                 }
             }, 300)
         }
+        if (mirrorRequested) {
+            root?.postDelayed({ refreshMirrorDisplay() }, 900)
+            root?.postDelayed({ refreshMirrorDisplay() }, 2_500)
+        }
         val target = current ?: return
         session?.context?.hostWindowManager = windowManager
         if (!targetResumed) {
@@ -457,7 +557,10 @@ open class StageAActivity : Activity() {
      * Move-to-back is only a fallback when PiP is unavailable.
      */
     private fun scheduleHeadlessPipOrBack() {
-        if (!headless || pipActive || mirrorMode || pipAttempted) return
+        // A mirror was requested but its Presentation failed to attach. Do not
+        // fall back to PiP while the mirror panel is still on screen: that
+        // would leave two small windows visible at once.
+        if (!headless || pipActive || mirrorMode || pipAttempted || mirrorRequested) return
         pipAttempted = true
         val entered = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             runCatching {
@@ -1045,7 +1148,7 @@ open class StageAActivity : Activity() {
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
             )
-            restoreLoadingWindowFocus()
+            if (!mirrorMode) restoreLoadingWindowFocus()
             title = "${session.spec.label} · ${session.spec.instanceId}"
 
             if (hostResumed) {
@@ -1223,7 +1326,7 @@ open class StageAActivity : Activity() {
 
     private fun showError(message: String) {
         closeCurrent()
-        restoreLoadingWindowFocus()
+        if (!mirrorMode) restoreLoadingWindowFocus()
         val frame = root ?: return
         frame.removeAllViews()
         title = AppLanguage.tr("容器启动失败", "Container failed to start")

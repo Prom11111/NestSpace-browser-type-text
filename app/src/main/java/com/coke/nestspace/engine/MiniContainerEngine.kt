@@ -1,6 +1,7 @@
 package com.coke.nestspace.engine
 
 import com.coke.nestspace.i18n.AppLanguage
+import android.app.ActivityManager
 import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
@@ -257,12 +258,20 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         withContext(Dispatchers.IO) {
             // StageAActivity state is per slot process; this engine runs in the
             // main process. Close every assigned process for the package instead.
+            val slots = ContainerProcessPool.runningSlots(context)
+                .filter { it.packageName == packageName }
+                .map { it.slot }
+                .toSet()
             apps[key(spaceId, packageName)]?.instances?.forEach { instance ->
                 ContainerProcessPool.slotFor(packageName, instance.id)?.let { slot ->
                     ContainerUiKeepAlive.unbind(context, slot)
                 }
             }
             ContainerProcessPool.closePackage(context, packageName)
+            // Killing a slot process does not remove its ActivityRecord/Task;
+            // an orphaned headless host can later reappear as a second small
+            // window. Finish the tasks explicitly as well.
+            slots.forEach { finishPreviousHostTasks(it) }
             StageAActivity.finishIfShowing(packageName)
             EngineResult.Ok(Unit)
         }
@@ -629,6 +638,10 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             )
         var mirrorLaunch = false
         if (headless) {
+            // A previous headless host may still be in PiP. MULTIPLE_TASK
+            // would add another window next to it, so remove old host tasks
+            // for this slot before starting the new run.
+            finishPreviousHostTasks(slot)
             val mirrorId = runCatching { HeadlessMirrorWindow.awaitDisplay(context) }
                 .onFailure { Log.w(TAG, "mirror display unavailable", it) }
                 .getOrNull()
@@ -785,6 +798,26 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         var next = max + 1
         while (app.instances.any { it.id == "instance-$next" }) next++
         return "instance-$next"
+    }
+
+    /**
+     * Finish StageA host tasks left over from a previous headless launch of
+     * this slot. Their PiP window is a real system window and would otherwise
+     * stay on screen next to the new mirror window.
+     */
+    private fun finishPreviousHostTasks(slot: Int) {
+        val hostName = ContainerProcessPool.activityClass(slot).name
+        val manager = context.getSystemService(ActivityManager::class.java) ?: return
+        manager.appTasks.orEmpty().forEach { task ->
+            val info = runCatching { task.taskInfo }.getOrNull() ?: return@forEach
+            if (info.baseActivity?.className != hostName &&
+                info.topActivity?.className != hostName
+            ) {
+                return@forEach
+            }
+            Log.d(TAG, "finish old host task ${info.taskId} for slot $slot")
+            runCatching { task.finishAndRemoveTask() }
+        }
     }
 
     /**

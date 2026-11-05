@@ -1,7 +1,9 @@
 package com.coke.nestspace.container
 
+import android.app.Activity
 import android.content.Context
 import android.graphics.Color
+import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.os.Handler
@@ -9,15 +11,19 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.TextView
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
+import java.lang.ref.WeakReference
 
 /**
  * A small on-screen window backed by a full-resolution VirtualDisplay.
@@ -26,65 +32,125 @@ import kotlinx.coroutines.withTimeoutOrNull
  * of its surfaces (including SurfaceView/WebView) are composited at the real
  * device resolution. The SurfaceView only scales that finished frame down;
  * this is a live mirror, not a screenshot or screen recording.
+ *
+ * When the assistant Activity is available the window is added as an
+ * application panel, so target dialogs and system toasts stay above it. The
+ * panel can be dragged by its title bar and closed with the X button.
  */
 object HeadlessMirrorWindow {
 
     private const val TAG = "HeadlessMirror"
     private const val NAME = "NestSpace mirror"
     private const val INVALID = Int.MIN_VALUE
+    private const val DISPLAY_FILE = "headless_mirror_display"
 
     private val main = Handler(Looper.getMainLooper())
+    private var appContext: Context? = null
+    private var hostActivity = WeakReference<Activity>(null)
     private var overlay: View? = null
     private var surfaceView: SurfaceView? = null
     private var windowManager: WindowManager? = null
+    private var params: WindowManager.LayoutParams? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var displayId: Int = INVALID
     private var ready: CompletableDeferred<Int?>? = null
+    @Volatile
+    private var hiding = false
+
+    fun bind(activity: Activity) {
+        hostActivity = WeakReference(activity)
+    }
+
+    fun unbind(activity: Activity) {
+        if (hostActivity.get() === activity) {
+            hide()
+            hostActivity = WeakReference(null)
+        }
+    }
 
     suspend fun awaitDisplay(context: Context): Int? = withContext(Dispatchers.Main) {
+        while (hiding) kotlinx.coroutines.delay(10)
         if (displayId != INVALID) return@withContext displayId
-        val app = context.applicationContext
-        if (!Settings.canDrawOverlays(app)) {
+        val activity = hostActivity.get()
+        if (activity == null && !Settings.canDrawOverlays(context.applicationContext)) {
             Log.w(TAG, "overlay permission missing")
             return@withContext null
         }
-        ensureWindow(app)
+        ensureWindow(context)
         if (displayId != INVALID) return@withContext displayId
         val id = ready?.let { withTimeoutOrNull(5_000L) { it.await() } }
-        if (id == null) hide()
-        id
+        if (id == null) {
+            hide()
+            return@withContext null
+        }
+        // SurfaceView can replace its surface once while the panel settles
+        // into its final window position. Let that happen before the host
+        // launch captures the display id.
+        kotlinx.coroutines.delay(700)
+        displayId.takeIf { it != INVALID } ?: run {
+            Log.w(TAG, "mirror display disappeared during settle")
+            hide()
+            null
+        }
+    }
+
+    /**
+     * Display id of a live mirror, readable from container processes. Child
+     * hosts launched by the target must join the existing mirror instead of
+     * creating a second PiP window.
+     */
+    fun storedDisplayId(context: Context): Int {
+        val app = context.applicationContext
+        appContext = app
+        // A plain file is visible across the main and container processes
+        // immediately; SharedPreferences caches its values per process.
+        return runCatching {
+            File(app.filesDir, DISPLAY_FILE).readText().trim().toInt()
+        }.getOrDefault(INVALID)
     }
 
     fun hide() {
-        main.post {
-            virtualDisplay?.release()
-            virtualDisplay = null
-            displayId = INVALID
-            surfaceView = null
-            overlay?.let { view ->
-                runCatching { windowManager?.removeView(view) }
+        if (hiding) return
+        hiding = true
+        val remove: () -> Unit = {
+            try {
+                virtualDisplay?.release()
+                virtualDisplay = null
+                displayId = INVALID
+                surfaceView = null
+                overlay?.let { view ->
+                    runCatching { windowManager?.removeView(view) }
+                }
+                overlay = null
+                params = null
+                windowManager = null
+                ready = null
+                appContext?.let { clearDisplayFile(it) }
+            } finally {
+                hiding = false
             }
-            overlay = null
-            windowManager = null
-            ready = null
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            remove()
+        } else {
+            main.post(remove)
         }
     }
 
     private fun ensureWindow(context: Context) {
         if (overlay != null) return
-        val manager = context.getSystemService(WindowManager::class.java) ?: return
-        val metrics = context.resources.displayMetrics
+        appContext = context.applicationContext
+        val activity = hostActivity.get()
+        val host = activity ?: context.applicationContext
+        val manager = host.getSystemService(WindowManager::class.java) ?: return
+        val metrics = host.resources.displayMetrics
         val density = metrics.density
         val width = (200 * density).toInt()
-        // Keep the overlay aspect ratio identical to the mirrored display;
-        // otherwise SurfaceFlinger scales/crops the full-resolution frame and
-        // only a corner of the target is visible.
         val height = (width.toFloat() * metrics.heightPixels / metrics.widthPixels).toInt()
+        val margin = (12 * density).toInt()
 
-        val root = FrameLayout(context).apply {
-            setBackgroundColor(Color.BLACK)
-        }
-        val surface = SurfaceView(context)
+        val root = FrameLayout(host).apply { setBackgroundColor(Color.BLACK) }
+        val surface = SurfaceView(host)
         surface.holder.setFixedSize(metrics.widthPixels, metrics.heightPixels)
         root.addView(
             surface,
@@ -93,9 +159,54 @@ object HeadlessMirrorWindow {
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
         )
+
+        val header = FrameLayout(host).apply {
+            setBackgroundColor(Color.argb(165, 0, 0, 0))
+            isClickable = true
+        }
+        val title = TextView(host).apply {
+            text = "NestSpace · 镜像"
+            setTextColor(Color.WHITE)
+            textSize = 11f
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((10 * density).toInt(), 0, 0, 0)
+        }
+        val close = TextView(host).apply {
+            text = "×"
+            setTextColor(Color.WHITE)
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, (10 * density).toInt(), 0)
+            setOnClickListener { hide() }
+        }
+        header.addView(
+            title,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        header.addView(
+            close,
+            FrameLayout.LayoutParams(
+                (40 * density).toInt(),
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.END
+            )
+        )
+        root.addView(
+            header,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                (30 * density).toInt(),
+                Gravity.TOP
+            )
+        )
+
         surface.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
-                createDisplay(context, holder)
+                if (surfaceView !== surface || overlay == null) return
+                createDisplay(host, holder)
             }
 
             override fun surfaceChanged(
@@ -106,38 +217,97 @@ object HeadlessMirrorWindow {
             ) = Unit
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {
-                virtualDisplay?.release()
-                virtualDisplay = null
-                displayId = INVALID
+                // A removed window's SurfaceView can deliver this after a new
+                // mirror window has already been created. Only the current
+                // surface may tear the display down.
+                if (surfaceView !== surface) return
+                releaseDisplay()
             }
         })
 
-        val params = WindowManager.LayoutParams(
+        val layoutParams = WindowManager.LayoutParams(
             width,
             height,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            if (activity != null) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL
+            } else {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            },
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            android.graphics.PixelFormat.TRANSLUCENT
+            PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
-            x = (12 * density).toInt()
-            y = (96 * density).toInt()
+            if (activity != null) {
+                token = activity.window?.decorView?.windowToken
+                gravity = Gravity.TOP or Gravity.START
+                x = metrics.widthPixels - width - margin
+                y = metrics.heightPixels - height - (72 * density).toInt()
+            } else {
+                gravity = Gravity.BOTTOM or Gravity.END
+                x = margin
+                y = (96 * density).toInt()
+            }
         }
+
+        // Publish the new surface before addView: surfaceCreated can be
+        // delivered during addView, and the callback must already be able to
+        // recognize this window as current.
         ready = CompletableDeferred()
-        val added = runCatching { manager.addView(root, params) }.isSuccess
-        if (!added) {
+        overlay = root
+        surfaceView = surface
+        windowManager = manager
+        params = layoutParams
+
+        var installed = runCatching { manager.addView(root, layoutParams) }.isSuccess
+        if (!installed && activity != null) {
+            // Panel token may be unavailable during a transient lifecycle;
+            // fall back to the system overlay when permission is granted.
+            layoutParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            layoutParams.token = null
+            layoutParams.gravity = Gravity.BOTTOM or Gravity.END
+            installed = runCatching { manager.addView(root, layoutParams) }.isSuccess
+        }
+        if (!installed) {
+            overlay = null
+            surfaceView = null
+            windowManager = null
+            params = null
             ready?.complete(null)
             ready = null
             return
         }
-        overlay = root
-        surfaceView = surface
-        windowManager = manager
+
+        var downRawX = 0f
+        var downRawY = 0f
+        var startX = 0
+        var startY = 0
+        title.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    startX = layoutParams.x
+                    startY = layoutParams.y
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    layoutParams.x = (startX + event.rawX - downRawX)
+                        .toInt()
+                        .coerceIn(0, (metrics.widthPixels - width).coerceAtLeast(0))
+                    layoutParams.y = (startY + event.rawY - downRawY)
+                        .toInt()
+                        .coerceIn(0, (metrics.heightPixels - height).coerceAtLeast(0))
+                    runCatching { manager.updateViewLayout(root, layoutParams) }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                else -> false
+            }
+        }
     }
 
     private fun createDisplay(context: Context, holder: SurfaceHolder) {
+        if (surfaceView?.holder !== holder) return
         if (virtualDisplay != null) {
             ready?.complete(displayId)
             return
@@ -162,7 +332,25 @@ object HeadlessMirrorWindow {
         }
         virtualDisplay = display
         displayId = display.display.displayId
+        appContext?.let { writeDisplayFile(it, displayId) }
         Log.i(TAG, "display created id=$displayId surface=${holder.surface}")
         ready?.complete(displayId)
+    }
+
+    private fun releaseDisplay() {
+        virtualDisplay?.release()
+        virtualDisplay = null
+        displayId = INVALID
+        appContext?.let { clearDisplayFile(it) }
+    }
+
+    private fun writeDisplayFile(context: Context, id: Int) {
+        runCatching {
+            File(context.filesDir, DISPLAY_FILE).writeText(id.toString())
+        }.onFailure { Log.w(TAG, "write mirror id failed", it) }
+    }
+
+    private fun clearDisplayFile(context: Context) {
+        runCatching { File(context.filesDir, DISPLAY_FILE).delete() }
     }
 }

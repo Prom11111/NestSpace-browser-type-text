@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.coke.nestspace.container.HeadlessMirrorWindow
 import com.coke.nestspace.service.BackgroundOverlay
 import com.coke.nestspace.service.McpForegroundService
 import com.coke.nestspace.ui.VirtualApp
@@ -15,6 +16,7 @@ import com.coke.nestspace.ui.theme.VirtualTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        HeadlessMirrorWindow.bind(this)
         enableEdgeToEdge()
         setContent {
             VirtualTheme {
@@ -39,5 +41,10 @@ class MainActivity : ComponentActivity() {
         // Android 16+, where starting a foreground service is rejected. Retry
         // while the UI is visible; ensureStarted respects an explicit Stop.
         McpForegroundService.ensureStarted(this)
+    }
+
+    override fun onDestroy() {
+        HeadlessMirrorWindow.unbind(this)
+        super.onDestroy()
     }
 }
