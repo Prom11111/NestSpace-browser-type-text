@@ -9,6 +9,14 @@
         <item name="android:windowDisablePreview">true</item>
     </style>
 
+    <!-- Mirror hosts only hold the target Activity token; their window must
+         never darken the assistant screen during target Activity switches. -->
+    <style name="Theme.Virtual.Container.Mirror" parent="Theme.Virtual.Container">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
     <style name="Theme.Virtual.Assistant" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/assistant_voice_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

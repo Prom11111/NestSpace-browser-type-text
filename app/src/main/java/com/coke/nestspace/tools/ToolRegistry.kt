@@ -19,6 +19,7 @@ import com.coke.nestspace.agent.ToolPermissionSettings
 import com.coke.nestspace.agent.UserGateManager
 import com.coke.nestspace.browser.BrowserSession
 import com.coke.nestspace.container.ContainerProcessPool
+import com.coke.nestspace.container.HeadlessMirrorWindow
 import com.coke.nestspace.container.vpm.ContainerPermissionStore
 import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.control.ContainerUiKeepAlive
@@ -544,6 +545,7 @@ class ToolRegistry(
                 )
                 is EngineResult.Ok -> {
                     LivePreview.setSuppressed(false)
+                    HeadlessMirrorWindow.hide()
                     ToolResult(true, "stopped")
                 }
             }

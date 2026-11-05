@@ -4,6 +4,7 @@ import com.coke.nestspace.i18n.AppLanguage
 import android.content.Context
 import com.coke.nestspace.AppGraph
 import com.coke.nestspace.container.ContainerProcessPool
+import com.coke.nestspace.container.HeadlessMirrorWindow
 import com.coke.nestspace.control.LivePreview
 import com.coke.nestspace.data.AgentMessage
 import com.coke.nestspace.data.AppSettingsEvents
@@ -580,8 +581,9 @@ object AssistantConversation {
         // leaving the stop button waiting for the full tool timeout.
         if (app != null) {
             memoryScope.launch {
-                val slot = ContainerProcessPool.lastSlot() ?: return@launch
-                ContainerProcessPool.closeSlot(app, slot)
+                val slot = ContainerProcessPool.lastSlot()
+                if (slot != null) ContainerProcessPool.closeSlot(app, slot)
+                HeadlessMirrorWindow.hide()
             }
         }
         return true

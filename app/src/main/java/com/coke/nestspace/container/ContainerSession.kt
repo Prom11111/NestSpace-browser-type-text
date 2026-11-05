@@ -58,6 +58,7 @@ class ContainerSession private constructor(
     /** Run target Activities without keeping the host on screen. */
     @Volatile
     var headless: Boolean = false
+    var mirrorDisplayId: Int = -1
 
     val instrumentation: ContainerInstrumentation = ContainerInstrumentation { this }
 
@@ -450,9 +451,17 @@ class ContainerSession private constructor(
                     Intent(intent).setClassName(spec.packageName, info.name)
                 )
                 putExtra(StageAActivity.EXTRA_HEADLESS, headless)
+                if (mirrorDisplayId >= 0) {
+                    putExtra(StageAActivity.EXTRA_MIRROR_DISPLAY_ID, mirrorDisplayId)
+                    addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                }
             }
         return try {
             withHostIdentity(host) {
+                // A mirror child host intentionally stays in the existing
+                // hidden container task. Adding NEW_TASK/MULTIPLE_TASK here
+                // makes the system bring a full-screen black task forward on
+                // every target Activity transition.
                 if (requestCode >= 0) {
                     host.startActivityForResult(containerIntent, requestCode)
                 } else {

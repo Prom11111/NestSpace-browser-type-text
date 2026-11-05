@@ -1,6 +1,7 @@
 package com.coke.nestspace.engine
 
 import com.coke.nestspace.i18n.AppLanguage
+import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -16,6 +17,7 @@ import com.coke.nestspace.container.loader.AppShortcutLoader
 import com.coke.nestspace.container.ContainerContext
 import com.coke.nestspace.container.ContainerCrashStore
 import com.coke.nestspace.container.ContainerProcessPool
+import com.coke.nestspace.container.HeadlessMirrorWindow
 import com.coke.nestspace.container.loader.NativeLibs
 import com.coke.nestspace.container.shortcut.DynamicShortcutStore
 import com.coke.nestspace.container.StageAActivity
@@ -528,7 +530,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         }
     }
 
-    private fun launchLocked(
+    private suspend fun launchLocked(
         app: StoredApp,
         instanceId: String,
         headless: Boolean = false,
@@ -625,8 +627,33 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             )
+        var mirrorLaunch = false
+        if (headless) {
+            val mirrorId = runCatching { HeadlessMirrorWindow.awaitDisplay(context) }
+                .onFailure { Log.w(TAG, "mirror display unavailable", it) }
+                .getOrNull()
+            if (mirrorId != null) {
+                Log.i(TAG, "using mirror display $mirrorId")
+                intent.putExtra(StageAActivity.EXTRA_MIRROR_DISPLAY_ID, mirrorId)
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                        Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                )
+                mirrorLaunch = true
+            }
+        }
         try {
-            context.startActivity(intent)
+            if (mirrorLaunch) {
+                // Keep the host Activity behind the assistant. It only holds
+                // the target's Activity token; the visible pixels come from
+                // the mirror display and its floating window.
+                context.startActivity(
+                    intent,
+                    ActivityOptions.makeTaskLaunchBehind().toBundle()
+                )
+            } else {
+                context.startActivity(intent)
+            }
         } catch (t: Throwable) {
             // The slot was assigned before the OS rejected the launch (for
             // example a BAL restriction). Release it instead of leaving a
