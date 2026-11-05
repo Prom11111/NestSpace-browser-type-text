@@ -234,14 +234,20 @@ class ContainerSession private constructor(
         ProcessNameCompat.restorePersistent()
     }
 
+    /**
+     * [activityToken] lets mirror mode attach a stacked target with a private
+     * token. Its finish() therefore does not close the shared StageA host;
+     * StageAActivity detects isFinishing and pops its internal target stack.
+     */
     fun createActivity(
         host: StageAActivity,
         className: String?,
         sourceIntent: Intent?,
-        savedState: Bundle? = null
+        savedState: Bundle? = null,
+        activityToken: IBinder? = null
     ): Activity = ProcessNameCompat.withProcessName(spec.targetProcessName) {
         withContainerClassLoader(loader) {
-            createActivityLocked(host, className, sourceIntent, savedState)
+            createActivityLocked(host, className, sourceIntent, savedState, activityToken)
         }
     }
 
@@ -249,7 +255,8 @@ class ContainerSession private constructor(
         host: StageAActivity,
         className: String?,
         sourceIntent: Intent?,
-        savedState: Bundle?
+        savedState: Bundle?,
+        activityToken: IBinder? = null
     ): Activity {
         val info = resolveActivity(className)
             ?: throw IllegalArgumentException(
@@ -284,7 +291,7 @@ class ContainerSession private constructor(
                 0 -> activityBase
                 1 -> activityThread
                 2 -> instrumentation
-                3 -> hostToken(host)
+                3 -> activityToken ?: hostToken(host)
                 4 -> 0
                 5 -> application
                 6 -> intent
@@ -377,6 +384,19 @@ class ContainerSession private constructor(
             ?: HostIdentity.packageName
         val targetProcess = ContainerProcessRouter.normalize(spec.packageName, info.processName)
         if (targetProcess == spec.targetProcessName) {
+            // Mirror mode keeps one real host Activity and swaps target
+            // Activities inside its Presentation. This avoids creating a
+            // WindowManager task for every in-app navigation, which is what
+            // causes the full-screen transition flash.
+            if (mirrorDisplayId >= 0 && host.isMirrorMode()) {
+                val targetIntent = Intent(intent).setClassName(
+                    spec.packageName,
+                    info.name
+                )
+                if (host.openMirrorChildTarget(info.name, targetIntent, requestCode)) {
+                    return true
+                }
+            }
             return launchOnHost(
                 host,
                 hostPackage,
