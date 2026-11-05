@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Schedule
@@ -139,7 +140,9 @@ internal fun SettingsHomeScreen(
     languageMode: AppLanguageMode,
     slotLimitMode: Int,
     slotLimit: Int,
+    hostControlEnabled: Boolean,
     onOpenApps: () -> Unit,
+    onOpenHostControl: () -> Unit,
     onOpenBrowserProxy: () -> Unit,
     onOpenServices: () -> Unit,
     onOpenAppearance: () -> Unit,
@@ -178,6 +181,23 @@ internal fun SettingsHomeScreen(
                         "$appCount virtual apps · $desktopAppCount on desktop"
                     ),
                     onClick = onOpenApps
+                )
+                HorizontalDivider(Modifier.padding(start = 68.dp))
+                SettingsMenuRow(
+                    icon = Icons.Default.PhoneAndroid,
+                    title = AppLanguage.tr("宿主控制（Root）", "Host control (root)"),
+                    summary = if (hostControlEnabled) {
+                        AppLanguage.tr(
+                            "已开启 · 助手可操作真实设备",
+                            "Enabled · the assistant can control the real device"
+                        )
+                    } else {
+                        AppLanguage.tr(
+                            "未开启 · 需要设备已 Root",
+                            "Off · requires a rooted device"
+                        )
+                    },
+                    onClick = onOpenHostControl
                 )
                 HorizontalDivider(Modifier.padding(start = 68.dp))
                 SettingsMenuRow(

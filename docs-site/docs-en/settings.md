@@ -8,6 +8,17 @@ Every entry in the desktop's Space settings is described here. Some pages have m
 
 Install APKs, import desktop apps, and manage virtual apps and instances. For details, see [App installation & management](app-manager.md).
 
+### Host control (root)
+
+Requires a rooted device and su access for NestSpace.
+
+- When enabled, the AI assistant and MCP get `host_*` tools to observe, tap, type, take screenshots, launch apps and open URLs on the whole real device, not just the virtual space.
+- Turning it off removes those tools from the assistant and MCP tool lists immediately.
+- Every enable attempt re-checks su; the switch cannot be turned on when root is unavailable.
+- These are powerful permissions; only use them on a trusted device.
+
+See [MCP tool reference](mcp-tools.md).
+
 ### Container slots
 
 The container process pool has a maximum of 16 slots, and each slot corresponds to an independent container process.

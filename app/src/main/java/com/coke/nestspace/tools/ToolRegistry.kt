@@ -29,6 +29,10 @@ import com.coke.nestspace.data.VirtualApp
 import com.coke.nestspace.engine.ContainerEngine
 import com.coke.nestspace.engine.EngineResult
 import com.coke.nestspace.fastpath.AppFunctionsBridge
+import com.coke.nestspace.host.HostControlSettings
+import com.coke.nestspace.host.HostUiController
+import com.coke.nestspace.host.RootShell
+import com.coke.nestspace.host.RootStatus
 import com.coke.nestspace.knowledge.KnowledgeStore
 import com.coke.nestspace.memory.MemoryKind
 import com.coke.nestspace.memory.MemoryPolicy
@@ -96,7 +100,10 @@ class ToolRegistry(
         "system_status"
     )
 
-    fun list(): List<ToolSpec> = tools
+    fun list(): List<ToolSpec> {
+        if (HostControlSettings.isEnabled(context)) return tools
+        return tools.filterNot { it.name.startsWith("host_") }
+    }
 
     /** Release leases owned by an MCP session that ended or expired. */
     fun releaseSession(sessionId: String) {
@@ -107,7 +114,21 @@ class ToolRegistry(
         val spec = tools.firstOrNull { it.name == name }
             ?: return ToolResult(false, "Unknown tool: $name", errorCode = "UNKNOWN_TOOL")
 
-        val spaceId = args.optString("space_id", ctx.spaceId)
+        if (name.startsWith("host_") && !HostControlSettings.isEnabled(context)) {
+            return ToolResult(
+                false,
+                "Host control (root) is disabled. Enable it in Space settings > Host control.",
+                errorCode = "HOST_CONTROL_DISABLED"
+            )
+        }
+
+        val spaceId = if (name.startsWith("host_")) {
+            // Host tools are serialized per agent session so one CLI/MCP
+            // connection cannot block another session for the lease TTL.
+            "host:${ctx.sessionId}"
+        } else {
+            args.optString("space_id", ctx.spaceId)
+        }
         if (spec.mutating && !leases.acquire(spaceId, ctx.sessionId)) {
             return ToolResult(
                 false,
@@ -761,6 +782,187 @@ class ToolRegistry(
                 "screenshot captured",
                 imageBase64 = base64,
                 imageMimeType = "image/jpeg"
+            )
+        },
+        ToolSpec(
+            name = "host_observe",
+            description = "Observe the real Android device through root. Returns the foreground " +
+                "app, screen size and text/clickable nodes. Requires Host control (root) in " +
+                "settings. Call this before host_tap when using node_id or text.",
+            inputSchema = schema()
+        ) { _, _ ->
+            hostGuard()?.let { return@ToolSpec it }
+            val json = HostUiController.observe()
+                ?: return@ToolSpec ToolResult(
+                    false,
+                    "Could not read the host UI. Check root access and try again.",
+                    errorCode = "HOST_OBSERVE_FAILED"
+                )
+            ToolResult(true, UserGateManager.annotateSensitive(json))
+        },
+        ToolSpec(
+            name = "host_tap",
+            description = "Tap a real-device node (node_id), a text match, or absolute screen " +
+                "coordinates (x, y). Requires Host control (root). Call host_observe first when " +
+                "using node_id or text. Payment, send, delete and install labels ask first.",
+            inputSchema = schema(
+                "node_id" to "string",
+                "text" to "string",
+                "x" to "integer",
+                "y" to "integer"
+            ),
+            mutating = true
+        ) { args, ctx ->
+            hostGuard()?.let { return@ToolSpec it }
+            val risky = HostUiController.labelFor(
+                args.optString("node_id"),
+                args.optString("text")
+            )
+            if (risky != null) {
+                val category = when {
+                    UserGateManager.isMoneyTap(risky) -> ToolConfirmationCategory.MONEY
+                    UserGateManager.isInstallTap(risky) -> ToolConfirmationCategory.INSTALL
+                    else -> ToolConfirmationCategory.RISKY
+                }
+                val denied = requireConfirmation(
+                    ctx,
+                    "tap \"$risky\" on the real device",
+                    AppLanguage.tr(
+                        "即将在真实设备上点击「$risky」。这可能发送内容、删除数据或产生支付。",
+                        "Tap \"$risky\" on the real device? This may send content, delete data, " +
+                            "or spend money."
+                    ),
+                    category
+                )
+                if (denied != null) return@ToolSpec denied
+            }
+            val hasCoordinates = args.has("x") && args.has("y")
+            val x = if (hasCoordinates) args.optInt("x") else null
+            val y = if (hasCoordinates) args.optInt("y") else null
+            val ok = HostUiController.tap(
+                args.optString("node_id"),
+                args.optString("text"),
+                x,
+                y
+            )
+            ToolResult(
+                ok,
+                if (ok) "tapped the real device" else "host tap failed; run host_observe first",
+                errorCode = if (ok) null else "HOST_TAP_FAILED"
+            )
+        },
+        ToolSpec(
+            name = "host_set_text",
+            description = "Type text into the focused field on the real device. Requires Host " +
+                "control (root). Android's input command supports ASCII reliably; non-ASCII " +
+                "text may not be entered.",
+            inputSchema = schema(
+                "text" to "string"
+            ),
+            mutating = true
+        ) { args, _ ->
+            hostGuard()?.let { return@ToolSpec it }
+            val result = HostUiController.setText(args.optString("text"))
+            ToolResult(
+                result.ok,
+                if (result.ok) {
+                    "text sent to the real device"
+                } else {
+                    result.output.ifBlank { result.error ?: "host text input failed" }.take(500)
+                },
+                errorCode = if (result.ok) null else "HOST_TEXT_FAILED"
+            )
+        },
+        ToolSpec(
+            name = "host_key",
+            description = "Press a navigation key on the real device: back, home, enter, " +
+                "recents, delete, tab or escape. Requires Host control (root).",
+            inputSchema = schema(
+                "key" to "string"
+            ),
+            mutating = true
+        ) { args, _ ->
+            hostGuard()?.let { return@ToolSpec it }
+            val result = HostUiController.pressKey(args.optString("key", "back"))
+            ToolResult(
+                result.ok,
+                if (result.ok) "key sent to the real device" else
+                    (result.error ?: result.output.take(500)),
+                errorCode = if (result.ok) null else "HOST_KEY_FAILED"
+            )
+        },
+        ToolSpec(
+            name = "host_screenshot",
+            description = "Take a screenshot of the real device through root. Requires Host " +
+                "control (root).",
+            inputSchema = schema()
+        ) { _, _ ->
+            hostGuard()?.let { return@ToolSpec it }
+            val base64 = HostUiController.screenshotBase64()
+                ?: return@ToolSpec ToolResult(
+                    false,
+                    "Host screenshot failed. Check root access and try again.",
+                    errorCode = "HOST_SCREENSHOT_FAILED"
+                )
+            ToolResult(
+                true,
+                "host screenshot captured",
+                imageBase64 = base64,
+                imageMimeType = "image/png"
+            )
+        },
+        ToolSpec(
+            name = "host_launch",
+            description = "Launch an installed app on the real device by package name. " +
+                "Requires Host control (root).",
+            inputSchema = schema(
+                "package" to "string"
+            ),
+            mutating = true
+        ) { args, _ ->
+            hostGuard()?.let { return@ToolSpec it }
+            val packageName = args.optString("package").trim()
+            val result = HostUiController.launch(packageName)
+            ToolResult(
+                result.ok,
+                if (result.ok) "launched $packageName on the real device" else
+                    (result.error ?: result.output.ifBlank { "launch failed" }).take(500),
+                errorCode = if (result.ok) null else "HOST_LAUNCH_FAILED"
+            )
+        },
+        ToolSpec(
+            name = "host_apps",
+            description = "List installed packages on the real device. Requires Host control " +
+                "(root). Set include_system=true to include system apps.",
+            inputSchema = schema(
+                "include_system" to "boolean"
+            )
+        ) { args, _ ->
+            hostGuard()?.let { return@ToolSpec it }
+            val json = HostUiController.listPackages(args.optBoolean("include_system", false))
+                ?: return@ToolSpec ToolResult(
+                    false,
+                    "Could not list host packages. Check root access.",
+                    errorCode = "HOST_APPS_FAILED"
+                )
+            ToolResult(true, json)
+        },
+        ToolSpec(
+            name = "host_open_url",
+            description = "Open an http/https URL on the real device. Requires Host control " +
+                "(root).",
+            inputSchema = schema(
+                "url" to "string"
+            ),
+            mutating = true
+        ) { args, _ ->
+            hostGuard()?.let { return@ToolSpec it }
+            val result = HostUiController.openUrl(args.optString("url"))
+            ToolResult(
+                result.ok,
+                if (result.ok) "opened URL on the real device" else
+                    (result.error ?: result.output.ifBlank { "open URL failed" }).take(500),
+                errorCode = if (result.ok) null else "HOST_OPEN_URL_FAILED"
             )
         },
         ToolSpec(
@@ -1702,6 +1904,25 @@ class ToolRegistry(
             .put("busy", snapshot.busy)
             .put("message_count", snapshot.messages.size)
             .put("messages", messages)
+    }
+
+    private suspend fun hostGuard(): ToolResult? {
+        if (!HostControlSettings.isEnabled(context)) {
+            return ToolResult(
+                false,
+                "Host control (root) is disabled. Enable it in Space settings > Host control.",
+                errorCode = "HOST_CONTROL_DISABLED"
+            )
+        }
+        val status = RootShell.status()
+        if (status != RootStatus.AVAILABLE) {
+            return ToolResult(
+                false,
+                "Root access is not available ($status). Re-check Host control in settings.",
+                errorCode = "HOST_ROOT_UNAVAILABLE"
+            )
+        }
+        return null
     }
 
     private suspend fun requireConfirmation(

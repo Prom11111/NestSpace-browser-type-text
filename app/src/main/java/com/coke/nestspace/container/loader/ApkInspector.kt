@@ -10,12 +10,17 @@ import android.content.pm.PackageManager
 import android.content.pm.ProviderInfo
 import android.content.pm.ServiceInfo
 import android.content.pm.Signature
+import android.content.res.AssetManager
+import android.content.res.XmlResourceParser
 import android.os.Build
 import android.util.Log
+import com.coke.nestspace.container.HiddenApiCompat
 import com.coke.nestspace.container.intent.ContainerIntentFilter
 import com.coke.nestspace.container.intent.ManifestIntentFilters
 import java.io.File
 import java.security.MessageDigest
+import java.security.cert.CertificateFactory
+import java.util.jar.JarFile
 import java.util.zip.ZipFile
 
 data class ApkDescriptor(
@@ -71,7 +76,13 @@ object ApkInspector {
             flags = flags or PackageManager.GET_SIGNING_CERTIFICATES
         }
         val info = pm.getPackageArchiveInfo(apkPath, flags)
-            ?: error(AppLanguage.tr("无法解析 APK manifest: $apkPath", "Could not parse APK manifest: $apkPath"))
+        if (info == null) {
+            // Some platforms return null for config splits whose manifest has
+            // android:hasCode="false" (for example a split with native libs).
+            // Splits do not need the component data, so read their manifest and
+            // v1 signer directly instead of rejecting the whole install.
+            return inspectSplitFallback(apkPath, requireLauncher)
+        }
 
         val appInfo = info.applicationInfo ?: error(AppLanguage.tr("APK 没有 applicationInfo", "APK has no applicationInfo"))
         appInfo.sourceDir = apkPath
@@ -176,4 +187,174 @@ object ApkInspector {
         }
     }.onFailure { Log.w(TAG, "read zip failed: $apkPath", it) }
         .getOrDefault(emptySet())
+
+    private data class SplitManifest(
+        val packageName: String,
+        val splitName: String,
+        val versionCode: Long,
+        val versionName: String?,
+        val minSdk: Int,
+        val targetSdk: Int
+    )
+
+    /**
+     * Fallback for config split APKs that [PackageManager.getPackageArchiveInfo]
+     * cannot parse on some platform builds (typically manifests with
+     * android:hasCode="false" and android:extractNativeLibs="true").
+     *
+     * Splits contain no launcher or components, so only the package name,
+     * split name, version and signing certificate are needed. The v1
+     * certificate is used because the platform parser is unavailable.
+     */
+    private fun inspectSplitFallback(apkPath: String, requireLauncher: Boolean): ApkDescriptor {
+        val manifest = parseSplitManifest(apkPath)
+        if (manifest == null || requireLauncher) {
+            error(AppLanguage.tr("无法解析 APK manifest: $apkPath", "Could not parse APK manifest: $apkPath"))
+        }
+        val signature = v1SignatureDigest(apkPath)
+            ?: error(
+                AppLanguage.tr(
+                    "无法读取 split APK 签名: $apkPath",
+                    "Could not read the split APK signature: $apkPath"
+                )
+            )
+        val appInfo = ApplicationInfo().apply {
+            packageName = manifest.packageName
+            sourceDir = apkPath
+            publicSourceDir = apkPath
+            minSdkVersion = manifest.minSdk
+            targetSdkVersion = manifest.targetSdk
+        }
+        @Suppress("DEPRECATION")
+        val packageInfo = PackageInfo().apply {
+            packageName = manifest.packageName
+            versionCode = manifest.versionCode.toInt()
+            versionName = manifest.versionName
+            splitNames = arrayOf(manifest.splitName)
+            applicationInfo = appInfo
+        }
+        return ApkDescriptor(
+            apkPath = apkPath,
+            packageName = manifest.packageName,
+            label = manifest.packageName,
+            launcherActivity = null,
+            activityInfo = null,
+            activities = emptyList(),
+            services = emptyList(),
+            providers = emptyList(),
+            receivers = emptyList(),
+            activityFilters = emptyMap(),
+            serviceFilters = emptyMap(),
+            receiverFilters = emptyMap(),
+            packageInfo = packageInfo,
+            applicationInfo = appInfo,
+            splitName = manifest.splitName,
+            versionCode = manifest.versionCode,
+            versionName = manifest.versionName,
+            minSdk = manifest.minSdk,
+            targetSdk = manifest.targetSdk,
+            signatureSha256 = signature,
+            requiresSecureEnv = false,
+            nativeAbis = nativeAbis(apkPath)
+        )
+    }
+
+    private fun parseSplitManifest(apkPath: String): SplitManifest? {
+        HiddenApiCompat.ensure()
+        val assets = AssetManager::class.java.getDeclaredConstructor().newInstance()
+        return try {
+            val cookie = AssetManager::class.java
+                .getMethod("addAssetPath", String::class.java)
+                .invoke(assets, apkPath) as? Int ?: 0
+            if (cookie == 0) {
+                null
+            } else {
+                var packageName = ""
+                var splitName: String? = null
+                var versionCode = 0L
+                var versionName: String? = null
+                var minSdk = 1
+                var targetSdk = 0
+                assets.openXmlResourceParser(cookie, "AndroidManifest.xml").use { xml ->
+                    var event = xml.eventType
+                    while (event != XmlResourceParser.END_DOCUMENT) {
+                        if (event == XmlResourceParser.START_TAG) {
+                            when (xml.name) {
+                                "manifest" -> {
+                                    packageName = xml.getAttributeValue(null, "package").orEmpty()
+                                    splitName = xml.getAttributeValue(null, "split")
+                                    versionCode = xml.getAttributeIntValue(
+                                        ANDROID_NS,
+                                        "versionCode",
+                                        0
+                                    ).toLong()
+                                    versionName = xml.getAttributeValue(
+                                        ANDROID_NS,
+                                        "versionName"
+                                    )?.takeUnless { it.startsWith("@") }
+                                }
+
+                                "uses-sdk" -> {
+                                    minSdk = xml.getAttributeIntValue(
+                                        ANDROID_NS,
+                                        "minSdkVersion",
+                                        minSdk
+                                    )
+                                    targetSdk = xml.getAttributeIntValue(
+                                        ANDROID_NS,
+                                        "targetSdkVersion",
+                                        targetSdk
+                                    )
+                                }
+                            }
+                        }
+                        event = xml.next()
+                    }
+                }
+                if (packageName.isBlank() || splitName.isNullOrBlank()) {
+                    null
+                } else {
+                    SplitManifest(
+                        packageName = packageName,
+                        splitName = splitName!!,
+                        versionCode = versionCode,
+                        versionName = versionName,
+                        minSdk = minSdk,
+                        targetSdk = targetSdk
+                    )
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "split manifest fallback failed: $apkPath", t)
+            null
+        } finally {
+            runCatching { assets.close() }
+        }
+    }
+
+    /** Mirrors [signatureDigest] using the v1 signer certificate. */
+    private fun v1SignatureDigest(apkPath: String): String? = runCatching {
+        JarFile(File(apkPath)).use { jar ->
+            val entry = jar.entries().asSequence().firstOrNull { entry ->
+                entry.name.startsWith("META-INF/") &&
+                    (entry.name.endsWith(".RSA", true) ||
+                        entry.name.endsWith(".DSA", true) ||
+                        entry.name.endsWith(".EC", true))
+            } ?: return@use null
+            val certs = CertificateFactory.getInstance("X.509")
+                .generateCertificates(jar.getInputStream(entry))
+                .toList()
+            if (certs.isEmpty()) return@use null
+            val ordered = certs
+                .map { cert ->
+                    cert.encoded.joinToString("") { "%02x".format(it) } to cert.encoded
+                }
+                .sortedBy { it.first }
+            val digest = MessageDigest.getInstance("SHA-256")
+            ordered.forEach { digest.update(it.second) }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        }
+    }.onFailure { Log.w(TAG, "read v1 signature failed: $apkPath", it) }.getOrNull()
+
+    private const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
 }

@@ -34,6 +34,23 @@ NestSpace には Streamable HTTP MCP Server が内蔵されており、ローカ
 
 `ui_*` は `package` / `instance_id` で指定したコンテナインスタンスにルーティングできます。省略した場合は最近起動したインスタンスを操作します。対象 Activity が独自に作成した Dialog、ボトムシートなどの独立ウィンドウも、観察とスクリーンショットに統合されます。
 
+## ホスト制御（Root が必要）
+
+「スペース設定 → ホスト制御（Root）」を有効にすると、以下のツールがローカルアシスタントとリモート MCP に追加され、無効にするとすぐに削除されます。
+
+| ツール | 説明 |
+| --- | --- |
+| `host_observe` | 実機のフォアグラウンドアプリ、画面サイズ、テキスト／クリック可能ノードを観察 |
+| `host_tap` | node_id、テキスト、座標で実機をタップ。リスクのあるラベルは事前に確認 |
+| `host_set_text` | 実機のフォーカス中の入力欄にテキストを入力（ASCII が最も確実） |
+| `host_key` | back / home / enter / recents / delete / tab / escape を送信 |
+| `host_screenshot` | 実機の画面をキャプチャ |
+| `host_launch` | パッケージ名で実機のアプリを起動 |
+| `host_apps` | 実機にインストールされたパッケージを一覧表示 |
+| `host_open_url` | 実機で http/https の URL を開く |
+
+これらのツールは `su -c` 経由で固定のシステムコマンド（`uiautomator`、`input`、`screencap`、`monkey`、`am`）を実行し、任意の shell コマンドは受け付けません。`host_tap` で node_id やテキストを使う前に `host_observe` を呼び出してください。子 Agent はこれらのツールを使用できません。
+
 ## 内蔵ブラウザ
 
 | ツール | 説明 |

@@ -34,6 +34,23 @@ Setting `headless=true` on `space_launch` makes the virtual app run in the backg
 
 `ui_*` supports routing to a specific container instance with `package` / `instance_id`; when omitted, it operates on the most recently launched instance. Standalone windows such as Dialogs and bottom sheets created by target Activities are also merged into observations and screenshots.
 
+## Host control (root required)
+
+After enabling Space settings > Host control (root), the following tools appear for the local assistant and remote MCP; turning it off removes them immediately.
+
+| Tool | Description |
+| --- | --- |
+| `host_observe` | Observe the real device's foreground app, screen size and text/clickable nodes |
+| `host_tap` | Tap a real-device node by node_id, text or coordinates; risky labels ask first |
+| `host_set_text` | Type into the focused field on the real device (ASCII is most reliable) |
+| `host_key` | Send back / home / enter / recents / delete / tab / escape |
+| `host_screenshot` | Capture the real device screen |
+| `host_launch` | Launch an installed real-device app by package name |
+| `host_apps` | List installed packages on the real device |
+| `host_open_url` | Open an http/https URL on the real device |
+
+These tools run a fixed set of system commands through `su -c` (`uiautomator`, `input`, `screencap`, `monkey`, `am`); they do not accept arbitrary shell commands. Call `host_observe` before using `host_tap` with a node_id or text. Child agents cannot use these tools.
+
 ## Built-in browser
 
 | Tool | Description |

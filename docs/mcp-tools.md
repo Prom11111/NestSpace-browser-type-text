@@ -34,6 +34,23 @@ NestSpace 内置 Streamable HTTP MCP Server，向本地 AI 助手和远程 MCP �
 
 `ui_*` 支持用 `package` / `instance_id` 路由到指定容器实例；省略时操作最近启动的实例。目标 Activity 自建的 Dialog、底部弹窗等独立窗口也会合并进观察和截图。
 
+## 宿主控制（需要 Root）
+
+开启「空间设置 → 宿主控制（Root）」后，以下工具会出现在本地助手和远程 MCP 中；关闭后立即消失。
+
+| 工具 | 说明 |
+| --- | --- |
+| `host_observe` | 观察真实设备的前台应用、屏幕尺寸和文本/可点击节点 |
+| `host_tap` | 按 node_id、文本或坐标点击真实设备；风险文字会先确认 |
+| `host_set_text` | 向真实设备当前焦点输入文本（ASCII 最可靠） |
+| `host_key` | 发送 back / home / enter / recents / delete / tab / escape |
+| `host_screenshot` | 截取真实设备屏幕 |
+| `host_launch` | 按包名启动真实设备上的应用 |
+| `host_apps` | 列出真实设备上已安装的包 |
+| `host_open_url` | 在真实设备上打开 http/https 网址 |
+
+这些工具通过 `su -c` 执行固定的系统命令（`uiautomator`、`input`、`screencap`、`monkey`、`am`），不接受任意 shell 命令。使用 `host_tap` 的 node_id 或文本前，先调用 `host_observe`。子 Agent 不能使用这些工具。
+
 ## 内置浏览器
 
 | 工具 | 说明 |

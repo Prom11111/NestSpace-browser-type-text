@@ -144,6 +144,7 @@ import com.coke.nestspace.ui.settings.ScheduledTasksScreen
 import com.coke.nestspace.ui.settings.EvaluationReplayScreen
 import com.coke.nestspace.ui.settings.TokenUsageScreen
 import com.coke.nestspace.ui.settings.ToolPermissionScreen
+import com.coke.nestspace.ui.settings.HostControlScreen
 import com.coke.nestspace.ui.settings.SettingsHomeScreen
 
 private enum class SpacesPage {
@@ -157,6 +158,7 @@ private enum class SpacesPage {
     SYSTEM_PROMPT,
     MCP_CLIENTS,
     SLOTS,
+    HOST_CONTROL,
     SELF_CHECK,
     MEMORY,
     SCHEDULE,
@@ -221,6 +223,9 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     var slotLimit by remember {
         mutableIntStateOf(ContainerProcessPool.slotLimit(context))
     }
+    var hostControlEnabled by remember {
+        mutableStateOf(com.coke.nestspace.host.HostControlSettings.isEnabled(context))
+    }
     var permissionLevel by remember {
         mutableStateOf(ToolPermissionSettings.load(context))
     }
@@ -231,6 +236,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     LaunchedEffect(settingsRevision) {
         slotMode = ContainerProcessPool.slotLimitMode(context)
         slotLimit = ContainerProcessPool.slotLimit(context)
+        hostControlEnabled = com.coke.nestspace.host.HostControlSettings.isEnabled(context)
         permissionLevel = ToolPermissionSettings.load(context)
         customPermissions = ToolPermissionSettings.customCategories(context)
     }
@@ -364,6 +370,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
             SpacesPage.SYSTEM_PROMPT -> AppLanguage.tr("系统提示词", "System prompt")
             SpacesPage.MCP_CLIENTS -> AppLanguage.tr("MCP 工具", "MCP tools")
             SpacesPage.SLOTS -> AppLanguage.tr("容器槽位", "Container slots")
+            SpacesPage.HOST_CONTROL -> AppLanguage.tr("宿主控制（Root）", "Host control (root)")
             SpacesPage.SELF_CHECK -> AppLanguage.tr("容器自检", "Container self-check")
             SpacesPage.MEMORY -> AppLanguage.tr("记忆与技能", "Memory & skills")
             SpacesPage.SCHEDULE -> AppLanguage.tr("定时任务", "Scheduled tasks")
@@ -447,7 +454,9 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                             languageMode = AppLanguage.mode(),
                             slotLimitMode = slotMode,
                             slotLimit = slotLimit,
+                            hostControlEnabled = hostControlEnabled,
                             onOpenApps = { spacesPage = SpacesPage.APPS },
+                            onOpenHostControl = { spacesPage = SpacesPage.HOST_CONTROL },
                             onOpenBrowserProxy = { showBrowserProxyDialog = true },
                             onOpenServices = { spacesPage = SpacesPage.SERVICES },
                             onOpenAppearance = { spacesPage = SpacesPage.APPEARANCE },
@@ -547,6 +556,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
 
                     SpacesPage.MCP_CLIENTS -> McpClientSettingsScreen()
 
+                    SpacesPage.HOST_CONTROL -> HostControlScreen()
                     SpacesPage.SLOTS -> SlotDetailScreen(
                         mode = slotMode,
                         limit = slotLimit,
