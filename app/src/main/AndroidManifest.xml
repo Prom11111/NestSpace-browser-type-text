@@ -139,6 +139,8 @@
 
         <activity
             android:name=".container.StageASlot1Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -148,6 +150,8 @@
 
         <activity
             android:name=".container.StageASlot2Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -157,6 +161,8 @@
 
         <activity
             android:name=".container.StageASlot3Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -166,6 +172,8 @@
 
         <activity
             android:name=".container.StageASlot4Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -175,6 +183,8 @@
 
         <activity
             android:name=".container.StageASlot5Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -184,6 +194,8 @@
 
         <activity
             android:name=".container.StageASlot6Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -193,6 +205,8 @@
 
         <activity
             android:name=".container.StageASlot7Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -202,6 +216,8 @@
 
         <activity
             android:name=".container.StageASlot8Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -211,6 +227,8 @@
 
         <activity
             android:name=".container.StageASlot9Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -220,6 +238,8 @@
 
         <activity
             android:name=".container.StageASlot10Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -229,6 +249,8 @@
 
         <activity
             android:name=".container.StageASlot11Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -238,6 +260,8 @@
 
         <activity
             android:name=".container.StageASlot12Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -247,6 +271,8 @@
 
         <activity
             android:name=".container.StageASlot13Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -256,6 +282,8 @@
 
         <activity
             android:name=".container.StageASlot14Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -265,6 +293,8 @@
 
         <activity
             android:name=".container.StageASlot15Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
@@ -274,6 +304,8 @@
 
         <activity
             android:name=".container.StageASlot16Activity"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.Virtual.Container"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"

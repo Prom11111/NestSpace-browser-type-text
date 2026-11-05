@@ -3,6 +3,7 @@ package com.coke.nestspace.agent
 import com.coke.nestspace.i18n.AppLanguage
 import android.content.Context
 import com.coke.nestspace.AppGraph
+import com.coke.nestspace.container.ContainerProcessPool
 import com.coke.nestspace.control.LivePreview
 import com.coke.nestspace.data.AgentMessage
 import com.coke.nestspace.data.AppSettingsEvents
@@ -92,6 +93,9 @@ object AssistantConversation {
 
     @Volatile
     private var currentJob: Job? = null
+
+    @Volatile
+    private var runContext: Context? = null
 
     private data class PendingTask(
         val context: Context,
@@ -204,6 +208,7 @@ object AssistantConversation {
         text: String,
         onFinished: ((RunOutcome, String?) -> Unit)?
     ) {
+        runContext = app
         LivePreview.clear()
         _lastRun.value = null
         _streamingText.value = ""
@@ -563,11 +568,22 @@ object AssistantConversation {
     /** Stop the current run. The run's stop summary is appended by [submit]. */
     fun cancel(): Boolean {
         val job = currentJob ?: return false
+        val app = runContext
         synchronized(stateLock) {
             steeringQueue.clear()
             _queuedSteering.value = 0
         }
+        _streamingText.value = ""
         job.cancel(CancellationException("user stopped"))
+        // A tool can be blocked in a Binder call to a stalled container main
+        // thread. Closing that slot makes the call fail fast instead of
+        // leaving the stop button waiting for the full tool timeout.
+        if (app != null) {
+            memoryScope.launch {
+                val slot = ContainerProcessPool.lastSlot() ?: return@launch
+                ContainerProcessPool.closeSlot(app, slot)
+            }
+        }
         return true
     }
 

@@ -308,6 +308,9 @@ class ToolRegistry(
                 val explicitVisible = args.has("headless") &&
                     !args.optBoolean("headless", true)
                 val headless = !explicitVisible
+                // A headless app is rendered in a real PiP window; the
+                // screenshot card would be a second, confusing preview.
+                LivePreview.setSuppressed(headless)
                 val running = ContainerProcessPool.runningSlots(context)
                     .lastOrNull {
                         it.packageName == pkg &&
@@ -409,6 +412,7 @@ class ToolRegistry(
                 false, "package is required", errorCode = "INVALID_ARGUMENT"
             )
             val headless = args.optBoolean("headless", true)
+            LivePreview.setSuppressed(headless)
             when (val result = engine.multiOpen(spaceId, pkg, headless)) {
                 is EngineResult.Error -> ToolResult(
                     false, "${result.code}: ${result.message}", errorCode = result.code
@@ -538,7 +542,10 @@ class ToolRegistry(
                 is EngineResult.Error -> ToolResult(
                     false, "${result.code}: ${result.message}", errorCode = result.code
                 )
-                is EngineResult.Ok -> ToolResult(true, "stopped")
+                is EngineResult.Ok -> {
+                    LivePreview.setSuppressed(false)
+                    ToolResult(true, "stopped")
+                }
             }
         },
         ToolSpec(

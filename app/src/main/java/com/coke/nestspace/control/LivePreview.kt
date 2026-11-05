@@ -32,12 +32,24 @@ object LivePreview {
     private val _frame = MutableStateFlow<Frame?>(null)
     val frame: StateFlow<Frame?> = _frame
 
+    @Volatile
+    private var suppressed = false
+
+    /** Hide the screenshot card while the real app is shown in a PiP window. */
+    fun setSuppressed(value: Boolean) {
+        suppressed = value
+        if (value && _frame.value?.kind == KIND_CONTAINER) {
+            _frame.value = null
+        }
+    }
+
     fun publish(
         base64: String,
         mimeType: String = "image/jpeg",
         slot: Int,
         label: String = ""
     ) {
+        if (suppressed) return
         if (base64.isBlank() || slot < 0) return
         // A headless app that is starting or showing a launch ad can return
         // an almost blank frame while its window is in the back. Keep the

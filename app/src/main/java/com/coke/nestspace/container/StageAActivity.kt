@@ -7,12 +7,15 @@ import com.coke.nestspace.container.loader.withContainerClassLoader
 
 import android.app.Activity
 import android.app.ActivityManager
+import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.util.DisplayMetrics
 import android.util.Log
+import android.util.Rational
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -87,6 +90,8 @@ open class StageAActivity : Activity() {
     private var hostResumed = false
     private var headless = false
     private var headlessBackDone = false
+    private var pipAttempted = false
+    private var pipActive = false
     private var targetStartScheduled = false
     private var predictiveBackCallback: Any? = null
 
@@ -118,7 +123,15 @@ open class StageAActivity : Activity() {
         ContainerProcessPool.markCurrentSlot(slotIndexFor(javaClass))
         ContainerProcessPool.markSlotProcess(this, slotIndexFor(javaClass))
         headless = intent.getBooleanExtra(EXTRA_HEADLESS, false)
-        val frame = FrameLayout(this)
+        val frame = HeadlessScaleFrame(this)
+        if (headless) {
+            val metrics = DisplayMetrics()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealMetrics(metrics)
+            frame.realWidth = metrics.widthPixels
+            frame.realHeight = metrics.heightPixels
+            frame.scaleToRealResolution = true
+        }
         root = frame
         if (headless) {
             // A headless launch still has to become RESUMED before the target
@@ -130,8 +143,23 @@ open class StageAActivity : Activity() {
                 android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             )
-            frame.setBackgroundColor(Color.TRANSPARENT)
+            frame.setBackgroundColor(Color.rgb(247, 248, 250))
             frame.alpha = 0f
+            // PiP briefly shows an empty system window while the target
+            // starts. Draw a loading surface so it is not blank for seconds.
+            val loading = TextView(this).apply {
+                text = AppLanguage.tr("正在无头启动…", "Starting headless…")
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(24, 25, 31))
+                textSize = 16f
+            }
+            frame.addView(
+                loading,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
         } else {
             showLaunchPlaceholder(frame)
         }
@@ -262,7 +290,7 @@ open class StageAActivity : Activity() {
             if (headless) {
                 headlessBackDone = false
                 root?.alpha = 0f
-                scheduleHeadlessBack()
+                scheduleHeadlessPipOrBack()
             } else {
                 root?.alpha = 1f
             }
@@ -277,7 +305,7 @@ open class StageAActivity : Activity() {
         if (headless) {
             headlessBackDone = false
             root?.alpha = 0f
-            scheduleHeadlessBack()
+            scheduleHeadlessPipOrBack()
         } else {
             root?.alpha = 1f
         }
@@ -328,7 +356,7 @@ open class StageAActivity : Activity() {
         hostResumed = true
         session?.navigator = this
         FloatingDotOverlay.publishContainerMode(this, true)
-        scheduleHeadlessBack()
+        scheduleHeadlessPipOrBack()
         val target = current ?: return
         session?.context?.hostWindowManager = windowManager
         if (!targetResumed) {
@@ -352,8 +380,39 @@ open class StageAActivity : Activity() {
         }
     }
 
+    /**
+     * Prefer a system picture-in-picture window for headless work. The app
+     * stays visible and alive in a small window, so there is no full-screen
+     * black transition and ui_observe/screenshot can keep working.
+     * Move-to-back is only a fallback when PiP is unavailable.
+     */
+    private fun scheduleHeadlessPipOrBack() {
+        if (!headless || pipActive || pipAttempted) return
+        pipAttempted = true
+        val entered = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            runCatching {
+                enterPictureInPictureMode(
+                    PictureInPictureParams.Builder()
+                        .setAspectRatio(Rational(9, 16))
+                        .build()
+                )
+            }.getOrDefault(false)
+        } else {
+            false
+        }
+        if (entered) {
+            pipActive = true
+            root?.alpha = 1f
+            Log.d(TAG, "headless launch entered PiP")
+        } else {
+            Log.d(TAG, "headless PiP unavailable, moving task to back")
+            scheduleHeadlessBack()
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun scheduleHeadlessBack() {
+        if (pipActive) return
         if (!headless || headlessBackDone) return
         headlessBackDone = true
         Log.d(TAG, "headless launch, moving task to back")
@@ -378,10 +437,23 @@ open class StageAActivity : Activity() {
     }
 
     override fun onPause() {
-        ContainerProcessPool.clearActiveSlot(slotIndexFor(javaClass))
+        // In PiP the activity is paused but the target is still the app the
+        // assistant is controlling. Keep its slot marked active so the
+        // process pool does not evict and kill it while the user watches it.
+        if (!pipActive) {
+            ContainerProcessPool.clearActiveSlot(slotIndexFor(javaClass))
+        }
         Log.d(TAG, "host onPause target=${current?.javaClass?.name}")
         FloatingDotOverlay.publishContainerMode(this, false)
         hostResumed = false
+        if (pipActive) {
+            // Keep the target resumed while it is visible in PiP. The host
+            // window is paused by the system, but pausing the synthetic
+            // target as well stops WebView/Compose drawing and leaves the
+            // PiP window blank indefinitely.
+            super.onPause()
+            return
+        }
         if (targetResumed) {
             current?.let {
                 withTargetLoader {
@@ -400,6 +472,13 @@ open class StageAActivity : Activity() {
         // The headless window is no longer visible; restore drawing so
         // ui_observe/ui_screenshot still see the target hierarchy.
         if (headless) root?.alpha = 1f
+        if (pipActive) {
+            // PiP can deliver onStop when its task is backgrounded, but the
+            // small window may still be alive. Keep the target paused rather
+            // than destroying the page the assistant is reading.
+            super.onStop()
+            return
+        }
         if (targetStarted) {
             current?.let {
                 withTargetLoader {
@@ -488,6 +567,13 @@ open class StageAActivity : Activity() {
     ) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) {
+            pipActive = true
+            root?.alpha = 1f
+            // Re-measure the full-resolution target at the new PiP window
+            // size; HeadlessScaleFrame applies the fitting scale.
+            root?.requestLayout()
+        }
         val target = current ?: return
         withTargetLoader {
             runCatching {
