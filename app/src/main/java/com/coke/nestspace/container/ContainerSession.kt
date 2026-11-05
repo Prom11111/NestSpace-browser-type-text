@@ -234,20 +234,14 @@ class ContainerSession private constructor(
         ProcessNameCompat.restorePersistent()
     }
 
-    /**
-     * [activityToken] lets mirror mode attach a stacked target with a private
-     * token. Its finish() therefore does not close the shared StageA host;
-     * StageAActivity detects isFinishing and pops its internal target stack.
-     */
     fun createActivity(
         host: StageAActivity,
         className: String?,
         sourceIntent: Intent?,
-        savedState: Bundle? = null,
-        activityToken: IBinder? = null
+        savedState: Bundle? = null
     ): Activity = ProcessNameCompat.withProcessName(spec.targetProcessName) {
         withContainerClassLoader(loader) {
-            createActivityLocked(host, className, sourceIntent, savedState, activityToken)
+            createActivityLocked(host, className, sourceIntent, savedState)
         }
     }
 
@@ -255,8 +249,7 @@ class ContainerSession private constructor(
         host: StageAActivity,
         className: String?,
         sourceIntent: Intent?,
-        savedState: Bundle?,
-        activityToken: IBinder? = null
+        savedState: Bundle?
     ): Activity {
         val info = resolveActivity(className)
             ?: throw IllegalArgumentException(
@@ -291,7 +284,7 @@ class ContainerSession private constructor(
                 0 -> activityBase
                 1 -> activityThread
                 2 -> instrumentation
-                3 -> activityToken ?: hostToken(host)
+                3 -> hostToken(host)
                 4 -> 0
                 5 -> application
                 6 -> intent

@@ -202,6 +202,21 @@ open class StageAActivity : Activity() {
         }
     }
 
+    /**
+     * Stacked targets keep the real host token through onCreate/Start/Resume
+     * so apps that touch WindowManager during startup still work. Once they
+     * are settled, give them a private token: finish() then cannot close the
+     * shared host, and the finish poller pops the internal target stack.
+     */
+    private fun giveTargetPrivateToken(target: Activity) {
+        runCatching {
+            Activity::class.java
+                .getDeclaredField("mToken")
+                .apply { isAccessible = true }
+                .set(target, Binder())
+        }.onFailure { Log.w(TAG, "private target token failed", it) }
+    }
+
     private fun addMirrorSnapshotBackground(parent: FrameLayout) {
         val bitmap = mirrorSnapshot ?: return
         val image = ImageView(this).apply {
@@ -235,6 +250,10 @@ open class StageAActivity : Activity() {
         val presentationRoot = mirrorRoot ?: return false
         if (parent.isFinishing) return false
 
+        // The parent may call finish() as soon as startActivity returns
+        // (LauncherActivity does). Give it a private token first so that
+        // finish cannot tear down the shared host.
+        giveTargetPrivateToken(parent)
         captureMirrorSnapshotForTransition()
         val parentDecor = parent.window.decorView
         val instrumentation = activeSession.instrumentation
@@ -273,8 +292,7 @@ open class StageAActivity : Activity() {
                 this,
                 className,
                 targetIntent,
-                null,
-                Binder()
+                null
             )
         } catch (t: Throwable) {
             Log.w(TAG, "mirror child create failed: $className", t)
@@ -335,6 +353,7 @@ open class StageAActivity : Activity() {
         targetResumed = true
         dispatchTargetApplicationLifecycle("dispatchActivityResumed", child)
         attachTarget(child)
+        giveTargetPrivateToken(child)
         Log.d(TAG, "mirror child opened ${child.javaClass.name} depth=${mirrorBackStack.size}")
         return true
     }
@@ -1501,8 +1520,7 @@ open class StageAActivity : Activity() {
                 this,
                 className,
                 targetIntent,
-                effectiveState,
-                if (mirrorMode) Binder() else null
+                effectiveState
             )
             current = target
             currentPackageName = session.spec.packageName
@@ -1559,6 +1577,7 @@ open class StageAActivity : Activity() {
                 dispatchTargetApplicationLifecycle("dispatchActivityResumed", target)
                 attachTarget(target)
             }
+            if (mirrorMode) giveTargetPrivateToken(target)
         } catch (t: Throwable) {
             showError(
                 AppLanguage.tr(
