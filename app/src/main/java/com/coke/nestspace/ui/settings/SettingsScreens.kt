@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -125,6 +126,7 @@ import com.coke.nestspace.agent.ToolPermissionLevel
 import com.coke.nestspace.data.VirtualApp
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.i18n.AppLanguageMode
+import com.coke.nestspace.location.MockLocationSettings
 import com.coke.nestspace.mcp.McpNetwork
 import com.coke.nestspace.service.McpForegroundService
 import androidx.core.view.WindowCompat
@@ -141,8 +143,10 @@ internal fun SettingsHomeScreen(
     slotLimitMode: Int,
     slotLimit: Int,
     hostControlEnabled: Boolean,
+    locationSimulation: MockLocationSettings.Config,
     onOpenApps: () -> Unit,
     onOpenHostControl: () -> Unit,
+    onOpenLocationSimulation: () -> Unit,
     onOpenBrowserProxy: () -> Unit,
     onOpenServices: () -> Unit,
     onOpenAppearance: () -> Unit,
@@ -214,6 +218,23 @@ internal fun SettingsHomeScreen(
                         AppLanguage.tr("最多 $slotLimit 个", "Up to $slotLimit")
                     },
                     onClick = onOpenSlots
+                )
+                HorizontalDivider(Modifier.padding(start = 68.dp))
+                SettingsMenuRow(
+                    icon = Icons.Default.LocationOn,
+                    title = AppLanguage.tr("坐标模拟", "Location simulation"),
+                    summary = if (locationSimulation.enabled) {
+                        AppLanguage.tr(
+                            "已开启 · ${MockLocationSettings.label(locationSimulation)}",
+                            "On · ${MockLocationSettings.label(locationSimulation)}"
+                        )
+                    } else {
+                        AppLanguage.tr(
+                            "未开启 · 虚拟应用使用真实定位",
+                            "Off · virtual apps use real location"
+                        )
+                    },
+                    onClick = onOpenLocationSimulation
                 )
                 HorizontalDivider(Modifier.padding(start = 68.dp))
                 SettingsMenuRow(

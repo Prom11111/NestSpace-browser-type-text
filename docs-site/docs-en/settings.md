@@ -28,6 +28,15 @@ The container process pool has a maximum of 16 slots, and each slot corresponds 
 
 Changes take effect immediately. App data is not lost when processes are ended.
 
+### Location simulation
+
+Simulates coordinates for apps inside the virtual space:
+
+- While enabled, virtual apps receive the latitude and longitude configured on the page through `LocationManager`, with 5 m accuracy by default.
+- Only virtual apps are affected; the real device location is never changed and root is not required.
+- The app still needs location permission; running apps may need to be reopened before they use the new coordinates.
+- Apps that use their own location service (some map SDKs or Google Play services) may still return the real position.
+
 ### Container self-check
 
 Runs a set of automatic checks to confirm that basic container capabilities are working:

@@ -26,6 +26,7 @@ import com.coke.nestspace.data.WallpaperStore
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.i18n.AppLanguageMode
 import com.coke.nestspace.llm.LlmProbe
+import com.coke.nestspace.location.MockLocationSettings
 import com.coke.nestspace.memory.MemoryStore
 import com.coke.nestspace.memory.SkillStore
 import com.coke.nestspace.schedule.ScheduledTaskManager
@@ -62,9 +63,9 @@ internal object McpSettingsTools {
             ToolSpec(
                 name = "nestspace_settings_get",
                 description = "Read all NestSpace settings: language, container slots, " +
-                    "floating dot, browser proxy, external MCP clients, desktop apps, " +
-                    "wallpaper state, LLM configs (without API keys), memory/skill counts " +
-                    "and MCP status.",
+                    "location simulation, floating dot, browser proxy, external MCP clients, " +
+                    "desktop apps, wallpaper state, LLM configs (without API keys), " +
+                    "memory/skill counts and MCP status.",
                 inputSchema = objectSchema()
             ) { _, _ -> ToolResult(true, settingsJson(app).toString()) },
 
@@ -1098,6 +1099,7 @@ internal object McpSettingsTools {
             .put("language", languageJson())
             .put("permissions", permissionJson(context))
             .put("slots", slotsJson(context))
+            .put("location", locationSimulationJson(context))
             .put("floating_dot", floatingDotJson(context))
             .put("browser_proxy", browserProxyJson(context))
             .put(
@@ -1197,6 +1199,14 @@ internal object McpSettingsTools {
                 else ContainerProcessPool.slotLimit(context)
             )
             .put("max", ContainerProcessPool.SLOT_COUNT)
+    }
+
+    private fun locationSimulationJson(context: Context): JSONObject {
+        val config = MockLocationSettings.load(context)
+        return JSONObject()
+            .put("enabled", config.enabled)
+            .put("latitude", config.latitude)
+            .put("longitude", config.longitude)
     }
 
     private fun floatingDotJson(context: Context): JSONObject {

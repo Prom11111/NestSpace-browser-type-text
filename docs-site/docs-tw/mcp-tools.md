@@ -94,7 +94,7 @@ NestSpace 內建 Streamable HTTP MCP Server，向本機 AI 助手和遠端 MCP �
 
 | 工具 | 說明 |
 | --- | --- |
-| `nestspace_settings_get` | 一次讀取語言、容器槽位、懸浮球、瀏覽器代理、外部 MCP 用戶端、桌面應用程式、壁紙、LLM 設定（不含 Key）、記憶/技能/定時任務數量和 MCP 狀態 |
+| `nestspace_settings_get` | 一次讀取語言、容器槽位、座標模擬、懸浮球、瀏覽器代理、外部 MCP 用戶端、桌面應用程式、壁紙、LLM 設定（不含 Key）、記憶/技能/定時任務數量和 MCP 狀態 |
 | `nestspace_mcp_clients` | `list` / `save` / `delete` / `discover` 外部 MCP Server |
 | `nestspace_browser_proxy` | `get` / `set` 瀏覽器 HTTP/SOCKS 代理 |
 | `nestspace_mcp_lan` | `get` / `set` 區域網路監聽，傳回本機位址和權限狀態 |

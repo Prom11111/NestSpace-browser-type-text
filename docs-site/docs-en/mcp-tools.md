@@ -94,7 +94,7 @@ The following tools appear only in the remote MCP `tools/list` and are not expos
 
 | Tool | Description |
 | --- | --- |
-| `nestspace_settings_get` | Read language, Container slots, Floating dot, Browser proxy, external MCP clients, desktop apps, wallpaper, LLM configuration (without the Key), memory/skill/scheduled task counts, and MCP status in one call |
+| `nestspace_settings_get` | Read language, Container slots, location simulation, Floating dot, Browser proxy, external MCP clients, desktop apps, wallpaper, LLM configuration (without the Key), memory/skill/scheduled task counts, and MCP status in one call |
 | `nestspace_mcp_clients` | `list` / `save` / `delete` / `discover` external MCP Servers |
 | `nestspace_browser_proxy` | `get` / `set` the browser HTTP/SOCKS proxy |
 | `nestspace_mcp_lan` | `get` / `set` LAN listening; returns the local address and permission status |

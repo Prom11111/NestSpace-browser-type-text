@@ -94,7 +94,7 @@ NestSpace には Streamable HTTP MCP Server が内蔵されており、ローカ
 
 | ツール | 説明 |
 | --- | --- |
-| `nestspace_settings_get` | 言語、コンテナスロット、フローティングドット、ブラウザプロキシ、外部 MCP クライアント、デスクトップアプリ、壁紙、LLM 設定（Key を除く）、メモリ／スキル／スケジュールタスクの数、MCP 状態を一度に読み取る |
+| `nestspace_settings_get` | 言語、コンテナスロット、座標シミュレーション、フローティングドット、ブラウザプロキシ、外部 MCP クライアント、デスクトップアプリ、壁紙、LLM 設定（Key を除く）、メモリ／スキル／スケジュールタスクの数、MCP 状態を一度に読み取る |
 | `nestspace_mcp_clients` | `list` / `save` / `delete` / `discover` で外部 MCP Server を操作 |
 | `nestspace_browser_proxy` | `get` / `set` でブラウザの HTTP/SOCKS プロキシを操作 |
 | `nestspace_mcp_lan` | `get` / `set` で LAN 待ち受けを操作し、ローカルアドレスと権限状態を返す |

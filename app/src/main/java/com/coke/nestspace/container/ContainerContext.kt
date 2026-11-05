@@ -1,6 +1,7 @@
 package com.coke.nestspace.container
 
 import com.coke.nestspace.container.identity.HostIdentity
+import com.coke.nestspace.container.location.ContainerLocationManager
 import com.coke.nestspace.container.shortcut.ContainerShortcutManager
 import com.coke.nestspace.container.vpm.ContainerPermissions
 import com.coke.nestspace.container.vpm.VirtualPackageRegistry
@@ -111,6 +112,17 @@ class ContainerContext(
         ContainerAppWidgetManager.create(this)
     }
 
+    private var locationManager: android.location.LocationManager? = null
+    private var locationManagerReady = false
+
+    @Synchronized
+    private fun virtualLocationManager(): android.location.LocationManager? {
+        if (locationManagerReady) return locationManager
+        locationManagerReady = true
+        locationManager = ContainerLocationManager.create(this)
+        return locationManager
+    }
+
     /**
      * Target windows (notably Toast) carry the target package in
      * WindowManager.LayoutParams. The system accepts only the host package for
@@ -153,6 +165,11 @@ class ContainerContext(
             }
         Context.APPWIDGET_SERVICE -> targetAppWidgetManager ?: super.getSystemService(name)
         Context.JOB_SCHEDULER_SERVICE -> jobScheduler ?: super.getSystemService(name)
+        // The real location service only knows the host package. Targets get a
+        // local LocationManager that reports simulated coordinates (when the
+        // setting is on) or delegates to the host-identity service.
+        Context.LOCATION_SERVICE ->
+            virtualLocationManager() ?: super.getSystemService(name)
         // Android only knows packages installed for the real user, so
         // LocaleManager.setApplicationLocales("tv.danmaku.bili", ...) throws
         // "Unknown package" and Bilibili turns that into a startup crash.
