@@ -93,6 +93,7 @@ open class StageAActivity : Activity() {
     }
 
     private var root: FrameLayout? = null
+    private var environmentTopOverlay: View? = null
     private var session: ContainerSession? = null
     private var sessionRetained = false
     private var current: Activity? = null
@@ -226,31 +227,132 @@ open class StageAActivity : Activity() {
     private fun applyTargetActionBarInset(target: Activity) {
         val actionBar = target.actionBar ?: return
         if (!actionBar.isShowing) return
-        var barHeight = actionBar.height
-        if (barHeight <= 0) {
-            val value = android.util.TypedValue()
-            val found = target.theme.resolveAttribute(
-                android.R.attr.actionBarSize,
-                value,
-                true
-            )
-            if (found) {
-                barHeight = android.util.TypedValue.complexToDimensionPixelSize(
-                    value.data,
-                    target.resources.displayMetrics
-                )
-            }
-        }
-        if (barHeight <= 0) return
+        val decor = target.window?.decorView ?: return
         val content = target.findViewById<View>(android.R.id.content) ?: return
-        if (content.paddingTop < barHeight) {
+
+        val decorLocation = IntArray(2)
+        val contentLocation = IntArray(2)
+        decor.getLocationOnScreen(decorLocation)
+        content.getLocationOnScreen(contentLocation)
+        val contentTop = (contentLocation[1] - decorLocation[1]).coerceAtLeast(0)
+
+        // The action bar's layout height excludes the status bar even though
+        // its container spans underneath it. Use the container's bottom so a
+        // target such as SubprocessActivity does not hide its first line.
+        var barBottom = 0
+        val containerId = target.resources
+            .getIdentifier("action_bar_container", "id", "android")
+        val container = if (containerId != 0) {
+            decor.findViewById<View>(containerId)
+        } else {
+            null
+        }
+        if (container != null && container.height > 0 && container.isShown) {
+            val barLocation = IntArray(2)
+            container.getLocationOnScreen(barLocation)
+            barBottom = barLocation[1] + container.height - decorLocation[1]
+        }
+        if (barBottom <= 0) {
+            var barHeight = actionBar.height
+            if (barHeight <= 0) {
+                val value = android.util.TypedValue()
+                val found = target.theme.resolveAttribute(
+                    android.R.attr.actionBarSize,
+                    value,
+                    true
+                )
+                if (found) {
+                    barHeight = android.util.TypedValue.complexToDimensionPixelSize(
+                        value.data,
+                        target.resources.displayMetrics
+                    )
+                }
+            }
+            if (barHeight <= 0) return
+            val statusBar = target.resources
+                .getIdentifier("status_bar_height", "dimen", "android")
+                .takeIf { it > 0 }
+                ?.let { target.resources.getDimensionPixelSize(it) }
+                ?: 0
+            barBottom = statusBar + barHeight
+        }
+
+        val desiredTop = (barBottom - contentTop).coerceAtLeast(0)
+        if (desiredTop <= 0) return
+        if (content.paddingTop < desiredTop) {
             content.setPadding(
                 content.paddingLeft,
-                barHeight,
+                desiredTop,
                 content.paddingRight,
                 content.paddingBottom
             )
         }
+    }
+
+    /**
+     * A 1px line at the very top of a visible container app. Its color follows
+     * the target's status bar color so the app looks native while users can
+     * still tell the virtual environment apart. Opt out in Appearance settings.
+     */
+    private fun refreshEnvironmentLine(target: Activity?) {
+        val frame = root ?: return
+        if (mirrorMode || headless || target == null ||
+            !ContainerIndicatorSettings.isEnabled(this)
+        ) {
+            environmentTopOverlay?.let { frame.removeView(it) }
+            environmentTopOverlay = null
+            return
+        }
+        val overlay = environmentTopOverlay?.takeIf { it.parent === frame } ?: View(this).also {
+            it.isClickable = false
+            it.isFocusable = false
+            frame.addView(
+                it,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    environmentGradientHeight(),
+                    Gravity.TOP
+                )
+            )
+            environmentTopOverlay = it
+        }
+        val topColor = environmentLineColor(target)
+        overlay.background = android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(topColor, Color.TRANSPARENT)
+        )
+        overlay.visibility = View.VISIBLE
+    }
+
+    private fun environmentGradientHeight(): Int {
+        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
+        val bar = if (id > 0) {
+            resources.getDimensionPixelSize(id)
+        } else {
+            (24 * resources.displayMetrics.density).toInt()
+        }
+        return bar.coerceAtLeast(1)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun environmentLineColor(target: Activity): Int {
+        if (ContainerIndicatorSettings.colorMode(this) ==
+            ContainerIndicatorSettings.ColorMode.FIXED
+        ) {
+            return ContainerIndicatorSettings.fixedColor(this)
+        }
+        val targetWindow = target.window ?: return 0x30000000
+        val color = targetWindow.statusBarColor
+        if (Color.alpha(color) != 0) return color
+        val lightIcons = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val appearance = targetWindow.insetsController?.systemBarsAppearance ?: 0
+            (appearance and
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS) != 0
+        } else {
+            (targetWindow.decorView.systemUiVisibility and
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR) != 0
+        }
+        return if (lightIcons) 0x40FFFFFF else 0x30000000
     }
 
     private fun addMirrorSnapshotBackground(parent: FrameLayout) {
@@ -848,6 +950,7 @@ open class StageAActivity : Activity() {
                 scheduleHeadlessPipOrBack()
             } else {
                 root?.alpha = 1f
+                refreshEnvironmentLine(target)
             }
             return
         }
@@ -948,6 +1051,7 @@ open class StageAActivity : Activity() {
             dispatchTargetApplicationLifecycle("dispatchActivityResumed", target)
             attachTarget(target)
         }
+        refreshEnvironmentLine(target)
     }
 
     /**
@@ -1577,6 +1681,7 @@ open class StageAActivity : Activity() {
                 )
             )
             if (!mirrorMode) restoreLoadingWindowFocus()
+            refreshEnvironmentLine(target)
             title = "${session.spec.label} · ${session.spec.instanceId}"
 
             if (hostResumed) {

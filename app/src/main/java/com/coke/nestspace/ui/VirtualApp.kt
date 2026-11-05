@@ -365,7 +365,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
             SpacesPage.ROOT -> AppLanguage.tr("空间设置", "Space settings")
             SpacesPage.APPS -> AppLanguage.tr("应用管理", "App management")
             SpacesPage.SERVICES -> AppLanguage.tr("MCP 控制服务", "MCP control service")
-            SpacesPage.APPEARANCE -> AppLanguage.tr("桌面壁纸", "Desktop wallpaper")
+            SpacesPage.APPEARANCE -> AppLanguage.tr("外观", "Appearance")
             SpacesPage.FLOATING_DOT -> AppLanguage.tr("悬浮球", "Floating dot")
             SpacesPage.MODEL -> AppLanguage.tr("模型设置", "Model settings")
             SpacesPage.MODEL_EDIT ->
