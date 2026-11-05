@@ -39,7 +39,7 @@ NestSpace 可以把第三方 APK 安装到应用内部，创建多个相互隔�
 
 ### 1. 安装并打开
 
-安装 `app-debug.apk`（可以从 Releases 下载，或按下方「构建」自行打包）。打开后进入 NestSpace 桌面，桌面上有「空间设置」「AI助手」「浏览器」「运行管理」等入口。
+从 [Releases](https://github.com/chuccp/NestSpace/releases/latest) 下载正式打包的 APK（文件名类似 `NestSpace-v1.0.1.apk`），或按下方「构建」自行打包。打开后进入 NestSpace 桌面，桌面上有「空间设置」「AI助手」「浏览器」「运行管理」等入口。
 
 ### 2. 把系统应用放上桌面
 

@@ -28,3 +28,4 @@ nav:
       - App / site knowledge packs: knowledge-packs.md
       - Build from source: building.md
       - nestspace-mcp CLI: cli.md
+      - Technical design: android-virtual-space-agent-mcp.md

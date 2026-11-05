@@ -42,6 +42,7 @@
 | [アプリ / ウェブサイト知識パック](knowledge-packs.md) | 知識パックの形式、マッチング、追加方法 |
 | [ソースからのビルド](building.md) | 環境要件、ビルドコマンド、CI |
 | [nestspace-mcp CLI](cli.md) | コマンドラインクライアントのインストールと使用方法 |
+| [技術設計](android-virtual-space-agent-mcp.md) | 完全な技術設計（開発参考） |
 
 ## 表記規則
 

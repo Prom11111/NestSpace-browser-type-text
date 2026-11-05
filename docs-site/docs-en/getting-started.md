@@ -10,7 +10,7 @@ This guide walks through the entire process from scratch: installing NestSpace, 
 
 ## 2. Install NestSpace
 
-Download `app-debug.apk` from the project's Releases, or build it yourself by following [Building from source](building.md), then install it like an ordinary APK.
+Download the official packaged APK from [Releases](https://github.com/chuccp/NestSpace/releases/latest) (the file is named like `NestSpace-v1.0.1.apk`), or build it yourself by following [Building from source](building.md), then install it like an ordinary APK.
 
 The first launch opens the NestSpace desktop. By default, the desktop contains:
 

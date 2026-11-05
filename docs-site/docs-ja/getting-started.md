@@ -10,7 +10,7 @@
 
 ## 2. NestSpace のインストール
 
-プロジェクトの Releases から `app-debug.apk` をダウンロードするか、[ソースからのビルド](building.md)の手順で自分でパッケージしてから、通常の APK と同じようにインストールします。
+プロジェクトの [Releases](https://github.com/chuccp/NestSpace/releases/latest) から正式ビルド済みの APK（ファイル名は `NestSpace-v1.0.1.apk` など）をダウンロードするか、[ソースからのビルド](building.md)の手順で自分でパッケージしてから、通常の APK と同じようにインストールします。
 
 初回起動時は NestSpace のデスクトップが表示されます。デスクトップにはデフォルトで次のものが含まれます。
 

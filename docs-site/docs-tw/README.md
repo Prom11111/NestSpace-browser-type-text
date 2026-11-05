@@ -42,6 +42,7 @@
 | [App / 網站知識包](knowledge-packs.md) | 知識包的格式、匹配和新增方法 |
 | [從原始碼建置](building.md) | 環境需求、建置命令和 CI |
 | [nestspace-mcp CLI](cli.md) | 命令列用戶端的安裝和使用 |
+| [技術設計](android-virtual-space-agent-mcp.md) | 完整技術方案（開發參考） |
 
 ## 約定
 

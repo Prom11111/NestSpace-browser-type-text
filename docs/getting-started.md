@@ -10,7 +10,7 @@
 
 ## 2. 安装 NestSpace
 
-从项目的 Releases 下载 `app-debug.apk`，或按 [从源码构建](building.md) 自行打包，然后像普通 APK 一样安装。
+从项目的 [Releases](https://github.com/chuccp/NestSpace/releases/latest) 下载正式打包的 APK（文件名类似 `NestSpace-v1.0.1.apk`），或按 [从源码构建](building.md) 自行打包，然后像普通 APK 一样安装。
 
 首次打开会进入 NestSpace 桌面。桌面默认包含：
 

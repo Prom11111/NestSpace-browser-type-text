@@ -42,6 +42,7 @@
 | [App / website knowledge packs](knowledge-packs.md) | Knowledge pack format, matching, and how to add one |
 | [Building from source](building.md) | Environment requirements, build commands, and CI |
 | [nestspace-mcp CLI](cli.md) | Installing and using the command-line client |
+| [Technical design](android-virtual-space-agent-mcp.md) | Full technical design (development reference) |
 
 ## Conventions
 
