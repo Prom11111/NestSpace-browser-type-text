@@ -376,20 +376,23 @@ class ContainerSession private constructor(
             ?: host.applicationInfo?.packageName
             ?: HostIdentity.packageName
         val targetProcess = ContainerProcessRouter.normalize(spec.packageName, info.processName)
-        if (targetProcess == spec.targetProcessName) {
-            // Mirror mode keeps one real host Activity and swaps target
-            // Activities inside its Presentation. This avoids creating a
-            // WindowManager task for every in-app navigation, which is what
-            // causes the full-screen transition flash.
-            if (mirrorDisplayId >= 0 && host.isMirrorMode()) {
-                val targetIntent = Intent(intent).setClassName(
-                    spec.packageName,
-                    info.name
-                )
-                if (host.openMirrorChildTarget(info.name, targetIntent, requestCode)) {
-                    return true
-                }
+        // Mirror mode keeps one real host Activity and swaps target
+        // Activities inside its Presentation. This avoids creating a
+        // WindowManager task for every in-app navigation, which is what
+        // causes the full-screen transition flash. It also keeps
+        // subprocess-declared UI Activities in the same Presentation;
+        // their separate host process would otherwise paint a second, often
+        // blank Presentation over the mirror.
+        if (mirrorDisplayId >= 0 && host.isMirrorMode()) {
+            val targetIntent = Intent(intent).setClassName(
+                spec.packageName,
+                info.name
+            )
+            if (host.openMirrorChildTarget(info.name, targetIntent, requestCode)) {
+                return true
             }
+        }
+        if (targetProcess == spec.targetProcessName) {
             return launchOnHost(
                 host,
                 hostPackage,
