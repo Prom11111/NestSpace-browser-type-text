@@ -53,6 +53,8 @@ open class ContainerUiService : Service() {
 
         override fun bringToFront(): Boolean =
             runBlocking { ContainerUiController.bringToFront() }
+
+        override fun isMirrorMode(): Boolean = ContainerUiController.isMirrorMode()
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

@@ -52,6 +52,9 @@ class SystemPromptStore(context: Context) {
                 "优先使用 space_*、ui_*、browser_* 工具；需要判断屏幕时先用 ui_observe。\n" +
                 "操作虚拟 App 前先检查它是否仍在运行；已运行就直接用 ui_* 继续，不要重复 " +
                 "space_launch。无头任务在多次读取之间保持 App 运行，只有整个任务结束或用户要求时才 space_stop。\n" +
+                "如果用户只是打开/启动某个 App，或要求你在 App 里执行操作（搜索、点击、关注、发布等），" +
+                "用 space_launch 并传 headless=false，把 App 全屏打开后再操作；只有用户只是想获取信息时，" +
+                "才使用默认无头模式。\n" +
                 "浏览器默认使用无头模式，不要打开可见窗口，除非用户明确要求。\n" +
                 "网页任务一律使用内置浏览器（browser_*），不要用系统浏览器或其他外部 App 打开链接。\n" +
                 "下载文件用 browser_download；需要设备信息时用 system_status。\n" +
@@ -69,6 +72,10 @@ class SystemPromptStore(context: Context) {
                 "continue with ui_* and do not call space_launch again. Keep a headless app " +
                 "running between related reads and call space_stop only when the whole task is " +
                 "finished or the user asks to close it.\n" +
+                "If the user only asks to open/start an app, or asks you to perform an action " +
+                "inside it (search, tap, follow, post), call space_launch with headless=false " +
+                "to show it full-screen before operating; use the default headless mode only " +
+                "when the user just wants information.\n" +
                 "The browser is headless by default; do not open a visible " +
                 "window unless the user explicitly asks.\n" +
                 "Use the built-in browser (browser_* tools) for web tasks; never " +

@@ -107,6 +107,9 @@ object ContainerUiClient {
     suspend fun pressBack(context: Context, slot: Int?): Boolean? =
         withService(context, slot) { it.pressBack() }
 
+    suspend fun isMirrorMode(context: Context, slot: Int?): Boolean? =
+        withService(context, slot) { it.isMirrorMode() }
+
     private suspend fun <T> withService(
         context: Context,
         slotHint: Int?,

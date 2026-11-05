@@ -201,7 +201,12 @@ class AssistantVoiceActivity : ComponentActivity() {
                             AppLanguage.tr("语音不可用，可点键盘输入", "Voice is unavailable; use the keyboard")
                         }
                     }
-                } else if (status == AppLanguage.tr("正在思考…", "Thinking…")) {
+                } else if (status == AppLanguage.tr("正在思考…", "Thinking…") ||
+                    status == AppLanguage.tr(
+                        "已加入当前任务…",
+                        "Added to the current task…"
+                    )
+                ) {
                     status = when {
                         showInput -> AppLanguage.tr("输入你的问题", "Type your question")
                         preparing -> AppLanguage.tr(
@@ -506,6 +511,9 @@ class AssistantVoiceActivity : ComponentActivity() {
         stopListening(cancel = true)
         transcript = ""
         userEdited = false
+        // submit() flips busy synchronously, so capture the prior state: a
+        // failed/instant run must not leave the "queued" label behind.
+        val wasBusy = AssistantConversation.busy.value
         if (!AssistantConversation.submit(this, text)) {
             status = AppLanguage.tr(
                 "发送失败，请重试",
@@ -522,7 +530,7 @@ class AssistantVoiceActivity : ComponentActivity() {
                 ?.hideSoftInputFromWindow(view.windowToken, 0)
             view.clearFocus()
         }
-        status = if (busy) {
+        status = if (wasBusy) {
             AppLanguage.tr("已加入当前任务…", "Added to the current task…")
         } else {
             AppLanguage.tr("正在思考…", "Thinking…")
@@ -853,7 +861,18 @@ private fun AssistantVoiceScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(focusRequester),
-                    placeholder = { Text(AppLanguage.tr("输入你的问题…", "Type your question…")) },
+                    placeholder = {
+                        Text(
+                            if (busy) {
+                                AppLanguage.tr(
+                                    "正在处理，点右侧停止…",
+                                    "Working… tap stop on the right"
+                                )
+                            } else {
+                                AppLanguage.tr("输入你的问题…", "Type your question…")
+                            }
+                        )
+                    },
                     minLines = 1,
                     maxLines = 4,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),

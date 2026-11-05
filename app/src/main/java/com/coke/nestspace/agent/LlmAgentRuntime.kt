@@ -525,6 +525,12 @@ class LlmAgentRuntime(
         val hint = AppLanguage.tr(
             "当前本地时间：$now。\n" +
                 "当前虚拟空间 ID：$VIRTUAL_SPACE。\n" +
+                "先判断用户意图：如果用户只是说了 App 名称或说“打开/启动某个 App”，" +
+                "或者要求你在 App 里执行操作（搜索、点击、关注、发布、下单等），" +
+                "就调用 space_launch 并传 headless=false，把 App 全屏打开，再用 ui_* 操作，" +
+                "让用户能看到过程；单纯打开 App 时不要 ui_observe，也不要播报页面内容。" +
+                "只有用户只是想获取信息（查看内容、热榜、页面总结等）时，才用默认无头模式" +
+                "（不传 headless）。\n" +
                 "浏览器和虚拟 App 都默认用无头模式（browser_open 不传 headless、space_launch 不传 headless 即为无头），" +
                 "不要打开可见窗口，除非用户明确要求。操作虚拟 App 前先检查它是否仍在运行" +
                 "（space_running 或直接 ui_observe）；已运行就直接用 ui_*，不要重复 space_launch。" +
@@ -548,6 +554,13 @@ class LlmAgentRuntime(
                 "需要看画面时用 ui_screenshot；支持视觉的模型会自动收到截图。",
             "Current local time: $now.\n" +
                 "Current virtual space ID: $VIRTUAL_SPACE.\n" +
+                "Decide the intent first: if the user only names an app, asks to open/start " +
+                "it, or asks you to perform an action inside the app (search, tap, follow, " +
+                "post, order, etc.), call space_launch with headless=false to open it " +
+                "full-screen, then use ui_* so the user can see it happen. For a plain open " +
+                "request, do not ui_observe or summarize the page. Use the default headless " +
+                "launch only when the user just wants information (content, rankings, a page " +
+                "summary, etc.).\n" +
                 "The browser and virtual apps are headless by default (browser_open and " +
                 "space_launch without headless), so do not open a visible window unless " +
                 "the user explicitly asks. Before operating a virtual app, check whether it is " +

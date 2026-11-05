@@ -17,4 +17,5 @@ interface IContainerUi {
     boolean waitForText(String text, long timeoutMs);
     boolean pressBack();
     boolean bringToFront();
+    boolean isMirrorMode();
 }

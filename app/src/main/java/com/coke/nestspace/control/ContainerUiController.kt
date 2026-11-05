@@ -45,6 +45,8 @@ object ContainerUiController {
 
     fun isAvailable(): Boolean = StageAActivity.activeTargetActivity() != null
 
+    fun isMirrorMode(): Boolean = StageAActivity.activeHost()?.isMirrorMode() == true
+
     suspend fun snapshot(): UiSnapshot? = withContext(Dispatchers.Main.immediate) {
         val target = StageAActivity.activeTargetActivity() ?: return@withContext null
         val decor = target.window?.decorView ?: return@withContext null

@@ -262,7 +262,9 @@ class ToolRegistry(
             name = "space_running",
             description = "List running virtual apps and their slot processes. Check this (or " +
                 "call ui_observe directly) before space_launch; if the target package/instance " +
-                "is already running, continue with ui_* instead of reopening it.",
+                "is already running headless and the user wants to see or operate it, call " +
+                "space_launch with headless=false to show it full-screen before using ui_*. " +
+                "For an information-only task, continue with ui_* without reopening it.",
             inputSchema = schema()
         ) { _, _ ->
             val arr = JSONArray()
@@ -285,9 +287,13 @@ class ToolRegistry(
             description = "Launch an app by package name in virtual-1 by default (pass space_id=system " +
                 "for a system app). instance_id is optional; omit it to use the most recently " +
                 "launched instance. Launches are headless unless headless=false is passed " +
-                "explicitly (only when the user asks to see the app). If the app is already " +
-                "running, it is reused and the call returns already_running=true instead of " +
-                "reopening it.",
+                "explicitly. Pass headless=false when the user only names an app, asks to " +
+                "open/start it, or asks you to operate it (search, tap, follow, post), so the " +
+                "app is shown full-screen while you use ui_*; for a plain open request do not " +
+                "observe or summarize it. Use the default headless launch only when the user " +
+                "just wants information. If a headless app is already running, a visible " +
+                "launch restarts it full-screen. If a visible app is already running, it is " +
+                "brought to the front and already_running=true is returned.",
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
@@ -320,24 +326,34 @@ class ToolRegistry(
                     }
                 if (running != null) {
                     if (explicitVisible) {
-                        val shown = ContainerProcessPool.bringToFront(
-                            context,
-                            running.slot,
-                            pkg,
-                            running.instanceId
-                        )
-                        if (shown) {
-                            return@ToolSpec ToolResult(
-                                true,
-                                JSONObject()
-                                    .put("launched", true)
-                                    .put("already_running", true)
-                                    .put("package", pkg)
-                                    .put("instance_id", running.instanceId)
-                                    .put("slot", running.slot)
-                                    .put("headless", false)
-                                    .toString()
+                        val mirrored = ContainerUiClient.isMirrorMode(context, running.slot)
+                            ?: (HeadlessMirrorWindow.activeSlot() == running.slot)
+                        if (mirrored) {
+                            // A mirror host renders into the VirtualDisplay and
+                            // is not touchable. It cannot be promoted to a
+                            // normal window, so restart it full-screen.
+                            ContainerProcessPool.closeSlot(context, running.slot)
+                            HeadlessMirrorWindow.hide()
+                        } else {
+                            val shown = ContainerProcessPool.bringToFront(
+                                context,
+                                running.slot,
+                                pkg,
+                                running.instanceId
                             )
+                            if (shown) {
+                                return@ToolSpec ToolResult(
+                                    true,
+                                    JSONObject()
+                                        .put("launched", true)
+                                        .put("already_running", true)
+                                        .put("package", pkg)
+                                        .put("instance_id", running.instanceId)
+                                        .put("slot", running.slot)
+                                        .put("headless", false)
+                                        .toString()
+                                )
+                            }
                         }
                     } else {
                         if (!awaitContainerReady(running.slot)) {
