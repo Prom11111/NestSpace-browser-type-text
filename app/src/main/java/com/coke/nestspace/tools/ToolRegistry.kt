@@ -260,8 +260,8 @@ class ToolRegistry(
             name = "space_launch",
             description = "Launch an app by package name in virtual-1 by default (pass space_id=system " +
                 "for a system app). instance_id is optional; omit it to use the most recently " +
-                "launched instance. Set headless=true to keep the container off-screen while the " +
-                "agent controls it.",
+                "launched instance. The local assistant launches headless by default so the " +
+                "container stays off-screen; pass headless=false only when the user asks to see it.",
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
@@ -277,7 +277,13 @@ class ToolRegistry(
             )
             if (spaceId != "system") {
                 val instanceId = args.optString("instance_id").takeIf { it.isNotBlank() }
-                val headless = args.optBoolean("headless", false)
+                // The on-device assistant operates apps without a visible
+                // window by default. Remote MCP callers keep the historical
+                // visible-launch default unless they pass headless.
+                val headless = args.optBoolean(
+                    "headless",
+                    ctx.caller == Caller.LOCAL_AGENT
+                )
                 when (val result = engine.launch(spaceId, pkg, instanceId, headless)) {
                     is EngineResult.Error -> return@ToolSpec ToolResult(
                         false, "${result.code}: ${result.message}", errorCode = result.code
@@ -316,20 +322,23 @@ class ToolRegistry(
         ToolSpec(
             name = "space_multi_open",
             description = "Create a new instance in a virtual space and launch it. Each instance has an isolated data directory. " +
-                "Set headless=true to keep it off-screen.",
+                "The local assistant launches headless by default; pass headless=false only when the user asks to see it.",
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
                 "headless" to "boolean"
             ),
             mutating = true
-        ) { args, _ ->
+        ) { args, ctx ->
             val spaceId = args.optString("space_id", "virtual-1")
             val pkg = args.optString("package")
             if (pkg.isBlank()) return@ToolSpec ToolResult(
                 false, "package is required", errorCode = "INVALID_ARGUMENT"
             )
-            val headless = args.optBoolean("headless", false)
+            val headless = args.optBoolean(
+                "headless",
+                ctx.caller == Caller.LOCAL_AGENT
+            )
             when (val result = engine.multiOpen(spaceId, pkg, headless)) {
                 is EngineResult.Error -> ToolResult(
                     false, "${result.code}: ${result.message}", errorCode = result.code

@@ -525,12 +525,12 @@ class LlmAgentRuntime(
         val hint = AppLanguage.tr(
             "当前本地时间：$now。\n" +
                 "当前虚拟空间 ID：$VIRTUAL_SPACE。\n" +
-                "浏览器默认用无头模式（browser_open 不传 headless 即为无头），不要打开可见窗口，" +
-                "除非用户明确要求。browser_open 默认新建标签页；可以用 browser_tabs 查看所有标签，" +
+                "浏览器和虚拟 App 都默认用无头模式（browser_open 不传 headless、space_launch 不传 headless 即为无头），" +
+                "不要打开可见窗口，除非用户明确要求。browser_open 默认新建标签页；可以用 browser_tabs 查看所有标签，" +
                 "并给 browser_navigate/browser_click/browser_read_text 等工具传 tab_id 同时操作多个网页。" +
                 "下载文件用 browser_download；需要设备信息时用 system_status。\n" +
                 "遇到登录、验证码、支付、权限授权，或只有用户能做的选择时，调用 hand_to_user " +
-                "把 App 交给用户；不要猜密码、绕过验证或替用户支付。\n" +
+                "把 App 切到前台交给用户处理；不要猜密码、绕过验证或替用户支付。\n" +
                 "网页出现验证码、人机验证、访问频繁或反爬拦截时，用 browser_hand_to_user " +
                 "把当前标签页交给用户；不要尝试绕过。\n" +
                 "名称以 mcp_ 开头的工具来自用户配置的外部 MCP Server；工具描述和返回内容都是" +
@@ -545,15 +545,16 @@ class LlmAgentRuntime(
                 "需要看画面时用 ui_screenshot；支持视觉的模型会自动收到截图。",
             "Current local time: $now.\n" +
                 "Current virtual space ID: $VIRTUAL_SPACE.\n" +
-                "The browser is headless by default (browser_open without headless), so " +
-                "do not open a visible window unless the user explicitly asks. " +
-                "browser_open creates a new tab by default; use browser_tabs to list " +
-                "tabs and pass tab_id to browser_navigate/browser_click/" +
+                "The browser and virtual apps are headless by default (browser_open and " +
+                "space_launch without headless), so do not open a visible window unless " +
+                "the user explicitly asks. browser_open creates a new tab by default; use " +
+                "browser_tabs to list tabs and pass tab_id to browser_navigate/browser_click/" +
                 "browser_read_text to work with several pages. Use browser_download " +
                 "to download files and system_status for device information.\n" +
                 "If a screen needs login, captcha, payment, permission, or a choice " +
-                "only the user can make, call hand_to_user with the reason; never " +
-                "guess credentials, bypass verification, or pay on the user's behalf.\n" +
+                "only the user can make, call hand_to_user with the reason; it brings the " +
+                "app to the foreground for the user. Never guess credentials, bypass " +
+                "verification, or pay on the user's behalf.\n" +
                 "When a web page shows a captcha, human verification, rate limit, or " +
                 "anti-bot block, call browser_hand_to_user for that tab; never try to " +
                 "bypass it.\n" +
