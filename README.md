@@ -9,6 +9,8 @@
 
 NestSpace 可以把第三方 APK 安装到应用内部，创建多个相互隔离的实例，并在自带桌面上启动、整理它们。内置的 AI 助手能够观察和操作虚拟应用；NestSpace 同时对外提供 MCP 控制服务，让 Claude Code 等外部客户端从电脑上驱动设备。
 
+[简体中文](https://chuccp.github.io/NestSpace/zh/) · [English](https://chuccp.github.io/NestSpace/en/) · [繁體中文](https://chuccp.github.io/NestSpace/tw/) · [日本語](https://chuccp.github.io/NestSpace/ja/)
+
 > ⚠️ NestSpace 是实验性项目，建议先安装自己熟悉的 App，方便判断兼容性问题。
 
 ## 为什么选择 NestSpace

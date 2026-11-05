@@ -1,0 +1,30 @@
+INHERIT: mkdocs-base.yml
+
+site_name: NestSpace ユーザーマニュアル
+site_url: https://chuccp.github.io/NestSpace/ja/
+site_description: 'NestSpace：Android 上でアプリレベルの仮想空間を実現。マルチインスタンス、データ分離、AI アシスタント、MCP 制御に対応。'
+
+docs_dir: docs-ja
+site_dir: site-ja
+
+theme:
+  language: ja
+
+edit_uri: edit/main/docs-site/docs-ja/
+
+nav:
+  - ホーム: README.md
+  - クイックスタート: getting-started.md
+  - アプリのインストールと管理: app-manager.md
+  - デスクトップと外観: desktop.md
+  - 設定リファレンス: settings.md
+  - AI アシスタント: assistant.md
+  - 内蔵ブラウザ: browser.md
+  - MCP 制御サービス: mcp.md
+  - よくある質問: troubleshooting.md
+  - リファレンス:
+      - アーキテクチャと制限: architecture.md
+      - MCP ツールリファレンス: mcp-tools.md
+      - アプリ・サイト知識パック: knowledge-packs.md
+      - ソースからビルド: building.md
+      - nestspace-mcp CLI: cli.md

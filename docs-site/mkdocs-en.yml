@@ -1,0 +1,30 @@
+INHERIT: mkdocs-base.yml
+
+site_name: NestSpace Manual
+site_url: https://chuccp.github.io/NestSpace/en/
+site_description: 'NestSpace: app-level virtual space for Android with multi-instance, data isolation, AI assistant and MCP control.'
+
+docs_dir: docs-en
+site_dir: site-en
+
+theme:
+  language: en
+
+edit_uri: edit/main/docs-site/docs-en/
+
+nav:
+  - Home: README.md
+  - Quick start: getting-started.md
+  - App installation & management: app-manager.md
+  - Desktop & appearance: desktop.md
+  - Settings reference: settings.md
+  - AI assistant: assistant.md
+  - Built-in browser: browser.md
+  - MCP control service: mcp.md
+  - Troubleshooting: troubleshooting.md
+  - Reference:
+      - Architecture & limitations: architecture.md
+      - MCP tool reference: mcp-tools.md
+      - App / site knowledge packs: knowledge-packs.md
+      - Build from source: building.md
+      - nestspace-mcp CLI: cli.md
