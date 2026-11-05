@@ -21,6 +21,7 @@ import com.coke.nestspace.browser.BrowserSession
 import com.coke.nestspace.container.ContainerProcessPool
 import com.coke.nestspace.container.vpm.ContainerPermissionStore
 import com.coke.nestspace.control.ContainerUiClient
+import com.coke.nestspace.control.ContainerUiKeepAlive
 import com.coke.nestspace.control.LivePreview
 import com.coke.nestspace.data.AgentMessage
 import com.coke.nestspace.data.AppRepository
@@ -257,11 +258,35 @@ class ToolRegistry(
             }
         },
         ToolSpec(
+            name = "space_running",
+            description = "List running virtual apps and their slot processes. Check this (or " +
+                "call ui_observe directly) before space_launch; if the target package/instance " +
+                "is already running, continue with ui_* instead of reopening it.",
+            inputSchema = schema()
+        ) { _, _ ->
+            val arr = JSONArray()
+            ContainerProcessPool.runningSlots(context).forEach { slot ->
+                arr.put(
+                    JSONObject()
+                        .put("slot", slot.slot)
+                        .put("package", slot.packageName)
+                        .put("instance_id", slot.instanceId)
+                        .put("process", slot.processName)
+                        .put("main", slot.processName == slot.packageName)
+                        .put("active", slot.active)
+                        .put("memory_kb", slot.memoryKb)
+                )
+            }
+            ToolResult(true, JSONObject().put("running", arr).toString())
+        },
+        ToolSpec(
             name = "space_launch",
             description = "Launch an app by package name in virtual-1 by default (pass space_id=system " +
                 "for a system app). instance_id is optional; omit it to use the most recently " +
-                "launched instance. The local assistant launches headless by default so the " +
-                "container stays off-screen; pass headless=false only when the user asks to see it.",
+                "launched instance. Launches are headless unless headless=false is passed " +
+                "explicitly (only when the user asks to see the app). If the app is already " +
+                "running, it is reused and the call returns already_running=true instead of " +
+                "reopening it.",
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
@@ -277,13 +302,59 @@ class ToolRegistry(
             )
             if (spaceId != "system") {
                 val instanceId = args.optString("instance_id").takeIf { it.isNotBlank() }
-                // The on-device assistant operates apps without a visible
-                // window by default. Remote MCP callers keep the historical
-                // visible-launch default unless they pass headless.
-                val headless = args.optBoolean(
-                    "headless",
-                    ctx.caller == Caller.LOCAL_AGENT
-                )
+                // A visible window is opt-in. Any caller (including remote
+                // MCP) gets a headless launch unless it explicitly passes
+                // headless=false, which happens when the user asks to see it.
+                val explicitVisible = args.has("headless") &&
+                    !args.optBoolean("headless", true)
+                val headless = !explicitVisible
+                val running = ContainerProcessPool.runningSlots(context)
+                    .lastOrNull {
+                        it.packageName == pkg &&
+                            it.processName == pkg &&
+                            (instanceId == null || it.instanceId == instanceId)
+                    }
+                if (running != null) {
+                    if (explicitVisible) {
+                        val shown = ContainerProcessPool.bringToFront(
+                            context,
+                            running.slot,
+                            pkg,
+                            running.instanceId
+                        )
+                        if (shown) {
+                            return@ToolSpec ToolResult(
+                                true,
+                                JSONObject()
+                                    .put("launched", true)
+                                    .put("already_running", true)
+                                    .put("package", pkg)
+                                    .put("instance_id", running.instanceId)
+                                    .put("slot", running.slot)
+                                    .put("headless", false)
+                                    .toString()
+                            )
+                        }
+                    } else {
+                        if (!awaitContainerReady(running.slot)) {
+                            return@ToolSpec launchBlockedResult()
+                        }
+                        ContainerUiKeepAlive.bind(context, running.slot)
+                        capturePreview(running.slot, pkg)
+                        return@ToolSpec ToolResult(
+                            true,
+                            JSONObject()
+                                .put("launched", true)
+                                .put("already_running", true)
+                                .put("package", pkg)
+                                .put("instance_id", running.instanceId)
+                                .put("slot", running.slot)
+                                .put("headless", true)
+                                .put("hint", "The app is already running; use ui_* directly.")
+                                .toString()
+                        )
+                    }
+                }
                 when (val result = engine.launch(spaceId, pkg, instanceId, headless)) {
                     is EngineResult.Error -> return@ToolSpec ToolResult(
                         false, "${result.code}: ${result.message}", errorCode = result.code
@@ -294,11 +365,13 @@ class ToolRegistry(
                         if (!awaitContainerReady(slot)) {
                             return@ToolSpec launchBlockedResult()
                         }
+                        if (headless) slot?.let { ContainerUiKeepAlive.bind(context, it) }
                         capturePreview(slot, pkg)
                         return@ToolSpec ToolResult(
                             true,
                             JSONObject()
                                 .put("launched", true)
+                                .put("already_running", false)
                                 .put("package", pkg)
                                 .put("instance_id", launched.instanceId)
                                 .put("activity", launched.activity)
@@ -322,7 +395,7 @@ class ToolRegistry(
         ToolSpec(
             name = "space_multi_open",
             description = "Create a new instance in a virtual space and launch it. Each instance has an isolated data directory. " +
-                "The local assistant launches headless by default; pass headless=false only when the user asks to see it.",
+                "Launches are headless by default; pass headless=false only when the user asks to see it.",
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
@@ -335,10 +408,7 @@ class ToolRegistry(
             if (pkg.isBlank()) return@ToolSpec ToolResult(
                 false, "package is required", errorCode = "INVALID_ARGUMENT"
             )
-            val headless = args.optBoolean(
-                "headless",
-                ctx.caller == Caller.LOCAL_AGENT
-            )
+            val headless = args.optBoolean("headless", true)
             when (val result = engine.multiOpen(spaceId, pkg, headless)) {
                 is EngineResult.Error -> ToolResult(
                     false, "${result.code}: ${result.message}", errorCode = result.code
@@ -349,6 +419,7 @@ class ToolRegistry(
                     if (!awaitContainerReady(slot)) {
                         return@ToolSpec launchBlockedResult()
                     }
+                    if (headless) slot?.let { ContainerUiKeepAlive.bind(context, it) }
                     capturePreview(slot, pkg)
                     ToolResult(
                         true,
@@ -542,15 +613,22 @@ class ToolRegistry(
                 "package" to "string",
                 "instance_id" to "string"
             )
-        ) { args, _ ->
-            val slot = containerSlot(args)
-            if (missingRequestedContainer(args, slot)) {
-                return@ToolSpec noContainerResult(null, args)
+        ) { args, ctx ->
+            var slot = containerSlot(args)
+            var observation = slot?.let { ContainerUiClient.observeJson(context, it) }
+            if (observation == null) {
+                val recovered = recoverHeadlessContainer(args, ctx, slot)
+                if (recovered != null) {
+                    slot = recovered
+                    observation = ContainerUiClient.observeJson(context, slot)
+                }
             }
-            val json = ContainerUiClient.observeJson(context, slot)
-                ?: return@ToolSpec noContainerResult(slot, args)
+            if (observation == null) {
+                return@ToolSpec noContainerResult(slot, args)
+            }
+            slot?.let { ContainerUiKeepAlive.bind(context, it) }
             capturePreview(slot, args.optString("package"))
-            ToolResult(true, UserGateManager.annotateSensitive(json))
+            ToolResult(true, UserGateManager.annotateSensitive(observation))
         },
         ToolSpec(
             name = "ui_tap",
@@ -658,8 +736,9 @@ class ToolRegistry(
         ToolSpec(
             name = "hand_to_user",
             description = "Pause and hand the virtual app to the user for login, captcha, payment, " +
-                "permission, or a decision only they can make. Brings the app to the foreground " +
-                "and waits for the user to tap Done or Skip. Call ui_observe afterwards to verify.",
+                "permission, or a decision only they can make. Asks the user to confirm, then " +
+                "brings the app to the foreground and waits for the user to tap Done or Skip. " +
+                "Call ui_observe afterwards to verify.",
             inputSchema = schema(
                 "reason" to "string",
                 "message" to "string",
@@ -1843,6 +1922,40 @@ class ToolRegistry(
             delay(250)
         }
         return false
+    }
+
+    /**
+     * If the local assistant asks to observe a headless app whose slot process
+     * was reclaimed, relaunch the same package/instance headless instead of
+     * requiring a manual space_launch. The visible UI is unaffected.
+     */
+    private suspend fun recoverHeadlessContainer(
+        args: JSONObject,
+        ctx: ToolContext,
+        slotHint: Int?
+    ): Int? {
+        if (ctx.caller != Caller.LOCAL_AGENT) return null
+        val requestedPackage = args.optString("package").takeIf { it.isNotBlank() }
+        val requestedInstance = args.optString("instance_id").takeIf { it.isNotBlank() }
+        val owner = if (requestedPackage == null || requestedInstance == null) {
+            slotHint?.let { ContainerProcessPool.ownerOfSlot(it) }
+        } else {
+            null
+        }
+        val packageName = requestedPackage ?: owner?.packageName ?: return null
+        val instanceId = requestedInstance ?: owner?.instanceId ?: return null
+        val spaceId = args.optString("space_id", ctx.spaceId)
+        when (val result = engine.launch(
+            spaceId = spaceId,
+            packageName = packageName,
+            instanceId = instanceId,
+            headless = true
+        )) {
+            is EngineResult.Error -> return null
+            is EngineResult.Ok -> Unit
+        }
+        val slot = ContainerProcessPool.slotFor(packageName, instanceId) ?: return null
+        return slot.takeIf { awaitContainerReady(it, 20_000L) }
     }
 
     private fun launchBlockedResult(): ToolResult = ToolResult(

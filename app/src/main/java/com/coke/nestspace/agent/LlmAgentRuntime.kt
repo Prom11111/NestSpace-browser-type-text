@@ -526,7 +526,10 @@ class LlmAgentRuntime(
             "当前本地时间：$now。\n" +
                 "当前虚拟空间 ID：$VIRTUAL_SPACE。\n" +
                 "浏览器和虚拟 App 都默认用无头模式（browser_open 不传 headless、space_launch 不传 headless 即为无头），" +
-                "不要打开可见窗口，除非用户明确要求。browser_open 默认新建标签页；可以用 browser_tabs 查看所有标签，" +
+                "不要打开可见窗口，除非用户明确要求。操作虚拟 App 前先检查它是否仍在运行" +
+                "（space_running 或直接 ui_observe）；已运行就直接用 ui_*，不要重复 space_launch。" +
+                "无头任务在多次读取之间保持 App 运行，只有整个任务结束或用户要求时才 space_stop。" +
+                "browser_open 默认新建标签页；可以用 browser_tabs 查看所有标签，" +
                 "并给 browser_navigate/browser_click/browser_read_text 等工具传 tab_id 同时操作多个网页。" +
                 "下载文件用 browser_download；需要设备信息时用 system_status。\n" +
                 "遇到登录、验证码、支付、权限授权，或只有用户能做的选择时，调用 hand_to_user " +
@@ -547,7 +550,11 @@ class LlmAgentRuntime(
                 "Current virtual space ID: $VIRTUAL_SPACE.\n" +
                 "The browser and virtual apps are headless by default (browser_open and " +
                 "space_launch without headless), so do not open a visible window unless " +
-                "the user explicitly asks. browser_open creates a new tab by default; use " +
+                "the user explicitly asks. Before operating a virtual app, check whether it is " +
+                "already running (space_running or ui_observe); if it is, continue with ui_* " +
+                "and do not call space_launch again. Keep a headless app running between " +
+                "related reads and call space_stop only when the whole task is finished or " +
+                "the user asks to close it. browser_open creates a new tab by default; use " +
                 "browser_tabs to list tabs and pass tab_id to browser_navigate/browser_click/" +
                 "browser_read_text to work with several pages. Use browser_download " +
                 "to download files and system_status for device information.\n" +

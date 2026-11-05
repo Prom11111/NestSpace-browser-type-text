@@ -9,6 +9,7 @@ import com.coke.nestspace.agent.UserGateManager
 import com.coke.nestspace.browser.BrowserDownloader
 import com.coke.nestspace.browser.BrowserSession
 import androidx.core.content.FileProvider
+import com.coke.nestspace.control.LivePreview
 import com.coke.nestspace.i18n.AppLanguage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -55,6 +56,22 @@ internal object BrowserTools {
 
     private fun tabsJson(): JSONArray = JSONArray().apply {
         BrowserSession.snapshot().forEach { put(tabJson(it)) }
+    }
+
+    /**
+     * Publish the page the assistant is working on so the live preview card
+     * can render a small chrome-less WebView of it.
+     */
+    private fun publishPreview(tabId: String? = null) {
+        val tab = tabById(tabId)
+            ?: BrowserSession.snapshot().firstOrNull { it.active }
+            ?: BrowserSession.snapshot().firstOrNull()
+            ?: return
+        LivePreview.publishBrowser(
+            url = tab.url,
+            title = tab.title,
+            label = tab.title.ifBlank { tab.url }
+        )
     }
 
     private fun noTabResult(args: JSONObject): ToolResult {
@@ -113,6 +130,7 @@ internal object BrowserTools {
             val challenge = withContext(Dispatchers.Main) {
                 BrowserSession.webView(opened)?.let { detectChallenge(it) }
             }
+            publishPreview(opened)
             ToolResult(
                 true,
                 JSONObject()
@@ -131,8 +149,9 @@ internal object BrowserTools {
         ToolSpec(
             name = "browser_hand_to_user",
             description = "Hand a browser tab to the user when a page shows a captcha, human " +
-                "verification, login wall, or blocked/anti-bot page. Opens the visible browser on " +
-                "that tab, waits while the user completes the step, then returns the page state. " +
+                "verification, login wall, or blocked/anti-bot page. Asks the user to confirm, " +
+                "then opens the visible browser on that tab, waits while the user completes the " +
+                "step, then returns the page state. " +
                 "Page tools add needs_user/user_reason when they detect such a page; call this " +
                 "instead of trying to bypass the check. Call browser_read_text afterwards to verify.",
             inputSchema = toolSchema(
@@ -243,6 +262,7 @@ internal object BrowserTools {
             val url = BrowserSession.normalizeInput(args.optString("url"))
             val tabId = tabIdArg(args)
             val ok = withContext(Dispatchers.Main) { BrowserSession.navigate(url, tabId) }
+            if (ok) publishPreview(tabId)
             ToolResult(
                 ok,
                 if (ok) {
@@ -264,6 +284,7 @@ internal object BrowserTools {
             inputSchema = toolSchema("tab_id" to "string")
         ) { args, _ ->
             val tab = currentTab(args) ?: return@ToolSpec noTabResult(args)
+            publishPreview(tab.id)
             ToolResult(
                 true,
                 JSONObject()
@@ -281,6 +302,7 @@ internal object BrowserTools {
             description = "List all open browser tabs with their tab_id, URL, title and state.",
             inputSchema = toolSchema()
         ) { _, _ ->
+            publishPreview()
             ToolResult(
                 true,
                 JSONObject()
@@ -307,6 +329,7 @@ internal object BrowserTools {
                 false, "tab not found: $id", errorCode = "BROWSER_TAB_NOT_FOUND"
             )
             val tab = tabById(id)
+            publishPreview(id)
             ToolResult(
                 true,
                 JSONObject()
@@ -330,6 +353,13 @@ internal object BrowserTools {
             if (!ok) return@ToolSpec ToolResult(
                 false, "tab not found: $id", errorCode = "BROWSER_TAB_NOT_FOUND"
             )
+            if (BrowserSession.tabCount() == 0) {
+                if (LivePreview.frame.value?.kind == LivePreview.KIND_BROWSER) {
+                    LivePreview.clear()
+                }
+            } else {
+                publishPreview()
+            }
             ToolResult(
                 true,
                 JSONObject()
@@ -346,6 +376,7 @@ internal object BrowserTools {
         ) { args, _ ->
             val id = tabIdArg(args)
             val ok = withContext(Dispatchers.Main) { BrowserSession.back(id) }
+            if (ok) publishPreview(id)
             ToolResult(
                 ok,
                 if (ok) "browser went back" else "browser cannot go back",
@@ -360,6 +391,7 @@ internal object BrowserTools {
         ) { args, _ ->
             val id = tabIdArg(args)
             val ok = withContext(Dispatchers.Main) { BrowserSession.forward(id) }
+            if (ok) publishPreview(id)
             ToolResult(
                 ok,
                 if (ok) "browser went forward" else "browser cannot go forward",
@@ -374,6 +406,7 @@ internal object BrowserTools {
         ) { args, _ ->
             val id = tabIdArg(args)
             val ok = withContext(Dispatchers.Main) { BrowserSession.reload(id) }
+            if (ok) publishPreview(id)
             ToolResult(
                 ok,
                 if (ok) "browser reloaded" else "browser is not open",
@@ -422,6 +455,7 @@ internal object BrowserTools {
                 val raw = evaluate(webView, script)
                 val links = runCatching { JSONArray(raw) }.getOrElse { JSONArray() }
                 val challenge = detectChallenge(webView)
+                publishPreview(id)
                 ToolResult(
                     true,
                     JSONObject()
@@ -495,6 +529,7 @@ internal object BrowserTools {
                 val clicked = runCatching { JSONObject(raw) }
                     .getOrDefault(JSONObject().put("clicked", false))
                 clicked.put("tab_id", id ?: BrowserSession.activeTabId())
+                if (clicked.optBoolean("clicked", false)) publishPreview(id)
                 ToolResult(
                     clicked.optBoolean("clicked", false),
                     clicked.toString(),
@@ -698,6 +733,7 @@ internal object BrowserTools {
                 val text = readText(webView)
                 val limit = args.optInt("max_chars", 20_000).coerceIn(500, 100_000)
                 val challenge = detectChallenge(webView)
+                publishPreview(id)
                 ToolResult(
                     true,
                     JSONObject()

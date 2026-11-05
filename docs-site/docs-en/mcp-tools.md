@@ -10,16 +10,17 @@ NestSpace includes a built-in Streamable HTTP MCP Server that provides the same 
 | --- | --- |
 | `space_list` / `space_list_apps` | List spaces and virtual apps |
 | `space_list_installed` | List installed virtual apps, instances, signatures, and native status |
+| `space_running` | List running virtual apps, instances, and slots; check before operating and use `ui_*` directly when already running |
 | `space_install_apk` | Install an APK; `apk_uri`, with `split_uris` for split installs |
-| `space_launch` | Launch an app. Defaults to `virtual-1`; pass `space_id=system` for system apps; optional `instance_id`, `headless=true` |
-| `space_multi_open` | Create a new instance and launch it |
+| `space_launch` | Launch an app. Defaults to `virtual-1` and runs headless; a running instance is reused instead of reopened. Pass `space_id=system` for system apps |
+| `space_multi_open` | Create a new instance and launch it, headless by default |
 | `space_uninstall` | Delete an app and all of its instance data |
 | `space_stop` | Close the current container UI and return to the desktop |
 | `space_permissions` | `list` / `grant` / `revoke` permissions inside the container |
 | `schedule_task` | Create and manage scheduled tasks |
 | `replay_*` | Replay recorded runs |
 
-Setting `headless=true` on `space_launch` makes the virtual app run in the background without taking up the foreground; it requires the BAL exemption provided by the overlay permission.
+`space_launch` and `space_multi_open` are headless by default; only an explicit `headless=false` opens a visible window. This requires the BAL exemption provided by the overlay permission. A headless container keeps a persistent UI-service binding, so later `ui_*` calls can read the same page without reopening the app.
 
 ## UI control
 
@@ -66,9 +67,11 @@ These tools run a fixed set of system commands through `su -c` (`uiautomator`, `
 | `browser_read_text` | Read the visible text of a tab |
 | `browser_download` | Download a URL; when the URL is omitted, wait for a page-triggered download to finish |
 | `browser_upload` | Complete a file selection with a local path or a `content://` URI |
-| `browser_hand_to_user` | When a CAPTCHA, login wall, or anti-bot block appears, switch the tab to the visible browser and hand it to the user; after the user finishes, return the current page state |
+| `browser_hand_to_user` | When a CAPTCHA, login wall, or anti-bot block appears, ask the user to confirm, then switch the tab to the visible browser and open it full screen; after the user finishes, return the current page state |
 
 Downloaded files are written to the system **Download** directory (through MediaStore on Android 10+). The result returns the file name, path, size, and URI, which can be passed directly to `space_install_apk`.
+
+The built-in browser never hands page navigation to the system browser or another external app; external jumps such as `intent://` stay inside the built-in browser.
 
 Configure an HTTP/SOCKS proxy from the gear icon in the upper-right corner of the browser or in **Space settings → Browser proxy**. All tabs and downloads share it (comma-separated bypass rules are supported). The proxy requires Android 10+ and WebView support for `PROXY_OVERRIDE`; proxies that require a username/password are not currently supported.
 

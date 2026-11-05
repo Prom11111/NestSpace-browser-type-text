@@ -517,6 +517,14 @@ object BrowserSession {
                 val uri = request?.url ?: return false
                 val scheme = uri.scheme?.lowercase()
                 if (scheme == "http" || scheme == "https") return false
+                // Pages use intent:// links to force the user into an
+                // external app or the system browser. Stay inside the
+                // built-in browser instead; otherwise a signin redirect can
+                // suddenly cover the screen with Chrome.
+                if (scheme == "intent") return true
+                // Headless tabs driven by the assistant never leave the app
+                // for tel:, market:, zhihu:, and similar schemes.
+                if (!forUi) return true
                 return runCatching {
                     app.startActivity(
                         Intent(Intent.ACTION_VIEW, uri)

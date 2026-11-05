@@ -10,16 +10,17 @@ NestSpace 内置 Streamable HTTP MCP Server，向本地 AI 助手和远程 MCP �
 | --- | --- |
 | `space_list` / `space_list_apps` | 列出空间和虚拟应用 |
 | `space_list_installed` | 列出已安装的虚拟应用、实例、签名和 native 状态 |
+| `space_running` | 列出正在运行的虚拟应用、实例和槽位；操作前先检查，已运行就直接用 `ui_*` |
 | `space_install_apk` | 安装 APK；`apk_uri`，split 安装时附带 `split_uris` |
-| `space_launch` | 启动应用。默认操作 `virtual-1`；系统应用传 `space_id=system`；可选 `instance_id`、`headless=true` |
-| `space_multi_open` | 创建新实例并启动 |
+| `space_launch` | 启动应用。默认操作 `virtual-1`，默认无头；已运行的实例会被复用，不会重新打开。系统应用传 `space_id=system` |
+| `space_multi_open` | 创建新实例并启动，默认无头 |
 | `space_uninstall` | 删除应用及全部实例数据 |
 | `space_stop` | 关闭当前容器界面，回到桌面 |
 | `space_permissions` | `list` / `grant` / `revoke` 容器内权限 |
 | `schedule_task` | 创建和管理定时任务 |
 | `replay_*` | 运行记录回放 |
 
-`space_launch` 的 `headless=true` 会让虚拟应用在后台运行，前台不被占用；需要悬浮窗权限提供的 BAL 豁免。
+`space_launch` 和 `space_multi_open` 默认无头，只有显式传 `headless=false` 才打开可见窗口；需要悬浮窗权限提供的 BAL 豁免。无头容器的 UI 服务会保持长连接，空闲时也能继续用 `ui_*` 读取，不需要重新打开应用。
 
 ## UI 控制
 
@@ -66,9 +67,11 @@ NestSpace 内置 Streamable HTTP MCP Server，向本地 AI 助手和远程 MCP �
 | `browser_read_text` | 读取标签页可见文本 |
 | `browser_download` | 下载 URL；省略 URL 时等待页面触发的下载完成 |
 | `browser_upload` | 用本地路径或 `content://` URI 完成文件选择 |
-| `browser_hand_to_user` | 遇到验证码、登录墙或反爬拦截时，把标签页切到可见浏览器交给用户；用户完成后返回当前页面状态 |
+| `browser_hand_to_user` | 遇到验证码、登录墙或反爬拦截时，先弹窗让用户确认，确认后把标签页切到可见浏览器并全屏打开交给用户；用户完成后返回当前页面状态 |
 
 下载文件写入系统 **Download** 目录（Android 10+ 通过 MediaStore），返回文件名、路径、大小和 URI，可直接交给 `space_install_apk`。
+
+内置浏览器不会把页面导航交给系统浏览器或其他外部 App；页面里的 `intent://` 等外部跳转会留在内置浏览器中。
 
 浏览器右上角齿轮或「空间设置 → 浏览器代理」可配置 HTTP/SOCKS 代理，所有标签页和下载共用（支持逗号分隔的绕过规则）。代理需要 Android 10+ 且 WebView 支持 `PROXY_OVERRIDE`；暂不支持需要用户名/密码的代理。
 

@@ -444,7 +444,14 @@ open class StageAActivity : Activity() {
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
-        super.onRestoreInstanceState(savedInstanceState)
+        // The host window hierarchy is the target's view tree. Restoring it
+        // unmarshals target-only Parcelables (for example AndroidX
+        // DrawerLayout.SavedState) with the host class loader, which throws
+        // BadParcelableException and kills the slot process. Target lifecycle
+        // state is restored separately from TargetStateStore below, so a
+        // failed host hierarchy restore only loses transient view state.
+        runCatching { super.onRestoreInstanceState(savedInstanceState) }
+            .onFailure { Log.w(TAG, "host state restore failed", it) }
         current?.let { callTargetRestoreState(it) }
     }
 

@@ -190,6 +190,16 @@ object ContainerProcessPool {
         }?.value
     }
 
+    data class SlotOwner(val packageName: String, val instanceId: String)
+
+    /** Package/instance assigned to a slot, for recovery when callers omit them. */
+    @Synchronized
+    fun ownerOfSlot(slot: Int): SlotOwner? {
+        val entry = assignments.entries.firstOrNull { it.value == slot } ?: return null
+        if (entry.key.contains('|')) return null
+        return SlotOwner(entry.key.substringBefore('@'), instanceOf(entry.key))
+    }
+
     @Synchronized
     fun acquire(context: Context, key: String, protectedSlot: Int = -1): Int {
         val prefs = prefs(context)
@@ -602,6 +612,13 @@ object ContainerProcessPool {
     }
 
     private fun killSlotProcess(context: Context, slot: Int) {
+        // The main process may hold a keep-alive UI-service binding for a
+        // headless slot. Release it before killing/reusing the process.
+        if (currentSlot() < 0) {
+            runCatching {
+                com.coke.nestspace.control.ContainerUiKeepAlive.unbind(context, slot)
+            }
+        }
         val processName = context.packageName + slotProcessSuffixes[slot]
         // ActivityManager still tracks the manifest process name after the
         // container renames argv[0] to the target package.

@@ -92,6 +92,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -128,12 +129,16 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.viewinterop.AndroidView
+import android.webkit.WebView
+import android.widget.FrameLayout
 import com.coke.nestspace.R
 import com.coke.nestspace.agent.AssistantBridge
 import com.coke.nestspace.agent.AssistantConversation
 import com.coke.nestspace.agent.ChildRunRegistry
 import com.coke.nestspace.agent.RunEvent
 import com.coke.nestspace.assistant.FloatingDotSettings
+import com.coke.nestspace.browser.BrowserSession
 import com.coke.nestspace.container.ContainerProcessPool
 import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.control.LivePreview
@@ -245,9 +250,9 @@ internal fun AgentScreen(
         }
     }
 
-    LaunchedEffect(liveFrame?.slot, busy) {
+    LaunchedEffect(liveFrame?.slot, liveFrame?.kind, busy) {
         val frame = liveFrame ?: return@LaunchedEffect
-        if (!busy) return@LaunchedEffect
+        if (!busy || frame.kind != LivePreview.KIND_CONTAINER) return@LaunchedEffect
         val slot = frame.slot
         while (isActive) {
             delay(1_500)
@@ -427,14 +432,25 @@ internal fun AgentScreen(
                 }
             }
             if (busy && liveFrame != null) {
-                LivePreviewCard(
-                    frame = liveFrame!!,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 12.dp, bottom = 10.dp),
-                    onOpen = { showLivePreview = true },
-                    onClose = { LivePreview.clear() }
-                )
+                val frame = liveFrame!!
+                val modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 10.dp)
+                if (frame.kind == LivePreview.KIND_BROWSER) {
+                    LivePreviewBrowserCard(
+                        frame = frame,
+                        modifier = modifier,
+                        onOpen = { showLivePreview = true },
+                        onClose = { LivePreview.clear() }
+                    )
+                } else {
+                    LivePreviewCard(
+                        frame = frame,
+                        modifier = modifier,
+                        onOpen = { showLivePreview = true },
+                        onClose = { LivePreview.clear() }
+                    )
+                }
             }
         }
 
@@ -2404,7 +2420,133 @@ private fun LivePreviewCard(
 }
 
 @Composable
+private fun LivePreviewBrowserCard(
+    frame: LivePreview.Frame,
+    modifier: Modifier,
+    onOpen: () -> Unit,
+    onClose: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .width(112.dp)
+            .height(196.dp)
+            .clickable(onClick = onOpen),
+        shape = RoundedCornerShape(12.dp),
+        color = Color.White,
+        shadowElevation = 7.dp
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            BrowserPreview(
+                url = frame.url,
+                modifier = Modifier.fillMaxSize()
+            )
+            // The WebView consumes touches; keep the card clickable and leave
+            // the page itself non-interactive in the miniature preview.
+            Box(Modifier.matchParentSize().clickable(onClick = onOpen))
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.52f))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    AppLanguage.tr("浏览器", "BROWSER"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF6EE7B7),
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    frame.label.ifBlank { frame.url },
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(2.dp)
+                    .size(26.dp)
+                    .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+            ) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = AppLanguage.tr("关闭预览", "Close preview"),
+                    tint = Color.White,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowserPreview(url: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val metrics = context.resources.displayMetrics
+    val hostWidth = metrics.widthPixels.coerceAtLeast(1)
+    val hostHeight = metrics.heightPixels.coerceAtLeast(1)
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    AndroidView(
+        modifier = modifier.clipToBounds(),
+        factory = { ctx ->
+            FrameLayout(ctx).apply {
+                clipChildren = true
+                val web = WebView(ctx).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.userAgentString = BrowserSession.MOBILE_USER_AGENT
+                    settings.mediaPlaybackRequiresUserGesture = true
+                    settings.setSupportZoom(false)
+                    settings.builtInZoomControls = false
+                    settings.displayZoomControls = false
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = false
+                    isVerticalScrollBarEnabled = false
+                    isHorizontalScrollBarEnabled = false
+                    isClickable = false
+                    isFocusable = false
+                    setBackgroundColor(android.graphics.Color.WHITE)
+                    pivotX = 0f
+                    pivotY = 0f
+                    webView = this
+                    loadUrl(url)
+                }
+                addView(web, FrameLayout.LayoutParams(hostWidth, hostHeight))
+                // Render the page at the host display size, then scale the
+                // whole WebView down into the preview slot. This keeps the
+                // page layout identical to what the host browser sees.
+                addOnLayoutChangeListener { view, left, top, right, bottom, _, _, _, _ ->
+                    val width = (right - left).coerceAtLeast(1)
+                    val height = (bottom - top).coerceAtLeast(1)
+                    web.scaleX = width.toFloat() / hostWidth
+                    web.scaleY = height.toFloat() / hostHeight
+                }
+            }
+        },
+        update = { frame ->
+            val web = webView ?: (frame.getChildAt(0) as? WebView)
+            if (web != null && url.isNotBlank() && web.url != url) web.loadUrl(url)
+        }
+    )
+    DisposableEffect(Unit) {
+        onDispose {
+            webView?.stopLoading()
+            webView?.destroy()
+            webView = null
+        }
+    }
+}
+
+@Composable
 private fun LivePreviewDialog(frame: LivePreview.Frame, onDismiss: () -> Unit) {
+    val isBrowser = frame.kind == LivePreview.KIND_BROWSER
     val bitmap = rememberLiveBitmap(frame.base64)
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -2417,7 +2559,14 @@ private fun LivePreviewDialog(frame: LivePreview.Frame, onDismiss: () -> Unit) {
                     .fillMaxWidth()
                     .heightIn(max = 620.dp)
             ) {
-                if (bitmap != null) {
+                if (isBrowser) {
+                    BrowserPreview(
+                        url = frame.url,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(560.dp)
+                    )
+                } else if (bitmap != null) {
                     Image(
                         bitmap = bitmap,
                         contentDescription = AppLanguage.tr("实时界面预览", "Live screen preview"),
@@ -2442,13 +2591,19 @@ private fun LivePreviewDialog(frame: LivePreview.Frame, onDismiss: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        AppLanguage.tr("实时界面预览", "Live screen preview"),
+                        if (isBrowser) {
+                            AppLanguage.tr("浏览器预览", "Browser preview")
+                        } else {
+                            AppLanguage.tr("实时界面预览", "Live screen preview")
+                        },
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.labelMedium,
                         color = Color.White
                     )
                     Text(
-                        frame.label.ifBlank { AppLanguage.tr("容器", "Container") },
+                        frame.label.ifBlank {
+                            if (isBrowser) frame.url else AppLanguage.tr("容器", "Container")
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.7f)
                     )

@@ -20,6 +20,7 @@ import com.coke.nestspace.container.loader.NativeLibs
 import com.coke.nestspace.container.shortcut.DynamicShortcutStore
 import com.coke.nestspace.container.StageAActivity
 import com.coke.nestspace.container.vpm.ContainerPermissionStore
+import com.coke.nestspace.control.ContainerUiKeepAlive
 import com.coke.nestspace.data.AppInfo
 import com.coke.nestspace.data.AppShortcut
 import com.coke.nestspace.data.LaunchInfo
@@ -254,6 +255,11 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         withContext(Dispatchers.IO) {
             // StageAActivity state is per slot process; this engine runs in the
             // main process. Close every assigned process for the package instead.
+            apps[key(spaceId, packageName)]?.instances?.forEach { instance ->
+                ContainerProcessPool.slotFor(packageName, instance.id)?.let { slot ->
+                    ContainerUiKeepAlive.unbind(context, slot)
+                }
+            }
             ContainerProcessPool.closePackage(context, packageName)
             StageAActivity.finishIfShowing(packageName)
             EngineResult.Ok(Unit)
@@ -288,6 +294,9 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             // Kill main and subprocess sessions before deleting APK/data so a
             // live target cannot keep running against removed files.
             app.instances.forEach { instance ->
+                ContainerProcessPool.slotFor(app.packageName, instance.id)?.let { slot ->
+                    ContainerUiKeepAlive.unbind(context, slot)
+                }
                 ContainerProcessPool.forgetPrefix(
                     context,
                     "${app.packageName}@${instance.id}"
@@ -629,6 +638,9 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             )
         }
         ContainerProcessPool.markLaunched(context, sessionId)
+        // Headless keep-alive is established by the agent tools once the UI
+        // service is reachable, so a failed launch cannot start a service-only
+        // slot process.
         // Consume the marker written by the previous process death (native
         // crash / System.exit) or by TargetCrashGuard.
         val crash = ContainerCrashStore.consume(context, app.packageName, instance.id)

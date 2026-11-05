@@ -117,24 +117,41 @@ object UserGateManager {
         if (!gate.tryLock()) return false
         try {
             if (_confirmation.value != null || _takeover.value != null) return false
-            val id = ids.getAndIncrement()
-            val deferred = CompletableDeferred<Boolean>()
-            confirmationDeferred = deferred
-            _confirmation.value = Confirmation(
-                id = id,
-                title = title,
-                detail = detail,
-                confirmLabel = confirmLabel,
-                dismissLabel = dismissLabel
-            )
-            notifyConfirmation(id, title, detail, confirmLabel, dismissLabel)
-            return withTimeoutOrNull(timeoutMs) { deferred.await() } ?: false
+            return awaitConfirmation(title, detail, confirmLabel, dismissLabel, timeoutMs)
         } finally {
-            val current = _confirmation.value
+            gate.unlock()
+        }
+    }
+
+    /**
+     * Publishes a confirmation and waits for the answer. The caller must hold
+     * [gate]; cleanup here keeps a cancelled tool call from leaving a stale
+     * dialog or notification behind.
+     */
+    private suspend fun awaitConfirmation(
+        title: String,
+        detail: String,
+        confirmLabel: String,
+        dismissLabel: String,
+        timeoutMs: Long
+    ): Boolean {
+        val id = ids.getAndIncrement()
+        val deferred = CompletableDeferred<Boolean>()
+        confirmationDeferred = deferred
+        _confirmation.value = Confirmation(
+            id = id,
+            title = title,
+            detail = detail,
+            confirmLabel = confirmLabel,
+            dismissLabel = dismissLabel
+        )
+        notifyConfirmation(id, title, detail, confirmLabel, dismissLabel)
+        return try {
+            withTimeoutOrNull(timeoutMs) { deferred.await() } ?: false
+        } finally {
             _confirmation.value = null
             confirmationDeferred = null
-            if (current != null) cancel(CONFIRM_NOTIFICATION)
-            gate.unlock()
+            cancel(CONFIRM_NOTIFICATION)
         }
     }
 
@@ -166,6 +183,7 @@ object UserGateManager {
         target: TakeoverTarget = TakeoverTarget.CONTAINER,
         tabId: String? = null,
         url: String? = null,
+        confirmFirst: Boolean = true,
         timeoutMs: Long = TAKEOVER_TIMEOUT_MS,
         bringToFront: suspend () -> Boolean
     ): TakeoverResult {
@@ -173,6 +191,22 @@ object UserGateManager {
         try {
             if (_confirmation.value != null || _takeover.value != null) {
                 return TakeoverResult.CANCELLED
+            }
+            // Do not yank the user into a full-screen browser/app without
+            // warning: ask first, and only then take over the screen.
+            if (confirmFirst) {
+                val approved = awaitConfirmation(
+                    title = title,
+                    detail = AppLanguage.tr(
+                        "确认后将打开全屏页面，请你在页面中完成这一步。\n$detail",
+                        "The full-screen page will open after you confirm. " +
+                            "Please complete this step there.\n$detail"
+                    ),
+                    confirmLabel = AppLanguage.tr("打开全屏", "Open full screen"),
+                    dismissLabel = AppLanguage.tr("跳过", "Skip"),
+                    timeoutMs = CONFIRM_TIMEOUT_MS
+                )
+                if (!approved) return TakeoverResult.SKIPPED
             }
             if (!bringToFront()) return TakeoverResult.CANCELLED
             val id = ids.getAndIncrement()

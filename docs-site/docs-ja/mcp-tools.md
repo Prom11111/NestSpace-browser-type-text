@@ -10,16 +10,17 @@ NestSpace には Streamable HTTP MCP Server が内蔵されており、ローカ
 | --- | --- |
 | `space_list` / `space_list_apps` | スペースと仮想アプリを一覧表示 |
 | `space_list_installed` | インストール済みの仮想アプリ、インスタンス、署名、ネイティブ状態を一覧表示 |
+| `space_running` | 実行中の仮想アプリ、インスタンス、スロットを一覧表示。操作前に確認し、実行中なら `ui_*` を直接使う |
 | `space_install_apk` | APK をインストール。`apk_uri`、split インストール時は `split_uris` を付加 |
-| `space_launch` | アプリを起動。デフォルトでは `virtual-1` を操作。システムアプリの場合は `space_id=system` を渡す。`instance_id`、`headless=true` は任意 |
-| `space_multi_open` | 新しいインスタンスを作成して起動 |
+| `space_launch` | アプリを起動。デフォルトでは `virtual-1` を操作し、ヘッドレスで起動。実行中のインスタンスは再利用され、再オープンしません。システムアプリの場合は `space_id=system` を渡す |
+| `space_multi_open` | 新しいインスタンスを作成して起動。デフォルトはヘッドレス |
 | `space_uninstall` | アプリとすべてのインスタンスデータを削除 |
 | `space_stop` | 現在のコンテナ画面を閉じ、デスクトップに戻る |
 | `space_permissions` | `list` / `grant` / `revoke` でコンテナ内権限を操作 |
 | `schedule_task` | スケジュールタスクの作成と管理 |
 | `replay_*` | 実行記録のリプレイ |
 
-`space_launch` の `headless=true` は、仮想アプリをバックグラウンドで実行し、フォアグラウンドを占有しません。オーバーレイ権限による BAL の例外許可が必要です。
+`space_launch` と `space_multi_open` はデフォルトでヘッドレスで、明示的に `headless=false` を渡した場合のみ可視ウィンドウを開きます。オーバーレイ権限による BAL の例外許可が必要です。ヘッドレスコンテナは UI サービスへの接続を保持するため、アプリを再オープンしなくても後続の `ui_*` で同じページを読み取れます。
 
 ## UI 制御
 
@@ -66,9 +67,11 @@ NestSpace には Streamable HTTP MCP Server が内蔵されており、ローカ
 | `browser_read_text` | タブの表示テキストを読み取る |
 | `browser_download` | URL をダウンロード。URL を省略した場合は、ページから発生したダウンロードの完了を待つ |
 | `browser_upload` | ローカルパスまたは `content://` URI でファイル選択を完了 |
-| `browser_hand_to_user` | 認証コード、ログインウォール、ボット対策のブロックに遭遇したとき、タブを表示可能なブラウザに切り替えてユーザーに引き継ぐ。ユーザーが完了すると現在のページ状態を返す |
+| `browser_hand_to_user` | 認証コード、ログインウォール、ボット対策のブロックに遭遇したとき、まず確認ダイアログを表示し、ユーザーが承認したらタブを表示可能なブラウザに切り替えて全画面で引き継ぐ。ユーザーが完了すると現在のページ状態を返す |
 
 ダウンロードしたファイルはシステムの **Download** ディレクトリに書き込まれ（Android 10 以降は MediaStore 経由）、ファイル名、パス、サイズ、URI を返します。そのまま `space_install_apk` に渡すことができます。
+
+内蔵ブラウザはページ遷移をシステムブラウザや他の外部アプリに渡しません。`intent://` などの外部ジャンプは内蔵ブラウザ内に留まります。
 
 ブラウザ右上の歯車、または「空间设置」（スペース設定）→「浏览器代理」（ブラウザプロキシ）で HTTP/SOCKS プロキシを設定でき、すべてのタブとダウンロードが共用します（カンマ区切りのバイパスルールに対応）。プロキシには Android 10 以降かつ WebView が `PROXY_OVERRIDE` をサポートしている必要があります。ユーザー名／パスワードが必要なプロキシには現在対応していません。
 

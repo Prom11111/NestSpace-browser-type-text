@@ -40,7 +40,7 @@ object ContainerUiClient {
 
     private const val BIND_TIMEOUT_MS = 5_000L
 
-    private val serviceClasses = arrayOf(
+    internal val serviceClasses = arrayOf(
         ContainerUiService1::class.java,
         ContainerUiService2::class.java,
         ContainerUiService3::class.java,
