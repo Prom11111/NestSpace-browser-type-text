@@ -217,6 +217,42 @@ open class StageAActivity : Activity() {
         }.onFailure { Log.w(TAG, "private target token failed", it) }
     }
 
+    /**
+     * The synthetic target window does not receive the real decor insets, so
+     * an Activity with a framework ActionBar can start its content at y=0
+     * underneath the title bar. Inset the content view below the action bar
+     * (idempotently) so the first rows are not hidden.
+     */
+    private fun applyTargetActionBarInset(target: Activity) {
+        val actionBar = target.actionBar ?: return
+        if (!actionBar.isShowing) return
+        var barHeight = actionBar.height
+        if (barHeight <= 0) {
+            val value = android.util.TypedValue()
+            val found = target.theme.resolveAttribute(
+                android.R.attr.actionBarSize,
+                value,
+                true
+            )
+            if (found) {
+                barHeight = android.util.TypedValue.complexToDimensionPixelSize(
+                    value.data,
+                    target.resources.displayMetrics
+                )
+            }
+        }
+        if (barHeight <= 0) return
+        val content = target.findViewById<View>(android.R.id.content) ?: return
+        if (content.paddingTop < barHeight) {
+            content.setPadding(
+                content.paddingLeft,
+                barHeight,
+                content.paddingRight,
+                content.paddingBottom
+            )
+        }
+    }
+
     private fun addMirrorSnapshotBackground(parent: FrameLayout) {
         val bitmap = mirrorSnapshot ?: return
         val image = ImageView(this).apply {
@@ -353,6 +389,7 @@ open class StageAActivity : Activity() {
         targetResumed = true
         dispatchTargetApplicationLifecycle("dispatchActivityResumed", child)
         attachTarget(child)
+        applyTargetActionBarInset(child)
         giveTargetPrivateToken(child)
         Log.d(TAG, "mirror child opened ${child.javaClass.name} depth=${mirrorBackStack.size}")
         return true
@@ -1577,6 +1614,7 @@ open class StageAActivity : Activity() {
                 dispatchTargetApplicationLifecycle("dispatchActivityResumed", target)
                 attachTarget(target)
             }
+            applyTargetActionBarInset(target)
             if (mirrorMode) giveTargetPrivateToken(target)
         } catch (t: Throwable) {
             showError(
