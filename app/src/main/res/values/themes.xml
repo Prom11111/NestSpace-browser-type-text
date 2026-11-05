@@ -15,6 +15,13 @@
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:backgroundDimEnabled">false</item>
+        <!-- Android 12+ always creates a system splash window for a new
+             Activity, even with windowDisablePreview. Keep it transparent so
+             a mirror child host cannot flash a full-screen splash. -->
+        <item name="android:windowSplashScreenBackground">@android:color/transparent</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@null</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
     </style>
 
     <style name="Theme.Virtual.Assistant" parent="android:Theme.Material.NoActionBar">

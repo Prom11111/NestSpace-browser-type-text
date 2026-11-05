@@ -457,13 +457,21 @@ class ContainerSession private constructor(
                 }
             }
         return try {
+            if (mirrorDisplayId >= 0) host.captureMirrorSnapshotForTransition()
             withHostIdentity(host) {
-                // A mirror child host intentionally stays in the existing
-                // hidden container task. Adding NEW_TASK/MULTIPLE_TASK here
-                // makes the system bring a full-screen black task forward on
-                // every target Activity transition.
+                // Starting an Activity from a background host can move the
+                // StageA task forward for a frame. Launch behind for mirror
+                // sessions; the host window itself is desktop-colored so any
+                // residual task transition is not black.
+                val options = if (mirrorDisplayId >= 0) {
+                    android.app.ActivityOptions.makeTaskLaunchBehind().toBundle()
+                } else {
+                    null
+                }
                 if (requestCode >= 0) {
-                    host.startActivityForResult(containerIntent, requestCode)
+                    host.startActivityForResult(containerIntent, requestCode, options)
+                } else if (options != null) {
+                    host.startActivity(containerIntent, options)
                 } else {
                     host.startActivity(containerIntent)
                 }

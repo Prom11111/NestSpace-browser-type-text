@@ -12,15 +12,19 @@ import android.app.PictureInPictureParams
 import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import android.util.Rational
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import com.coke.nestspace.MainActivity
 import com.coke.nestspace.R
@@ -58,6 +62,15 @@ open class StageAActivity : Activity() {
 
         @Volatile
         private var active: StageAActivity? = null
+
+        /**
+         * Last frame of the previous target page. New mirror Presentations
+         * show it behind the incoming target while that page is still
+         * transparent/loading, so an Activity switch cannot expose the black
+         * virtual-display background.
+         */
+        @Volatile
+        private var mirrorSnapshot: Bitmap? = null
 
         /**
          * The target Activity currently hosted, for in-process control tools.
@@ -125,6 +138,54 @@ open class StageAActivity : Activity() {
         }.getOrElse { false }
     }
 
+    /**
+     * Capture the current page before a child target Activity replaces it.
+     * The next mirror host paints this bitmap under its own target view, so
+     * transparent loading frames do not expose the virtual display's black
+     * background.
+     */
+    fun captureMirrorSnapshotForTransition() {
+        if (!mirrorMode || isFinishing || isDestroyed) return
+        if (Looper.myLooper() != Looper.getMainLooper()) return
+        val decor = current?.window?.decorView ?: return
+        val width = decor.width
+        val height = decor.height
+        if (width <= 0 || height <= 0) return
+        val bitmapWidth = (width / 2).coerceAtLeast(1)
+        val bitmapHeight = (height / 2).coerceAtLeast(1)
+        runCatching {
+            val bitmap = Bitmap.createBitmap(
+                bitmapWidth,
+                bitmapHeight,
+                Bitmap.Config.ARGB_8888
+            )
+            val canvas = Canvas(bitmap)
+            canvas.scale(
+                bitmapWidth.toFloat() / width,
+                bitmapHeight.toFloat() / height
+            )
+            decor.draw(canvas)
+            mirrorSnapshot = bitmap
+        }.onFailure {
+            Log.w(TAG, "mirror snapshot failed", it)
+        }
+    }
+
+    private fun addMirrorSnapshotBackground(parent: FrameLayout) {
+        val bitmap = mirrorSnapshot ?: return
+        val image = ImageView(this).apply {
+            setImageBitmap(bitmap)
+            scaleType = ImageView.ScaleType.FIT_XY
+        }
+        parent.addView(
+            image,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+    }
+
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         headless = intent.getBooleanExtra(EXTRA_HEADLESS, false)
@@ -170,13 +231,28 @@ open class StageAActivity : Activity() {
         }
         if (mirrorMode) {
             // The real target view lives on the full-resolution mirror
-            // display. This host window only keeps the Activity token alive.
-            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            // display. Keep this host window full-screen but matching the
+            // assistant background: if the system moves the host task to the
+            // front for one frame during a target Activity transition, the
+            // flash is a light desktop frame instead of a black one.
+            val taskBackground = Color.rgb(246, 247, 251)
+            window.setBackgroundDrawable(
+                android.graphics.drawable.ColorDrawable(taskBackground)
+            )
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             window.addFlags(
                 android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             )
-            frame.setBackgroundColor(Color.TRANSPARENT)
+            frame.setBackgroundColor(taskBackground)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                setRecentsScreenshotEnabled(false)
+            }
+            setTaskDescription(
+                ActivityManager.TaskDescription.Builder()
+                    .setBackgroundColor(taskBackground)
+                    .build()
+            )
         } else if (headless) {
             val metrics = DisplayMetrics()
             @Suppress("DEPRECATION")
@@ -214,17 +290,10 @@ open class StageAActivity : Activity() {
             showLaunchPlaceholder(frame)
         }
         setContentView(frame)
-        if (mirrorMode) {
-            val parameters = window.attributes
-            parameters.width = 1
-            parameters.height = 1
-            window.attributes = parameters
-            window.setGravity(Gravity.TOP or Gravity.START)
-        }
         registerPredictiveBack()
         if (mirrorMode) {
-            // Move the token-only host task behind the assistant immediately,
-            // before the target starts and before this window can draw black.
+            // Move the host task behind the assistant immediately, before the
+            // target starts and before any transition can show this window.
             frame.post {
                 if (mirrorMode && !isFinishing && !isDestroyed) {
                     @Suppress("DEPRECATION")
@@ -314,6 +383,7 @@ open class StageAActivity : Activity() {
                 window.decorView.setBackgroundColor(Color.TRANSPARENT)
             }
             val content = FrameLayout(presentation.context)
+            addMirrorSnapshotBackground(content)
             presentation.setContentView(content)
             presentation.show()
             mirrorPresentation = presentation
@@ -349,12 +419,9 @@ open class StageAActivity : Activity() {
         mirrorDisplayId = currentId
         mirrorMode = setupMirrorPresentation(currentId)
         if (!mirrorMode) return
-        val parameters = window.attributes
-        parameters.width = 1
-        parameters.height = 1
-        window.attributes = parameters
-        window.setGravity(Gravity.TOP or Gravity.START)
-        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        window.setBackgroundDrawable(
+            android.graphics.drawable.ColorDrawable(Color.rgb(246, 247, 251))
+        )
         window.addFlags(
             android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -521,7 +588,7 @@ open class StageAActivity : Activity() {
                     @Suppress("DEPRECATION")
                     moveTaskToBack(true)
                 }
-            }, 300)
+            }, 50)
         }
         if (mirrorRequested) {
             root?.postDelayed({ refreshMirrorDisplay() }, 900)
@@ -1141,6 +1208,7 @@ open class StageAActivity : Activity() {
             targetStopped = false
             val frame = mirrorRoot ?: root ?: return
             frame.removeAllViews()
+            if (mirrorMode) addMirrorSnapshotBackground(frame)
             frame.addView(
                 target.window.decorView,
                 FrameLayout.LayoutParams(
