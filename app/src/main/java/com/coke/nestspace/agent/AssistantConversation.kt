@@ -386,11 +386,9 @@ object AssistantConversation {
                     usedSkills.forEach { store.recordOutcome(it, success) }
                 }
             }
-            // Keep the small mirror on screen after a successful run so the
-            // user can watch and operate the app (back, handoff) afterwards.
-            if (outcome == RunOutcome.FAILED || outcome == RunOutcome.CANCELLED) {
-                HeadlessMirrorWindow.hide()
-            }
+            // The floating preview belongs to the active run. Close it when
+            // the run ends; the headless target stays alive for follow-ups.
+            HeadlessMirrorWindow.hide()
             advanceAfterRun(app, onFinished, outcome, answer)
         }
     }
