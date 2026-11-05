@@ -55,6 +55,10 @@ object ContainerUiController {
         viewsById.entries.removeAll { it.value.get() == null }
         val nodes = mutableListOf<UiNode>()
         visibleWindowRoots(target, decor).forEach { root ->
+            // Dialog windows are real windows and may not have gone through a
+            // traversal while the host task is in the background. Lay them
+            // out so their nodes have usable bounds.
+            ensureLaidOut(root)
             collect(root, nodes, origin, 0)
         }
         UiSnapshot(
@@ -147,6 +151,7 @@ object ContainerUiController {
         ensureLaidOut(decor)
         val roots = visibleWindowRoots(target, decor)
         val root = findRoot(view, roots) ?: decor
+        ensureLaidOut(root)
         val origin = IntArray(2).also { root.getLocationOnScreen(it) }
         val location = IntArray(2).also { view.getLocationOnScreen(it) }
         dispatchTap(
@@ -162,6 +167,7 @@ object ContainerUiController {
         ensureLaidOut(decor)
         val roots = visibleWindowRoots(target, decor)
         val root = roots.lastOrNull { containsPoint(it, x, y) } ?: decor
+        ensureLaidOut(root)
         val origin = IntArray(2).also { root.getLocationOnScreen(it) }
         dispatchTap(root, (x - origin[0]).toFloat(), (y - origin[1]).toFloat())
     }
