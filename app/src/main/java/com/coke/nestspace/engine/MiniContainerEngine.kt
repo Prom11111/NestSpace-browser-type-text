@@ -547,6 +547,10 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         requestedIntent: Intent? = null
     ): EngineResult<LaunchInfo> {
         Log.d(TAG, "launchLocked ${app.packageName} $instanceId")
+        if (!headless) {
+            // Opening an app full-screen replaces the floating mirror preview.
+            HeadlessMirrorWindow.hide()
+        }
         val instance = app.instances.firstOrNull { it.id == instanceId }
             ?: return EngineResult.Error("INSTANCE_NOT_FOUND", AppLanguage.tr("找不到实例 $instanceId", "Instance $instanceId not found"))
 
@@ -647,6 +651,12 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                 .getOrNull()
             if (mirrorId != null) {
                 Log.i(TAG, "using mirror display $mirrorId")
+                // Only one target can be visible in the shared mirror display.
+                val previousMirrorSlot = HeadlessMirrorWindow.activeSlot()
+                if (previousMirrorSlot >= 0 && previousMirrorSlot != slot) {
+                    finishPreviousHostTasks(previousMirrorSlot)
+                }
+                HeadlessMirrorWindow.setActiveSlot(slot)
                 intent.putExtra(StageAActivity.EXTRA_MIRROR_DISPLAY_ID, mirrorId)
                 intent.addFlags(
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or

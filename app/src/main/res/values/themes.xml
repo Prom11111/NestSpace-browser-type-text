@@ -25,7 +25,10 @@
     </style>
 
     <style name="Theme.Virtual.Assistant" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/assistant_voice_background</item>
+        <!-- The voice sheet floats over the desktop/app; let the window and
+             Compose gradient blend with what is behind them. -->
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>

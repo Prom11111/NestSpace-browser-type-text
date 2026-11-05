@@ -24,6 +24,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.lang.ref.WeakReference
+import java.util.concurrent.CopyOnWriteArraySet
 
 /**
  * A small on-screen window backed by a full-resolution VirtualDisplay.
@@ -56,6 +57,11 @@ object HeadlessMirrorWindow {
     private var ready: CompletableDeferred<Int?>? = null
     @Volatile
     private var hiding = false
+    @Volatile
+    private var hostResumed = false
+    @Volatile
+    private var activeSlot: Int = -1
+    private val backListeners = CopyOnWriteArraySet<(Boolean) -> Unit>()
 
     fun bind(activity: Activity) {
         hostActivity = WeakReference(activity)
@@ -65,7 +71,47 @@ object HeadlessMirrorWindow {
         if (hostActivity.get() === activity) {
             hide()
             hostActivity = WeakReference(null)
+            hostResumed = false
         }
+    }
+
+    fun onHostResumed(activity: Activity) {
+        if (hostActivity.get() === activity) hostResumed = true
+    }
+
+    fun onHostPaused(activity: Activity) {
+        if (hostActivity.get() === activity) hostResumed = false
+    }
+
+    /**
+     * Remember which container slot is shown in the mirror. The host Activity
+     * runs in a container process behind the assistant, so back pressed while
+     * the assistant is foreground has to be routed to that slot explicitly.
+     */
+    fun setActiveSlot(slot: Int) {
+        activeSlot = slot
+        publishBackEnabled()
+    }
+
+    fun activeSlot(): Int = activeSlot
+
+    fun isBackEnabled(): Boolean = backEnabled()
+
+    /** Notified with true while a live mirror with a known slot is on screen. */
+    fun addBackEnabledListener(listener: (Boolean) -> Unit) {
+        backListeners.add(listener)
+        main.post { listener(backEnabled()) }
+    }
+
+    fun removeBackEnabledListener(listener: (Boolean) -> Unit) {
+        backListeners.remove(listener)
+    }
+
+    private fun backEnabled(): Boolean = activeSlot >= 0 && displayId != INVALID
+
+    private fun publishBackEnabled() {
+        val enabled = backEnabled()
+        main.post { backListeners.forEach { it(enabled) } }
     }
 
     suspend fun awaitDisplay(context: Context): Int? = withContext(Dispatchers.Main) {
@@ -80,6 +126,7 @@ object HeadlessMirrorWindow {
         if (displayId != INVALID) return@withContext displayId
         val id = ready?.let { withTimeoutOrNull(5_000L) { it.await() } }
         if (id == null) {
+            Log.w(TAG, "mirror surface was not ready; falling back")
             hide()
             return@withContext null
         }
@@ -117,6 +164,8 @@ object HeadlessMirrorWindow {
                 virtualDisplay?.release()
                 virtualDisplay = null
                 displayId = INVALID
+                activeSlot = -1
+                publishBackEnabled()
                 surfaceView = null
                 overlay?.let { view ->
                     runCatching { windowManager?.removeView(view) }
@@ -140,7 +189,11 @@ object HeadlessMirrorWindow {
     private fun ensureWindow(context: Context) {
         if (overlay != null) return
         appContext = context.applicationContext
-        val activity = hostActivity.get()
+        // A panel can only receive a Surface while its Activity window is
+        // visible. Launches started from the voice assistant leave MainActivity
+        // stopped, so use an application overlay there instead; a panel would
+        // be attached but never drawn and the mirror would time out into PiP.
+        val activity = hostActivity.get()?.takeIf { hostResumed }
         val host = activity ?: context.applicationContext
         val manager = host.getSystemService(WindowManager::class.java) ?: return
         val metrics = host.resources.displayMetrics
@@ -270,6 +323,7 @@ object HeadlessMirrorWindow {
             installed = runCatching { manager.addView(root, layoutParams) }.isSuccess
         }
         if (!installed) {
+            Log.w(TAG, "mirror window could not be added (panel=${activity != null})")
             overlay = null
             surfaceView = null
             windowManager = null
@@ -278,6 +332,7 @@ object HeadlessMirrorWindow {
             ready = null
             return
         }
+        Log.i(TAG, "mirror window added overlay=${activity == null}")
 
         var downRawX = 0f
         var downRawY = 0f
@@ -336,6 +391,7 @@ object HeadlessMirrorWindow {
         displayId = display.display.displayId
         appContext?.let { writeDisplayFile(it, displayId) }
         Log.i(TAG, "display created id=$displayId surface=${holder.surface}")
+        publishBackEnabled()
         ready?.complete(displayId)
     }
 
@@ -343,7 +399,9 @@ object HeadlessMirrorWindow {
         virtualDisplay?.release()
         virtualDisplay = null
         displayId = INVALID
+        activeSlot = -1
         appContext?.let { clearDisplayFile(it) }
+        publishBackEnabled()
     }
 
     private fun writeDisplayFile(context: Context, id: Int) {

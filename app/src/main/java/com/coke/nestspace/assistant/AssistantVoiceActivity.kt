@@ -4,6 +4,7 @@ import com.coke.nestspace.i18n.AppLanguage
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -51,7 +52,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -89,6 +90,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import com.coke.nestspace.container.HeadlessMirrorWindow
+import com.coke.nestspace.control.ContainerUiClient
+import com.coke.nestspace.ui.FrameSpinner
 import com.coke.nestspace.agent.AssistantConversation
 import com.coke.nestspace.ui.agent.UserGateHost
 import com.coke.nestspace.data.AgentMessage
@@ -162,9 +166,11 @@ class AssistantVoiceActivity : ComponentActivity() {
                         input = it
                     },
                     onSend = { submitInput() },
+                    onStop = { AssistantConversation.cancel() },
                     onToggleListening = { toggleListening() },
                     onToggleInput = { toggleInput() },
                     onNewConversation = { newConversation() },
+                    onBack = { backOrClose() },
                     onClose = { finish() }
                 )
                 UserGateHost()
@@ -245,6 +251,24 @@ class AssistantVoiceActivity : ComponentActivity() {
             prepareLocalSpeech()
         } else {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO)
+        }
+    }
+
+    /**
+     * Back belongs to the mirrored app while its small window is visible;
+     * the assistant sheet is closed with the X instead. Without this, the
+     * host target sits behind this Activity and never sees the back key.
+     */
+    private fun backOrClose() {
+        val slot = HeadlessMirrorWindow.activeSlot()
+        if (slot < 0) {
+            finish()
+            return
+        }
+        lifecycleScope.launch {
+            if (ContainerUiClient.pressBack(this@AssistantVoiceActivity, slot) != true) {
+                finish()
+            }
         }
     }
 
@@ -490,6 +514,14 @@ class AssistantVoiceActivity : ComponentActivity() {
             return
         }
         input = ""
+        // Release the IME after sending. Otherwise the keyboard (or Gboard's
+        // floating toolbar) consumes the first back press before the mirror
+        // can receive it.
+        currentFocus?.let { view ->
+            getSystemService(InputMethodManager::class.java)
+                ?.hideSoftInputFromWindow(view.windowToken, 0)
+            view.clearFocus()
+        }
         status = if (busy) {
             AppLanguage.tr("已加入当前任务…", "Added to the current task…")
         } else {
@@ -600,9 +632,11 @@ private fun AssistantVoiceScreen(
     showInput: Boolean,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
+    onStop: () -> Unit,
     onToggleListening: () -> Unit,
     onToggleInput: () -> Unit,
     onNewConversation: () -> Unit,
+    onBack: () -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -616,7 +650,7 @@ private fun AssistantVoiceScreen(
     }
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
-    BackHandler(onBack = onClose)
+    BackHandler(onBack = onBack)
     LaunchedEffect(visible.size, busy, showInput) {
         val footerIndex = visible.size + if (busy) 1 else 0
         listState.animateScrollToItem(footerIndex)
@@ -631,9 +665,9 @@ private fun AssistantVoiceScreen(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFF090A11),
-                        Color(0xFF141522),
-                        Color(0xFF090A11)
+                        Color(0xCC090A11),
+                        Color(0xD9141522),
+                        Color(0xCC090A11)
                     )
                 )
             )
@@ -687,9 +721,6 @@ private fun AssistantVoiceScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Surface(
-                                modifier = Modifier.clickable {
-                                    AssistantConversation.cancel()
-                                },
                                 color = Color.White.copy(alpha = 0.10f),
                                 shape = RoundedCornerShape(18.dp)
                             ) {
@@ -700,17 +731,14 @@ private fun AssistantVoiceScreen(
                                     ),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    CircularProgressIndicator(
+                                    FrameSpinner(
                                         modifier = Modifier.size(15.dp),
-                                        strokeWidth = 2.dp,
-                                        color = accent
+                                        color = accent,
+                                        strokeWidth = 2.dp
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        AppLanguage.tr(
-                                            "正在思考… · 点按停止",
-                                            "Thinking… · tap to stop"
-                                        ),
+                                        AppLanguage.tr("正在思考…", "Thinking…"),
                                         color = Color.White.copy(alpha = 0.78f),
                                         fontSize = 14.sp
                                     )
@@ -753,10 +781,11 @@ private fun AssistantVoiceScreen(
                             Box(
                                 modifier = Modifier
                                     .size(124.dp)
-                                    .background(accent.copy(alpha = 0.10f), CircleShape),
+                                    .background(accent.copy(alpha = 0.10f), CircleShape)
+                                    .clickable(onClick = onStop),
                                 contentAlignment = Alignment.Center
                             ) {
-                                CircularProgressIndicator(
+                                FrameSpinner(
                                     modifier = Modifier.size(118.dp),
                                     color = accent,
                                     strokeWidth = 3.dp
@@ -793,7 +822,7 @@ private fun AssistantVoiceScreen(
                     }
                     Text(
                         when {
-                            busy -> AppLanguage.tr("正在处理，请稍候", "Still working, please wait")
+                            busy -> AppLanguage.tr("正在处理，点按圆点停止", "Still working; tap the dot to stop")
                             preparing -> AppLanguage.tr(
                                 "模型准备中，可先用键盘输入",
                                 "Preparing the model; you can type meanwhile"
@@ -828,12 +857,18 @@ private fun AssistantVoiceScreen(
                     minLines = 1,
                     maxLines = 4,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { onSend() }),
+                    keyboardActions = KeyboardActions(
+                        onSend = { if (busy) onStop() else onSend() }
+                    ),
                     trailingIcon = {
-                        IconButton(onClick = onSend) {
+                        IconButton(onClick = { if (busy) onStop() else onSend() }) {
                             Icon(
-                                Icons.Default.Send,
-                                contentDescription = AppLanguage.tr("发送", "Send"),
+                                if (busy) Icons.Default.Stop else Icons.Default.Send,
+                                contentDescription = if (busy) {
+                                    AppLanguage.tr("停止", "Stop")
+                                } else {
+                                    AppLanguage.tr("发送", "Send")
+                                },
                                 tint = accent
                             )
                         }
