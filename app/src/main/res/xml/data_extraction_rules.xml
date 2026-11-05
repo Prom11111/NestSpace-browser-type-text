@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Credentials, run history and container data stay on this device. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="virtual.xml"/>
+        <exclude domain="sharedpref" path="mcp_clients.xml"/>
+        <exclude domain="sharedpref" path="llm_config.xml"/>
+        <exclude domain="sharedpref" path="system_prompt.xml"/>
+        <exclude domain="file" path="runs"/>
+        <exclude domain="file" path="vspace"/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="virtual.xml"/>
+        <exclude domain="sharedpref" path="mcp_clients.xml"/>
+        <exclude domain="sharedpref" path="llm_config.xml"/>
+        <exclude domain="sharedpref" path="system_prompt.xml"/>
+        <exclude domain="file" path="runs"/>
+        <exclude domain="file" path="vspace"/>
+    </device-transfer>
+</data-extraction-rules>

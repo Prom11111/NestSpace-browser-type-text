@@ -1,0 +1,471 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
+    <!-- Host-declared permissions that virtual apps may request at runtime.
+         ContainerPermissions maps target requests onto these and records the
+         user's answer in the virtual grant store. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- Host-side broadcast bridge only accepts this signature permission
+         (plus the system UID), so an unrelated app cannot trigger virtual
+         receivers that Android would keep private to their package. -->
+    <permission
+        android:name="com.coke.nestspace.permission.CONTAINER_BROADCAST"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.coke.nestspace.permission.CONTAINER_BROADCAST" />
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- SpeechRecognizer resolves the platform recognition service. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".NestSpaceApp"
+        android:allowBackup="true"
+        android:largeHeap="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Virtual"
+        android:usesCleartextTraffic="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Virtual"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".container.ContainerLaunchProxyActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".assistant.AssistantVoiceActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Virtual.Assistant"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".browser.BrowserActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:label="浏览器"
+            android:theme="@style/Theme.Virtual"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode" />
+
+        <activity
+            android:name=".browser.BrowserFileChooserActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Container hosts use legacy Activity.onBackPressed so the host
+             always receives back and can forward it to the target. Targets
+             that register an OnBackInvoked overlay callback would otherwise
+             win later presses and leave the user unable to exit. -->
+        <activity
+            android:name=".container.StageAActivity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false" />
+
+        <activity
+            android:name=".container.StageASlot1Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c1"
+            android:taskAffinity="com.coke.nestspace.c1" />
+
+        <activity
+            android:name=".container.StageASlot2Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c2"
+            android:taskAffinity="com.coke.nestspace.c2" />
+
+        <activity
+            android:name=".container.StageASlot3Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c3"
+            android:taskAffinity="com.coke.nestspace.c3" />
+
+        <activity
+            android:name=".container.StageASlot4Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c4"
+            android:taskAffinity="com.coke.nestspace.c4" />
+
+        <activity
+            android:name=".container.StageASlot5Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c5"
+            android:taskAffinity="com.coke.nestspace.c5" />
+
+        <activity
+            android:name=".container.StageASlot6Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c6"
+            android:taskAffinity="com.coke.nestspace.c6" />
+
+        <activity
+            android:name=".container.StageASlot7Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c7"
+            android:taskAffinity="com.coke.nestspace.c7" />
+
+        <activity
+            android:name=".container.StageASlot8Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c8"
+            android:taskAffinity="com.coke.nestspace.c8" />
+
+        <activity
+            android:name=".container.StageASlot9Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c9"
+            android:taskAffinity="com.coke.nestspace.c9" />
+
+        <activity
+            android:name=".container.StageASlot10Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c10"
+            android:taskAffinity="com.coke.nestspace.c10" />
+
+        <activity
+            android:name=".container.StageASlot11Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c11"
+            android:taskAffinity="com.coke.nestspace.c11" />
+
+        <activity
+            android:name=".container.StageASlot12Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c12"
+            android:taskAffinity="com.coke.nestspace.c12" />
+
+        <activity
+            android:name=".container.StageASlot13Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c13"
+            android:taskAffinity="com.coke.nestspace.c13" />
+
+        <activity
+            android:name=".container.StageASlot14Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c14"
+            android:taskAffinity="com.coke.nestspace.c14" />
+
+        <activity
+            android:name=".container.StageASlot15Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c15"
+            android:taskAffinity="com.coke.nestspace.c15" />
+
+        <activity
+            android:name=".container.StageASlot16Activity"
+            android:enableOnBackInvokedCallback="false"
+            android:theme="@style/Theme.Virtual.Container"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:process=":c16"
+            android:taskAffinity="com.coke.nestspace.c16" />
+
+        <service
+            android:name=".service.McpForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local MCP control server for virtual apps" />
+        </service>
+
+        <receiver
+            android:name=".agent.UserGateReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".schedule.ScheduledTaskReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".service.McpBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".assistant.FloatingDotOverlay$ModeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.coke.nestspace.FLOATING_DOT_MODE" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".container.ContainerUiService1"
+            android:exported="false"
+            android:process=":c1" />
+        <service
+            android:name=".container.ContainerUiService2"
+            android:exported="false"
+            android:process=":c2" />
+        <service
+            android:name=".container.ContainerUiService3"
+            android:exported="false"
+            android:process=":c3" />
+        <service
+            android:name=".container.ContainerUiService4"
+            android:exported="false"
+            android:process=":c4" />
+        <service
+            android:name=".container.ContainerUiService5"
+            android:exported="false"
+            android:process=":c5" />
+        <service
+            android:name=".container.ContainerUiService6"
+            android:exported="false"
+            android:process=":c6" />
+        <service
+            android:name=".container.ContainerUiService7"
+            android:exported="false"
+            android:process=":c7" />
+        <service
+            android:name=".container.ContainerUiService8"
+            android:exported="false"
+            android:process=":c8" />
+
+        <service
+            android:name=".container.ContainerUiService9"
+            android:exported="false"
+            android:process=":c9" />
+
+        <service
+            android:name=".container.ContainerUiService10"
+            android:exported="false"
+            android:process=":c10" />
+
+        <service
+            android:name=".container.ContainerUiService11"
+            android:exported="false"
+            android:process=":c11" />
+
+        <service
+            android:name=".container.ContainerUiService12"
+            android:exported="false"
+            android:process=":c12" />
+
+        <service
+            android:name=".container.ContainerUiService13"
+            android:exported="false"
+            android:process=":c13" />
+
+        <service
+            android:name=".container.ContainerUiService14"
+            android:exported="false"
+            android:process=":c14" />
+
+        <service
+            android:name=".container.ContainerUiService15"
+            android:exported="false"
+            android:process=":c15" />
+
+        <service
+            android:name=".container.ContainerUiService16"
+            android:exported="false"
+            android:process=":c16" />
+
+        <service
+            android:name=".container.remote.ContainerRemoteService1"
+            android:exported="false"
+            android:process=":c1" />
+        <service
+            android:name=".container.remote.ContainerRemoteService2"
+            android:exported="false"
+            android:process=":c2" />
+        <service
+            android:name=".container.remote.ContainerRemoteService3"
+            android:exported="false"
+            android:process=":c3" />
+        <service
+            android:name=".container.remote.ContainerRemoteService4"
+            android:exported="false"
+            android:process=":c4" />
+        <service
+            android:name=".container.remote.ContainerRemoteService5"
+            android:exported="false"
+            android:process=":c5" />
+        <service
+            android:name=".container.remote.ContainerRemoteService6"
+            android:exported="false"
+            android:process=":c6" />
+        <service
+            android:name=".container.remote.ContainerRemoteService7"
+            android:exported="false"
+            android:process=":c7" />
+        <service
+            android:name=".container.remote.ContainerRemoteService8"
+            android:exported="false"
+            android:process=":c8" />
+
+        <service
+            android:name=".container.remote.ContainerRemoteService9"
+            android:exported="false"
+            android:process=":c9" />
+
+        <service
+            android:name=".container.remote.ContainerRemoteService10"
+            android:exported="false"
+            android:process=":c10" />
+
+        <service
+            android:name=".container.remote.ContainerRemoteService11"
+            android:exported="false"
+            android:process=":c11" />
+
+        <service
+            android:name=".container.remote.ContainerRemoteService12"
+            android:exported="false"
+            android:process=":c12" />
+
+        <service
+            android:name=".container.remote.ContainerRemoteService13"
+            android:exported="false"
+            android:process=":c13" />
+
+        <service
+            android:name=".container.remote.ContainerRemoteService14"
+            android:exported="false"
+            android:process=":c14" />
+
+        <service
+            android:name=".container.remote.ContainerRemoteService15"
+            android:exported="false"
+            android:process=":c15" />
+
+        <service
+            android:name=".container.remote.ContainerRemoteService16"
+            android:exported="false"
+            android:process=":c16" />
+
+        <service
+            android:name=".container.remote.ContainerProcessBrokerService"
+            android:exported="false" />
+    </application>
+
+</manifest>

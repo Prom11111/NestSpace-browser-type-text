@@ -1,0 +1,120 @@
+site_name: NestSpace 使用手册
+site_url: https://chuccp.github.io/NestSpace/
+site_description: 'NestSpace：在 Android 上运行应用级虚拟空间，支持多开、数据隔离、AI 助手和 MCP 控制。'
+site_author: NestSpace
+
+docs_dir: ../docs
+site_dir: site
+
+theme:
+  name: material
+  language: zh
+  font:
+    text: Noto Sans
+    code: JetBrains Mono
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - scheme: slate
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+    - navigation.path
+    - navigation.prune
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.code.select
+    - content.tabs.link
+    - content.tooltips
+    - header.autohide
+  icon:
+    repo: fontawesome/brands/github
+
+repo_url: https://github.com/chuccp/NestSpace
+repo_name: chuccp/NestSpace
+edit_uri: edit/main/docs/
+
+plugins:
+  - search
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+exclude_docs: |
+  archive/
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/chuccp/NestSpace
+      name: GitHub
+
+nav:
+  - 首页: README.md
+  - 快速开始: getting-started.md
+  - 应用安装与管理: app-manager.md
+  - 桌面与外观: desktop.md
+  - 设置详解: settings.md
+  - AI 助手: assistant.md
+  - 内置浏览器: browser.md
+  - MCP 控制服务: mcp.md
+  - 常见问题: troubleshooting.md
+  - 参考:
+      - 架构与限制: architecture.md
+      - MCP 工具参考: mcp-tools.md
+      - App / 网站知识包: knowledge-packs.md
+      - 从源码构建: building.md
+      - nestspace-mcp CLI: cli.md
+      - 技术设计: android-virtual-space-agent-mcp.md

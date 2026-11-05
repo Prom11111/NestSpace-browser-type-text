@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Credentials and user-private configuration stay on this device. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="virtual.xml"/>
+    <exclude domain="sharedpref" path="mcp_clients.xml"/>
+    <exclude domain="sharedpref" path="llm_config.xml"/>
+    <exclude domain="sharedpref" path="system_prompt.xml"/>
+    <exclude domain="file" path="runs"/>
+    <exclude domain="file" path="vspace"/>
+</full-backup-content>

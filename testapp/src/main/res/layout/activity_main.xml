@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+    <TextView
+        android:id="@+id/text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/hello"
+        android:textSize="22sp" />
+
+    <TextView
+        android:id="@+id/info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="@string/click_me" />
+
+    <Button
+        android:id="@+id/open_second"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/open_second" />
+
+    <Button
+        android:id="@+id/open_second_result"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/open_second_result" />
+
+    <Button
+        android:id="@+id/open_implicit"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/open_implicit" />
+
+    <Button
+        android:id="@+id/implicit_service"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/implicit_service" />
+
+    <Button
+        android:id="@+id/pm_check"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/pm_check" />
+
+    <Button
+        android:id="@+id/send_static_broadcast"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/send_static_broadcast" />
+
+    <Button
+        android:id="@+id/send_dynamic_broadcast"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/send_dynamic_broadcast" />
+
+    <Button
+        android:id="@+id/send_ordered_broadcast"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/send_ordered_broadcast" />
+
+    <Button
+        android:id="@+id/send_sticky_broadcast"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/send_sticky_broadcast" />
+
+    <TextView
+        android:id="@+id/broadcast_result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/open_splash"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/open_splash" />
+
+    <Button
+        android:id="@+id/start_service"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/start_service" />
+
+    <Button
+        android:id="@+id/bind_service"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/bind_service" />
+
+    <Button
+        android:id="@+id/query_provider"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/query_provider" />
+
+    <TextView
+        android:id="@+id/service_result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/pm_result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/request_permission"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/request_permission" />
+
+    <TextView
+        android:id="@+id/permission_result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/schedule_job"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/schedule_job" />
+
+    <TextView
+        android:id="@+id/job_result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/post_notification"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/post_notification" />
+
+    <TextView
+        android:id="@+id/notification_result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/system_result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:textSize="12sp" />
+
+    <Button
+        android:id="@+id/vpms_query"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/vpms_query" />
+
+    <TextView
+        android:id="@+id/vpms_result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:textSize="12sp" />
+
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">Stage B Test</string>
+    <string name="hello">Stage B loaded this Activity</string>
+    <string name="click_me">点击并 +1</string>
+    <string name="open_second">打开 SecondActivity</string>
+    <string name="open_second_result">打开 Second（等待结果）</string>
+    <string name="open_splash">走 Splash 流程</string>
+    <string name="open_implicit">隐式 Intent 打开 Second</string>
+    <string name="implicit_service">隐式 Intent 启动 Service</string>
+    <string name="pm_check">检查 PackageManager</string>
+    <string name="send_static_broadcast">发送静态广播</string>
+    <string name="send_dynamic_broadcast">发送动态广播</string>
+    <string name="send_ordered_broadcast">发送有序广播</string>
+    <string name="send_sticky_broadcast">发送 Sticky 广播</string>
+    <string name="second_activity">SecondActivity · 容器内跳转成功</string>
+    <string name="open_third">打开 ThirdActivity</string>
+    <string name="finish_second">Finish 当前 Activity</string>
+    <string name="result_second">Set result + Finish</string>
+    <string name="third_activity">ThirdActivity · 返回栈测试</string>
+    <string name="finish_third">Finish 并返回</string>
+    <string name="start_service">Start TestService</string>
+    <string name="bind_service">Bind TestService</string>
+    <string name="query_provider">Query TestProvider</string>
+    <string name="request_permission">请求 CAMERA 权限</string>
+    <string name="schedule_job">调度 TestJobService</string>
+    <string name="post_notification">发送通知</string>
+    <string name="vpms_query">跨虚拟应用查询</string>
+</resources>

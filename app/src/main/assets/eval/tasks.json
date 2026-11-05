@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "id": "system-status",
+      "title": "检查系统状态",
+      "goal": "查看当前系统状态，告诉我 Android 版本和可用内存。",
+      "expect_tools": ["system_status"],
+      "timeout_s": 60
+    },
+    {
+      "id": "installed-apps",
+      "title": "列出虚拟应用",
+      "goal": "列出 virtual-1 已安装的虚拟应用，告诉我一共有几个。",
+      "expect_tools": ["space_list_installed"],
+      "timeout_s": 60
+    },
+    {
+      "id": "testapp-launch",
+      "title": "启动并读取测试应用",
+      "goal": "以 headless 模式打开 virtual-1 的 com.coke.testapp，观察界面，然后告诉我界面标题。",
+      "requires_app": "com.coke.testapp",
+      "expect_tools": ["space_launch", "ui_observe"],
+      "expect_contains": ["Stage B"],
+      "timeout_s": 90
+    },
+    {
+      "id": "testapp-screenshot",
+      "title": "测试应用截图",
+      "goal": "以 headless 模式打开 virtual-1 的 com.coke.testapp，并截一张当前界面图。",
+      "requires_app": "com.coke.testapp",
+      "expect_tools": ["space_launch", "ui_screenshot"],
+      "timeout_s": 90
+    },
+    {
+      "id": "browser-example",
+      "title": "浏览器读取网页",
+      "goal": "用无头浏览器打开 https://example.com，告诉我页面标题。",
+      "expect_tools": ["browser_open"],
+      "expect_contains": ["Example"],
+      "timeout_s": 90
+    }
+  ]
+}
