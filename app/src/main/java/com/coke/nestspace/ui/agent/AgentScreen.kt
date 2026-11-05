@@ -99,6 +99,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -2426,61 +2427,52 @@ private fun LivePreviewBrowserCard(
     onOpen: () -> Unit,
     onClose: () -> Unit
 ) {
+    // Keep the browser card visually identical to the headless container
+    // mirror window: same footprint, square corners, black title bar.
     Surface(
         modifier = modifier
-            .width(112.dp)
-            .height(196.dp)
-            .clickable(onClick = onOpen),
-        shape = RoundedCornerShape(12.dp),
-        color = Color.White,
+            .width(115.dp)
+            .height(255.dp),
+        shape = RectangleShape,
+        color = Color.Black,
         shadowElevation = 7.dp
     ) {
-        Box(Modifier.fillMaxSize()) {
-            BrowserPreview(
-                url = frame.url,
-                modifier = Modifier.fillMaxSize()
-            )
-            // The WebView consumes touches; keep the card clickable and leave
-            // the page itself non-interactive in the miniature preview.
-            Box(Modifier.matchParentSize().clickable(onClick = onOpen))
+        Column(Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.52f))
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                    .height(30.dp)
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .clickable(onClick = onOpen),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    AppLanguage.tr("浏览器", "BROWSER"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF6EE7B7),
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.width(5.dp))
-                Text(
-                    frame.label.ifBlank { frame.url },
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelSmall,
+                    AppLanguage.tr("NestSpace · 浏览器", "NestSpace · Browser"),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 10.dp),
                     color = Color.White,
+                    fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clickable(onClick = onClose),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("×", color = Color.White, fontSize = 22.sp)
+                }
             }
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(2.dp)
-                    .size(26.dp)
-                    .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-            ) {
-                Icon(
-                    Icons.Rounded.Close,
-                    contentDescription = AppLanguage.tr("关闭预览", "Close preview"),
-                    tint = Color.White,
-                    modifier = Modifier.size(15.dp)
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                BrowserPreview(
+                    url = frame.url,
+                    modifier = Modifier.fillMaxSize()
                 )
+                // The WebView consumes touches; keep the body clickable and
+                // leave the page itself non-interactive in the miniature.
+                Box(Modifier.matchParentSize().clickable(onClick = onOpen))
             }
         }
     }
@@ -2550,7 +2542,7 @@ private fun LivePreviewDialog(frame: LivePreview.Frame, onDismiss: () -> Unit) {
     val bitmap = rememberLiveBitmap(frame.base64)
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = if (isBrowser) RectangleShape else RoundedCornerShape(16.dp),
             color = Color.Black,
             shadowElevation = 10.dp
         ) {

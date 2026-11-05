@@ -2,14 +2,8 @@ package com.coke.nestspace.container
 
 import android.app.Activity
 import android.content.Context
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Outline
-import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.PixelFormat
-import android.graphics.RectF
-import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.os.Handler
@@ -21,7 +15,6 @@ import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
-import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -157,21 +150,8 @@ object HeadlessMirrorWindow {
         val width = (115 * density).toInt()
         val height = (width.toFloat() * metrics.heightPixels / metrics.widthPixels).toInt()
         val margin = (12 * density).toInt()
-        val panelCorner = 10 * density
 
-        val roundedOutline = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) {
-                outline.setRoundRect(0, 0, view.width, view.height, panelCorner)
-            }
-        }
-        val root = FrameLayout(host).apply {
-            background = GradientDrawable().apply {
-                setColor(Color.BLACK)
-                cornerRadius = panelCorner
-            }
-            clipToOutline = true
-            outlineProvider = roundedOutline
-        }
+        val root = FrameLayout(host).apply { setBackgroundColor(Color.BLACK) }
         val surface = SurfaceView(host)
         surface.holder.setFixedSize(metrics.widthPixels, metrics.heightPixels)
         root.addView(
@@ -222,58 +202,6 @@ object HeadlessMirrorWindow {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 (30 * density).toInt(),
                 Gravity.TOP
-            )
-        )
-
-        // SurfaceView has its own layer and ignores the rounded View outline.
-        // Mask its four square corners with the panel background color.
-        val cornerMask = object : View(host) {
-            private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.BLACK
-            }
-            private val path = Path()
-            private val rect = RectF()
-
-            override fun onDraw(canvas: Canvas) {
-                val r = panelCorner
-                val w = width.toFloat()
-                val h = height.toFloat()
-                if (w <= 0f || h <= 0f) return
-
-                path.reset()
-                path.moveTo(0f, 0f)
-                path.lineTo(r, 0f)
-                path.arcTo(rect.apply { set(0f, 0f, 2 * r, 2 * r) }, -90f, -90f, false)
-                path.close()
-                canvas.drawPath(path, paint)
-
-                path.reset()
-                path.moveTo(w, 0f)
-                path.lineTo(w - r, 0f)
-                path.arcTo(rect.apply { set(w - 2 * r, 0f, w, 2 * r) }, -90f, 90f, false)
-                path.close()
-                canvas.drawPath(path, paint)
-
-                path.reset()
-                path.moveTo(0f, h)
-                path.lineTo(0f, h - r)
-                path.arcTo(rect.apply { set(0f, h - 2 * r, 2 * r, h) }, 180f, -90f, false)
-                path.close()
-                canvas.drawPath(path, paint)
-
-                path.reset()
-                path.moveTo(w, h)
-                path.lineTo(w, h - r)
-                path.arcTo(rect.apply { set(w - 2 * r, h - 2 * r, w, h) }, 0f, 90f, false)
-                path.close()
-                canvas.drawPath(path, paint)
-            }
-        }
-        root.addView(
-            cornerMask,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
             )
         )
 
