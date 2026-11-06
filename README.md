@@ -43,7 +43,13 @@ NestSpace 可以把第三方 APK 安装到应用内部，创建多个相互隔�
 
 ### 1. 安装并打开
 
-从 [Releases](https://github.com/chuccp/NestSpace/releases/latest) 下载正式打包的 APK（文件名类似 `NestSpace-v1.0.1.apk`），或按下方「构建」自行打包。打开后进入 NestSpace 桌面，桌面上有「空间设置」「AI助手」「浏览器」「运行管理」等入口。
+从 [Releases](https://github.com/chuccp/NestSpace/releases/latest) 下载 APK，按设备选择：
+
+- `NestSpace-vX-arm64-v8a.apk`：ARM64 真机、MuMu 等带 ARM 转译的模拟器（推荐）。
+- `NestSpace-vX-x86_64.apk`：x86_64 PC / 没有 ARM 转译的模拟器。
+- `NestSpace-vX-universal.apk`：包含全部 ABI，适合不确定或 32 位设备；在带 ARM 转译的 x86_64 设备上会按 x86_64 安装，ARM 虚拟应用的兼容性可能变差。
+
+也可以按下方「构建」自行打包。打开后进入 NestSpace 桌面，桌面上有「空间设置」「AI助手」「浏览器」「运行管理」等入口。
 
 ### 2. 把系统应用放上桌面
 

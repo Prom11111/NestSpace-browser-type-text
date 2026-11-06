@@ -8,6 +8,30 @@ val tagVersionName = providers.gradleProperty("versionName").orNull
     ?.takeIf { it.isNotBlank() }
 val tagVersionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull()
 
+// -PnestspaceHostAbi selects the native ABIs packaged in the host APK:
+//   universal    all ABIs, for users who do not want to pick
+//   arm64-v8a    ARM64 phones and ARM-translation emulators (MuMu)
+//   x86_64       x86_64 PCs/emulators without an ARM translator
+//   <abi>[,<abi>] any explicit list of the supported ABIs
+// The default (no property) keeps the host on ARM64 where possible and omits
+// x86_64; see the ABI comment in defaultConfig below.
+val supportedHostAbis = listOf("arm64-v8a", "armeabi-v7a", "armeabi", "x86", "x86_64")
+val hostAbi = providers.gradleProperty("nestspaceHostAbi").orNull
+    ?.trim()
+    ?.lowercase()
+val hostAbis = when (hostAbi) {
+    null -> listOf("arm64-v8a", "armeabi-v7a", "armeabi", "x86")
+    "universal" -> supportedHostAbis
+    else -> {
+        val abis = hostAbi.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        require(abis.isNotEmpty() && abis.all { it in supportedHostAbis }) {
+            "Unknown nestspaceHostAbi=$hostAbi " +
+                "(supported: universal, ${supportedHostAbis.joinToString()})"
+        }
+        abis
+    }
+}
+
 android {
     namespace = "com.coke.nestspace"
     compileSdk {
@@ -24,7 +48,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Never ship x86_64 native libraries in the host APK.
+        // The default APK omits x86_64 native libraries.
         //
         // On x86_64 devices with an ARM translator (MuMu and similar),
         // PackageManager picks the first device ABI found in the APK. If the
@@ -36,8 +60,12 @@ android {
         // ARM-translated app), and target ARM libraries load in the ARM
         // namespace exactly like on a real phone. Plain x86_64 emulators
         // without ARM translation fall back to 32-bit x86.
+        //
+        // Use -PnestspaceHostAbi=universal/arm64-v8a/x86_64 to build the
+        // release variants. The x86_64 variant is for PCs/emulators without
+        // an ARM translator and must not be used on a translator device.
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "armeabi", "x86")
+            abiFilters += hostAbis
         }
     }
 

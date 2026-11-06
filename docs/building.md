@@ -46,6 +46,22 @@ testapp/build/outputs/apk/debug/testapp-debug.apk
 testapp/build/outputs/apk/secure/testapp-secure.apk
 ```
 
+### 按 ABI 打包宿主 APK
+
+Release 会分别构建三个宿主变体：
+
+```bash
+./gradlew :app:assembleDebug -PnestspaceHostAbi=universal
+./gradlew :app:assembleDebug -PnestspaceHostAbi=arm64-v8a
+./gradlew :app:assembleDebug -PnestspaceHostAbi=x86_64
+```
+
+- `universal`：包含全部 ABI；
+- `arm64-v8a`：ARM64 真机 / MuMu 等 ARM 转译模拟器；
+- `x86_64`：x86_64 PC / 无 ARM 转译的模拟器。
+
+默认构建（不传属性）保持 ARM64 优先并省略 x86_64，避免在带 ARM 转译的 x86_64 设备上按 x86_64 安装。
+
 ### 单元测试
 
 ```bash

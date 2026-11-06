@@ -10,7 +10,13 @@
 
 ## 2. 安装 NestSpace
 
-从项目的 [Releases](https://github.com/chuccp/NestSpace/releases/latest) 下载正式打包的 APK（文件名类似 `NestSpace-v1.0.1.apk`），或按 [从源码构建](building.md) 自行打包，然后像普通 APK 一样安装。
+从项目的 [Releases](https://github.com/chuccp/NestSpace/releases/latest) 下载对应设备的 APK：
+
+- `NestSpace-vX-arm64-v8a.apk`：ARM64 真机、MuMu 等带 ARM 转译的模拟器；
+- `NestSpace-vX-x86_64.apk`：x86_64 PC / 没有 ARM 转译的模拟器；
+- `NestSpace-vX-universal.apk`：全部 ABI，适合不确定或 32 位设备。
+
+也可以按 [从源码构建](building.md) 自行打包，然后像普通 APK 一样安装。
 
 首次打开会进入 NestSpace 桌面。桌面默认包含：
 
