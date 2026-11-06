@@ -45,7 +45,7 @@ NestSpace 可以把第三方 APK 安装到应用内部，创建多个相互隔�
 
 从 [Releases](https://github.com/chuccp/NestSpace/releases/latest) 下载 APK，按设备选择：
 
-- `NestSpace-vX-arm64-v8a.apk`：ARM64 真机、MuMu 等带 ARM 转译的模拟器（推荐）。
+- `NestSpace-vX-arm64.apk`：ARM64 真机、MuMu 等带 ARM 转译的模拟器（推荐）。
 - `NestSpace-vX-x86_64.apk`：x86_64 PC / 没有 ARM 转译的模拟器。
 - `NestSpace-vX-universal.apk`：包含全部 ABI，适合不确定或 32 位设备；在带 ARM 转译的 x86_64 设备上会按 x86_64 安装，ARM 虚拟应用的兼容性可能变差。
 

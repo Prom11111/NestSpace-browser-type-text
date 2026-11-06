@@ -12,7 +12,7 @@
 
 从项目的 [Releases](https://github.com/chuccp/NestSpace/releases/latest) 下载对应设备的 APK：
 
-- `NestSpace-vX-arm64-v8a.apk`：ARM64 真机、MuMu 等带 ARM 转译的模拟器；
+- `NestSpace-vX-arm64.apk`：ARM64 真机、MuMu 等带 ARM 转译的模拟器；
 - `NestSpace-vX-x86_64.apk`：x86_64 PC / 没有 ARM 转译的模拟器；
 - `NestSpace-vX-universal.apk`：全部 ABI，适合不确定或 32 位设备。
 

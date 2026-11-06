@@ -10,23 +10,31 @@ val tagVersionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull
 
 // -PnestspaceHostAbi selects the native ABIs packaged in the host APK:
 //   universal    all ABIs, for users who do not want to pick
-//   arm64-v8a    ARM64 phones and ARM-translation emulators (MuMu)
+//   arm64        ARM64 phones and ARM-translation emulators (MuMu);
+//                maps to the arm64-v8a ABI
 //   x86_64       x86_64 PCs/emulators without an ARM translator
 //   <abi>[,<abi>] any explicit list of the supported ABIs
-// The default (no property) keeps the host on ARM64 where possible and omits
-// x86_64; see the ABI comment in defaultConfig below.
+// gradle.properties sets arm64 for IDE/plain builds, and every release
+// variant passes an explicit value; there is no implicit multi-ABI default.
 val supportedHostAbis = listOf("arm64-v8a", "armeabi-v7a", "armeabi", "x86", "x86_64")
+val abiAliases = mapOf("arm64" to "arm64-v8a")
 val hostAbi = providers.gradleProperty("nestspaceHostAbi").orNull
     ?.trim()
     ?.lowercase()
+    ?: error(
+        "nestspaceHostAbi is not set; add it to gradle.properties or pass " +
+            "-PnestspaceHostAbi=universal|arm64|x86_64"
+    )
 val hostAbis = when (hostAbi) {
-    null -> listOf("arm64-v8a", "armeabi-v7a", "armeabi", "x86")
     "universal" -> supportedHostAbis
     else -> {
-        val abis = hostAbi.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        val abis = hostAbi.split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { abiAliases[it] ?: it }
         require(abis.isNotEmpty() && abis.all { it in supportedHostAbis }) {
             "Unknown nestspaceHostAbi=$hostAbi " +
-                "(supported: universal, ${supportedHostAbis.joinToString()})"
+                "(supported: universal, arm64, ${supportedHostAbis.joinToString()})"
         }
         abis
     }
@@ -48,7 +56,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // The default APK omits x86_64 native libraries.
+        // The arm64 host (the project default; ABI arm64-v8a) omits x86_64
+        // native libraries.
         //
         // On x86_64 devices with an ARM translator (MuMu and similar),
         // PackageManager picks the first device ABI found in the APK. If the
@@ -58,12 +67,13 @@ android {
         // right after dlsym("getenv") from /system/lib64/libc.so. Without an
         // x86_64 library the same device installs the host as arm64-v8a (an
         // ARM-translated app), and target ARM libraries load in the ARM
-        // namespace exactly like on a real phone. Plain x86_64 emulators
-        // without ARM translation fall back to 32-bit x86.
+        // namespace exactly like on a real phone. The universal package also
+        // contains x86_64 and will install as x86_64 on those devices; pick
+        // arm64 there.
         //
-        // Use -PnestspaceHostAbi=universal/arm64-v8a/x86_64 to build the
-        // release variants. The x86_64 variant is for PCs/emulators without
-        // an ARM translator and must not be used on a translator device.
+        // Use -PnestspaceHostAbi=universal/arm64/x86_64 to build the release
+        // variants. The x86_64 variant is for PCs/emulators without an ARM
+        // translator and must not be used on a translator device.
         ndk {
             abiFilters += hostAbis
         }
