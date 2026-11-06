@@ -108,9 +108,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     // Per-app WebView proxy override for the built-in browser.
-    implementation("androidx.webkit:webkit:1.18.0")
+    implementation(libs.androidx.webkit)
     testImplementation(libs.junit)
-    testImplementation("org.json:json:20240303")
+    testImplementation(libs.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -119,14 +119,14 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     // Basic app: local MCP server + local agent + space management
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.kotlinx.coroutines.android)
     // Offline (on-device) speech recognition. The small language model is
     // downloaded once into app storage by LocalSpeechModelStore.
-    implementation("com.alphacephei:vosk-android:0.3.47")
+    implementation(libs.vosk.android)
     // Required for Android 9+ hidden APIs used by the Stage B single-process
     // container (Activity.attach / AssetManager.addAssetPath).
-    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.2")
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    implementation(libs.hiddenapibypass)
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 }

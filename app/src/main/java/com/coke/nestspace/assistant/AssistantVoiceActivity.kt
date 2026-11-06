@@ -76,13 +76,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,6 +92,9 @@ import com.coke.nestspace.ui.FrameSpinner
 import com.coke.nestspace.agent.AssistantConversation
 import com.coke.nestspace.ui.agent.UserGateHost
 import com.coke.nestspace.data.AgentMessage
+import com.coke.nestspace.ui.markdown.MarkdownBlock
+import com.coke.nestspace.ui.markdown.markdownAnnotatedString
+import com.coke.nestspace.ui.markdown.parseMarkdown
 import com.coke.nestspace.ui.theme.VirtualTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -963,132 +962,71 @@ private fun ChatBubble(message: AgentMessage, accent: Color) {
 
 @Composable
 private fun MessageText(text: String, accent: Color, modifier: Modifier = Modifier) {
-    val blocks = remember(text) { parseMessageBlocks(text) }
+    val blocks = remember(text) { parseMarkdown(text) }
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         blocks.forEach { block ->
-            when (block) {
-                is MessageBlock.Prose -> Text(
-                    text = inlineMarkdown(block.text, accent),
+            if (block is MarkdownBlock.Code) {
+                CodeBlock(block)
+            } else {
+                Text(
+                    text = markdownAnnotatedString(
+                        text = block.plainText(),
+                        inlineCodeColor = accent,
+                        linkColor = accent
+                    ),
                     color = Color.White,
                     fontSize = 15.sp,
                     lineHeight = 21.sp
                 )
-                is MessageBlock.Code -> Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color.Black.copy(alpha = 0.32f)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(10.dp)
-                    ) {
-                        if (block.language.isNotBlank()) {
-                            Text(
-                                block.language,
-                                color = Color.White.copy(alpha = 0.50f),
-                                fontSize = 10.sp,
-                                modifier = Modifier.padding(bottom = 4.dp)
-                            )
-                        }
-                        Text(
-                            text = block.code,
-                            color = Color.White.copy(alpha = 0.92f),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
-                            modifier = Modifier.horizontalScroll(rememberScrollState())
-                        )
-                    }
-                }
             }
         }
     }
-}
-
-private sealed class MessageBlock {
-    data class Prose(val text: String) : MessageBlock()
-    data class Code(val language: String, val code: String) : MessageBlock()
-}
-
-private fun parseMessageBlocks(text: String): List<MessageBlock> {
-    val blocks = mutableListOf<MessageBlock>()
-    val prose = StringBuilder()
-    val code = StringBuilder()
-    var inCode = false
-    var language = ""
-    text.lines().forEach { line ->
-        if (line.trimStart().startsWith("```")) {
-            if (inCode) {
-                blocks += MessageBlock.Code(language, code.toString().trimEnd())
-                code.setLength(0)
-                inCode = false
-                language = ""
-            } else {
-                if (prose.isNotBlank()) {
-                    blocks += MessageBlock.Prose(prose.toString().trim())
-                    prose.setLength(0)
-                }
-                inCode = true
-                language = line.trim().removePrefix("```").trim()
-            }
-        } else if (inCode) {
-            code.appendLine(line)
-        } else {
-            prose.appendLine(line)
-        }
-    }
-    if (inCode) blocks += MessageBlock.Code(language, code.toString().trimEnd())
-    if (prose.isNotBlank()) blocks += MessageBlock.Prose(prose.toString().trim())
-    return blocks.ifEmpty { listOf(MessageBlock.Prose(text)) }
 }
 
 @Composable
-private fun inlineMarkdown(text: String, accent: Color): AnnotatedString {
-    return remember(text, accent) {
-        buildAnnotatedString {
-            var index = 0
-            while (index < text.length) {
-                when {
-                    text.startsWith("**", index) -> {
-                        val end = text.indexOf("**", index + 2)
-                        if (end > index) {
-                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
-                                append(text.substring(index + 2, end))
-                            }
-                            index = end + 2
-                        } else {
-                            append("**")
-                            index += 2
-                        }
-                    }
-                    text[index] == '`' -> {
-                        val end = text.indexOf('`', index + 1)
-                        if (end > index) {
-                            withStyle(
-                                SpanStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    color = accent
-                                )
-                            ) {
-                                append(text.substring(index + 1, end))
-                            }
-                            index = end + 1
-                        } else {
-                            append('`')
-                            index++
-                        }
-                    }
-                    else -> {
-                        append(text[index])
-                        index++
-                    }
-                }
+private fun CodeBlock(block: MarkdownBlock.Code) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color.Black.copy(alpha = 0.32f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp)
+        ) {
+            if (block.language.isNotBlank()) {
+                Text(
+                    block.language,
+                    color = Color.White.copy(alpha = 0.50f),
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
             }
+            Text(
+                text = block.code,
+                color = Color.White.copy(alpha = 0.92f),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+            )
         }
     }
+}
+
+private fun MarkdownBlock.plainText(): String = when (this) {
+    is MarkdownBlock.Prose -> text
+    is MarkdownBlock.Heading -> text
+    is MarkdownBlock.Bullet -> "• $text"
+    is MarkdownBlock.Numbered -> "$number. $text"
+    is MarkdownBlock.Quote -> text
+    is MarkdownBlock.Table ->
+        (listOf(headers) + rows).joinToString("\n") { it.joinToString(" | ") }
+    is MarkdownBlock.Code -> code
+    MarkdownBlock.Divider -> "———"
 }
 
 @Composable
