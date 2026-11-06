@@ -8,7 +8,6 @@ import com.coke.nestspace.container.loader.withContainerClassLoader
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.Presentation
-import android.app.PictureInPictureParams
 import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.content.res.Configuration
@@ -21,7 +20,6 @@ import android.os.Bundle
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
-import android.util.Rational
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -110,8 +108,6 @@ open class StageAActivity : Activity() {
     private var hostResumed = false
     private var headless = false
     private var headlessBackDone = false
-    private var pipAttempted = false
-    private var pipActive = false
     private var mirrorDisplayId = -1
     private var mirrorRequested = false
     private var mirrorMode = false
@@ -135,6 +131,8 @@ open class StageAActivity : Activity() {
      */
     private val mirrorBackStack = ArrayDeque<MirrorBackEntry>()
 
+    private var mirrorPollTicks = 0
+
     private val mirrorFinishPoller = object : Runnable {
         override fun run() {
             if (!mirrorMode || isFinishing || isDestroyed) return
@@ -146,6 +144,11 @@ open class StageAActivity : Activity() {
                     finish()
                 }
             }
+            // The assistant closes the mirror window when a run ends and opens
+            // a fresh one when a later run touches the same app. Follow the
+            // new VirtualDisplay id even while this host is in the background,
+            // otherwise the target keeps drawing into a dead display.
+            if (++mirrorPollTicks % 20 == 0) refreshMirrorDisplay()
             root?.postDelayed(this, 50)
         }
     }
@@ -625,7 +628,7 @@ open class StageAActivity : Activity() {
         headless = intent.getBooleanExtra(EXTRA_HEADLESS, false)
         // Child hosts (target startActivity) may be built before the mirror id
         // is propagated through the session. Join the live mirror instead of
-        // entering PiP and leaving a second floating window behind.
+        // moving this host to the background with a stale, empty frame.
         val intentMirrorId = intent.getIntExtra(EXTRA_MIRROR_DISPLAY_ID, -1)
         var requestedMirrorId = intentMirrorId
         if (headless) {
@@ -705,8 +708,8 @@ open class StageAActivity : Activity() {
             )
             frame.setBackgroundColor(Color.rgb(247, 248, 250))
             frame.alpha = 0f
-            // PiP briefly shows an empty system window while the target
-            // starts. Draw a loading surface so it is not blank for seconds.
+            // The host can be visible for a frame before it is sent to the
+            // back. Draw a loading surface so that frame is not blank.
             val loading = TextView(this).apply {
                 text = AppLanguage.tr("正在无头启动…", "Starting headless…")
                 gravity = Gravity.CENTER
@@ -947,7 +950,7 @@ open class StageAActivity : Activity() {
             if (headless) {
                 headlessBackDone = false
                 root?.alpha = 0f
-                scheduleHeadlessPipOrBack()
+                scheduleHeadlessBack()
             } else {
                 root?.alpha = 1f
                 refreshEnvironmentLine(target)
@@ -963,7 +966,7 @@ open class StageAActivity : Activity() {
         if (headless) {
             headlessBackDone = false
             root?.alpha = 0f
-            scheduleHeadlessPipOrBack()
+            scheduleHeadlessBack()
         } else {
             root?.alpha = 1f
         }
@@ -1014,7 +1017,7 @@ open class StageAActivity : Activity() {
         hostResumed = true
         session?.navigator = this
         FloatingDotOverlay.publishContainerMode(this, true)
-        scheduleHeadlessPipOrBack()
+        scheduleHeadlessBack()
         if (mirrorMode && !mirrorBackDone) {
             mirrorBackDone = true
             // The mirror has its own window on the virtual display. Keep the
@@ -1055,41 +1058,14 @@ open class StageAActivity : Activity() {
     }
 
     /**
-     * Prefer a system picture-in-picture window for headless work. The app
-     * stays visible and alive in a small window, so there is no full-screen
-     * black transition and ui_observe/screenshot can keep working.
-     * Move-to-back is only a fallback when PiP is unavailable.
+     * A headless launch never shows a system window of its own. When a mirror
+     * display was requested the target is rendered there; otherwise the host
+     * task is moved to the background and the assistant keeps controlling the
+     * target through ui_* tools. A PiP fallback used to live here but left a
+     * second small window behind whenever the mirror later became available.
      */
-    private fun scheduleHeadlessPipOrBack() {
-        // A mirror was requested but its Presentation failed to attach. Do not
-        // fall back to PiP while the mirror panel is still on screen: that
-        // would leave two small windows visible at once.
-        if (!headless || pipActive || mirrorMode || pipAttempted || mirrorRequested) return
-        pipAttempted = true
-        val entered = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            runCatching {
-                enterPictureInPictureMode(
-                    PictureInPictureParams.Builder()
-                        .setAspectRatio(Rational(9, 16))
-                        .build()
-                )
-            }.getOrDefault(false)
-        } else {
-            false
-        }
-        if (entered) {
-            pipActive = true
-            root?.alpha = 1f
-            Log.d(TAG, "headless launch entered PiP")
-        } else {
-            Log.d(TAG, "headless PiP unavailable, moving task to back")
-            scheduleHeadlessBack()
-        }
-    }
-
     @Suppress("DEPRECATION")
     private fun scheduleHeadlessBack() {
-        if (pipActive) return
         if (!headless || headlessBackDone) return
         headlessBackDone = true
         Log.d(TAG, "headless launch, moving task to back")
@@ -1114,20 +1090,21 @@ open class StageAActivity : Activity() {
     }
 
     override fun onPause() {
-        // In PiP the activity is paused but the target is still the app the
-        // assistant is controlling. Keep its slot marked active so the
-        // process pool does not evict and kill it while the user watches it.
-        if (!pipActive && !mirrorMode) {
+        // In mirror mode the host Activity is paused by moveTaskToBack but the
+        // target is still the app the assistant is controlling. Keep its slot
+        // marked active so the process pool does not evict and kill it while
+        // it is being watched in the mirror window.
+        if (!mirrorMode) {
             ContainerProcessPool.clearActiveSlot(slotIndexFor(javaClass))
         }
         Log.d(TAG, "host onPause target=${current?.javaClass?.name}")
         FloatingDotOverlay.publishContainerMode(this, false)
         hostResumed = false
-        if (pipActive || mirrorMode) {
-            // Keep the target resumed while it is visible in PiP. The host
-            // window is paused by the system, but pausing the synthetic
+        if (mirrorMode) {
+            // Keep the target resumed while it is visible in the mirror. The
+            // host window is paused by the system, but pausing the synthetic
             // target as well stops WebView/Compose drawing and leaves the
-            // PiP window blank indefinitely.
+            // mirror blank indefinitely.
             super.onPause()
             return
         }
@@ -1149,10 +1126,10 @@ open class StageAActivity : Activity() {
         // The headless window is no longer visible; restore drawing so
         // ui_observe/ui_screenshot still see the target hierarchy.
         if (headless) root?.alpha = 1f
-        if (pipActive || mirrorMode) {
-            // PiP can deliver onStop when its task is backgrounded, but the
-            // small window may still be alive. Keep the target paused rather
-            // than destroying the page the assistant is reading.
+        if (mirrorMode) {
+            // The host task is sent to the back while the target is visible in
+            // the mirror. Keep the target paused rather than destroying the
+            // page the assistant is reading.
             super.onStop()
             return
         }
@@ -1235,27 +1212,6 @@ open class StageAActivity : Activity() {
         withTargetLoader {
             runCatching { target.onMultiWindowModeChanged(isInMultiWindowMode, newConfig) }
                 .onFailure { Log.w(TAG, "target onMultiWindowModeChanged failed", it) }
-        }
-    }
-
-    override fun onPictureInPictureModeChanged(
-        isInPictureInPictureMode: Boolean,
-        newConfig: Configuration
-    ) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        if (isInPictureInPictureMode) {
-            pipActive = true
-            root?.alpha = 1f
-            // Re-measure the full-resolution target at the new PiP window
-            // size; HeadlessScaleFrame applies the fitting scale.
-            root?.requestLayout()
-        }
-        val target = current ?: return
-        withTargetLoader {
-            runCatching {
-                target.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-            }.onFailure { Log.w(TAG, "target onPictureInPictureModeChanged failed", it) }
         }
     }
 

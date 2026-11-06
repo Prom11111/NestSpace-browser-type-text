@@ -9,6 +9,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
+import android.util.Log
 import com.coke.nestspace.agent.AssistantBridge
 import com.coke.nestspace.agent.ChildRunPhase
 import com.coke.nestspace.agent.ChildRunRegistry
@@ -138,6 +139,8 @@ class ToolRegistry(
                 errorCode = "SPACE_BUSY"
             )
         }
+
+        if (name.startsWith("ui_")) ensureMirrorPreview(args)
 
         val result = try {
             if (spec.mutating) {
@@ -315,7 +318,7 @@ class ToolRegistry(
                 val explicitVisible = args.has("headless") &&
                     !args.optBoolean("headless", true)
                 val headless = !explicitVisible
-                // A headless app is rendered in a real PiP window; the
+                // A headless app is rendered in the mirror window; the
                 // screenshot card would be a second, confusing preview.
                 LivePreview.setSuppressed(headless)
                 val running = ContainerProcessPool.runningSlots(context)
@@ -360,6 +363,7 @@ class ToolRegistry(
                             return@ToolSpec launchBlockedResult()
                         }
                         ContainerUiKeepAlive.bind(context, running.slot)
+                        ensureMirrorPreview(args)
                         capturePreview(running.slot, pkg)
                         return@ToolSpec ToolResult(
                             true,
@@ -1909,6 +1913,25 @@ class ToolRegistry(
         args.optString("package").takeIf { it.isNotBlank() },
         args.optString("instance_id").takeIf { it.isNotBlank() }
     )
+
+    /**
+     * The assistant closes the mirror window when a run ends, but the headless
+     * target stays alive for follow-ups. Re-open the window when a later run
+     * starts observing or operating that app; the container host follows the
+     * new display id and attaches its existing target view to it.
+     */
+    private suspend fun ensureMirrorPreview(args: JSONObject) {
+        val slot = containerSlot(args) ?: return
+        val activeMirrorSlot = HeadlessMirrorWindow.activeSlot()
+        // Never take over a mirror that is currently showing another app.
+        if (activeMirrorSlot >= 0 && activeMirrorSlot != slot) return
+        if (ContainerUiClient.isMirrorMode(context, slot) != true) return
+        val displayId = runCatching { HeadlessMirrorWindow.awaitDisplay(context) }
+            .onFailure { Log.w("ToolRegistry", "mirror preview unavailable", it) }
+            .getOrNull() ?: return
+        if (HeadlessMirrorWindow.activeSlot() != slot) HeadlessMirrorWindow.setActiveSlot(slot)
+        Log.d("ToolRegistry", "mirror preview on display $displayId for slot $slot")
+    }
 
     /**
      * A package/instance was explicitly requested but has no running slot.

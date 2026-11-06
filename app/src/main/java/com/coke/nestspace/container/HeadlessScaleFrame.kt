@@ -7,11 +7,11 @@ import android.widget.FrameLayout
 
 /**
  * Hosts a headless target at the device's real resolution and scales the
- * rendered child down to the actual host window (for example a PiP window).
+ * rendered child down to the actual host window.
  *
- * The target's view tree therefore keeps 1080x2400 coordinates and layout,
- * while the user sees the same content in a small floating window. This is a
- * live view scaled by the compositor, not a screenshot or screen recording.
+ * The target's view tree therefore keeps 1080x2400 coordinates and layout.
+ * This is a live view scaled by the compositor, not a screenshot or screen
+ * recording.
  */
 class HeadlessScaleFrame @JvmOverloads constructor(
     context: Context,

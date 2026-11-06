@@ -144,7 +144,7 @@ object HeadlessMirrorWindow {
     /**
      * Display id of a live mirror, readable from container processes. Child
      * hosts launched by the target must join the existing mirror instead of
-     * creating a second PiP window.
+     * creating a second small window.
      */
     fun storedDisplayId(context: Context): Int {
         val app = context.applicationContext
@@ -192,7 +192,8 @@ object HeadlessMirrorWindow {
         // A panel can only receive a Surface while its Activity window is
         // visible. Launches started from the voice assistant leave MainActivity
         // stopped, so use an application overlay there instead; a panel would
-        // be attached but never drawn and the mirror would time out into PiP.
+        // be attached but never drawn and the mirror would time out; the
+        // launch then falls back to an invisible background host.
         val activity = hostActivity.get()?.takeIf { hostResumed }
         val host = activity ?: context.applicationContext
         val manager = host.getSystemService(WindowManager::class.java) ?: return

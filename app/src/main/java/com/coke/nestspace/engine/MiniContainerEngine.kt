@@ -642,9 +642,9 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             )
         var mirrorLaunch = false
         if (headless) {
-            // A previous headless host may still be in PiP. MULTIPLE_TASK
-            // would add another window next to it, so remove old host tasks
-            // for this slot before starting the new run.
+            // A previous headless host may still hold a task for this slot.
+            // MULTIPLE_TASK would stack another one, so remove old host tasks
+            // before starting the new run.
             finishPreviousHostTasks(slot)
             val mirrorId = runCatching { HeadlessMirrorWindow.awaitDisplay(context) }
                 .onFailure { Log.w(TAG, "mirror display unavailable", it) }
@@ -812,8 +812,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
 
     /**
      * Finish StageA host tasks left over from a previous headless launch of
-     * this slot. Their PiP window is a real system window and would otherwise
-     * stay on screen next to the new mirror window.
+     * this slot so a stale task cannot stay on screen next to the new host.
      */
     private fun finishPreviousHostTasks(slot: Int) {
         val hostName = ContainerProcessPool.activityClass(slot).name

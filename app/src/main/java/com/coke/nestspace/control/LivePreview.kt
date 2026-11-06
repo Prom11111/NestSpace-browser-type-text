@@ -35,7 +35,7 @@ object LivePreview {
     @Volatile
     private var suppressed = false
 
-    /** Hide the screenshot card while the real app is shown in a PiP window. */
+    /** Hide the screenshot card while the real app is shown in the mirror. */
     fun setSuppressed(value: Boolean) {
         suppressed = value
         if (value && _frame.value?.kind == KIND_CONTAINER) {
