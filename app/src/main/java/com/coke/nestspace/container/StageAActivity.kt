@@ -108,6 +108,7 @@ open class StageAActivity : Activity() {
     private var hostResumed = false
     private var headless = false
     private var headlessBackDone = false
+    private var pipActive = false
     private var mirrorDisplayId = -1
     private var mirrorRequested = false
     private var mirrorMode = false
@@ -1062,10 +1063,13 @@ open class StageAActivity : Activity() {
      * display was requested the target is rendered there; otherwise the host
      * task is moved to the background and the assistant keeps controlling the
      * target through ui_* tools. A PiP fallback used to live here but left a
-     * second small window behind whenever the mirror later became available.
+     * second small window behind whenever the mirror later became available;
+     * only that automatic preview path is gone. The slot activities still
+     * declare PiP support for apps that request it themselves.
      */
     @Suppress("DEPRECATION")
     private fun scheduleHeadlessBack() {
+        if (pipActive) return
         if (!headless || headlessBackDone) return
         headlessBackDone = true
         Log.d(TAG, "headless launch, moving task to back")
@@ -1093,18 +1097,19 @@ open class StageAActivity : Activity() {
         // In mirror mode the host Activity is paused by moveTaskToBack but the
         // target is still the app the assistant is controlling. Keep its slot
         // marked active so the process pool does not evict and kill it while
-        // it is being watched in the mirror window.
-        if (!mirrorMode) {
+        // it is being watched in the mirror window. The same applies while the
+        // system keeps a PiP window alive.
+        if (!pipActive && !mirrorMode) {
             ContainerProcessPool.clearActiveSlot(slotIndexFor(javaClass))
         }
         Log.d(TAG, "host onPause target=${current?.javaClass?.name}")
         FloatingDotOverlay.publishContainerMode(this, false)
         hostResumed = false
-        if (mirrorMode) {
-            // Keep the target resumed while it is visible in the mirror. The
-            // host window is paused by the system, but pausing the synthetic
-            // target as well stops WebView/Compose drawing and leaves the
-            // mirror blank indefinitely.
+        if (pipActive || mirrorMode) {
+            // Keep the target resumed while it is visible in PiP or the
+            // mirror. The host window is paused by the system, but pausing the
+            // synthetic target as well stops WebView/Compose drawing and
+            // leaves the small window blank indefinitely.
             super.onPause()
             return
         }
@@ -1126,10 +1131,11 @@ open class StageAActivity : Activity() {
         // The headless window is no longer visible; restore drawing so
         // ui_observe/ui_screenshot still see the target hierarchy.
         if (headless) root?.alpha = 1f
-        if (mirrorMode) {
-            // The host task is sent to the back while the target is visible in
-            // the mirror. Keep the target paused rather than destroying the
-            // page the assistant is reading.
+        if (pipActive || mirrorMode) {
+            // PiP or the mirror can deliver onStop when the task is
+            // backgrounded, but the small window may still be alive. Keep the
+            // target paused rather than destroying the page the assistant is
+            // reading.
             super.onStop()
             return
         }
@@ -1212,6 +1218,27 @@ open class StageAActivity : Activity() {
         withTargetLoader {
             runCatching { target.onMultiWindowModeChanged(isInMultiWindowMode, newConfig) }
                 .onFailure { Log.w(TAG, "target onMultiWindowModeChanged failed", it) }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) {
+            pipActive = true
+            root?.alpha = 1f
+            // Re-measure the full-resolution target at the new PiP window
+            // size; HeadlessScaleFrame applies the fitting scale.
+            root?.requestLayout()
+        }
+        val target = current ?: return
+        withTargetLoader {
+            runCatching {
+                target.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+            }.onFailure { Log.w(TAG, "target onPictureInPictureModeChanged failed", it) }
         }
     }
 
