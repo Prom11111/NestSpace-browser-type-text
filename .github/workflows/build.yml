@@ -62,23 +62,90 @@ jobs:
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
 
+      - name: Validate note repo token
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          NOTE_REPO_TOKEN: ${{ secrets.NOTE_REPO_TOKEN }}
+        run: |
+          if [ -z "$NOTE_REPO_TOKEN" ]; then
+            echo "::error::Missing NOTE_REPO_TOKEN secret (read-only access to chuccp/note)"
+            exit 1
+          fi
+
+      - name: Fetch release signing material
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/checkout@v4
+        with:
+          repository: chuccp/note
+          ref: main
+          token: ${{ secrets.NOTE_REPO_TOKEN }}
+          path: .signing
+          persist-credentials: false
+
+      - name: Load release signing material
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -e
+          SIGNING_DIR="$GITHUB_WORKSPACE/.signing"
+          test -f "$SIGNING_DIR/nestspace/nestspace-release.jks"
+          test -f "$SIGNING_DIR/nestspace/keystore.properties"
+          set -a
+          . "$SIGNING_DIR/nestspace/keystore.properties"
+          set +a
+          for name in NESTSPACE_KEYSTORE_PASSWORD NESTSPACE_KEY_ALIAS NESTSPACE_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing $name in note/nestspace/keystore.properties"
+              exit 1
+            fi
+          done
+          echo "::add-mask::$NESTSPACE_KEYSTORE_PASSWORD"
+          echo "::add-mask::$NESTSPACE_KEY_PASSWORD"
+          {
+            echo "NESTSPACE_KEYSTORE=$SIGNING_DIR/nestspace/nestspace-release.jks"
+            echo "NESTSPACE_KEYSTORE_PASSWORD=$NESTSPACE_KEYSTORE_PASSWORD"
+            echo "NESTSPACE_KEY_ALIAS=$NESTSPACE_KEY_ALIAS"
+            echo "NESTSPACE_KEY_PASSWORD=$NESTSPACE_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
       - name: Build APKs
+        env:
+          NESTSPACE_REQUIRE_RELEASE_SIGNING: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
         run: |
           set -e
           VERSION_ARGS="${VERSION_NAME:+-PversionName=$VERSION_NAME -PversionCode=$VERSION_CODE}"
           mkdir -p dist
 
-          ./gradlew :app:assembleDebug :testapp:assembleDebug \
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TASK=assembleRelease
+            OUT_DIR=release
+            APK=app-release.apk
+          else
+            TASK=assembleDebug
+            OUT_DIR=debug
+            APK=app-debug.apk
+          fi
+
+          ./gradlew ":app:$TASK" :testapp:assembleDebug \
             -PnestspaceHostAbi=universal $VERSION_ARGS --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk dist/NestSpace-universal.apk
+          cp "app/build/outputs/apk/$OUT_DIR/$APK" dist/NestSpace-universal.apk
 
-          ./gradlew :app:assembleDebug -PnestspaceHostAbi=arm64 \
+          ./gradlew ":app:$TASK" -PnestspaceHostAbi=arm64 \
             $VERSION_ARGS --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk dist/NestSpace-arm64.apk
+          cp "app/build/outputs/apk/$OUT_DIR/$APK" dist/NestSpace-arm64.apk
 
-          ./gradlew :app:assembleDebug -PnestspaceHostAbi=x86_64 \
+          ./gradlew ":app:$TASK" -PnestspaceHostAbi=x86_64 \
             $VERSION_ARGS --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk dist/NestSpace-x86_64.apk
+          cp "app/build/outputs/apk/$OUT_DIR/$APK" dist/NestSpace-x86_64.apk
+
+      - name: Verify release signatures
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -e
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          for apk in dist/NestSpace-*.apk; do
+            echo "Verifying $apk"
+            "$APKSIGNER" verify --print-certs "$apk"
+          done
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4

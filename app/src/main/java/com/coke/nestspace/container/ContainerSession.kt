@@ -14,6 +14,7 @@ import com.coke.nestspace.container.remote.ContainerProcessBrokerClient
 import com.coke.nestspace.container.vpm.VirtualPackageRegistry
 
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.content.Context
@@ -608,6 +609,7 @@ class ContainerSession private constructor(
      * Activity.isTaskRoot() delegates to its private WindowControllerCallback;
      * replace only that callback and forward everything else to the original.
      */
+    @SuppressLint("BlockedPrivateApi")
     private fun installVirtualTaskRoot(target: Activity) {
         runCatching {
             val field = Activity::class.java

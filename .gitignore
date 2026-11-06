@@ -18,6 +18,7 @@
 local.properties
 *.jks
 *.keystore
+*.b64
 *.apk
 *.aab
 *.log

@@ -1,5 +1,6 @@
 package com.coke.nestspace.container
 
+import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.content.Context
 import android.database.ContentObserver
@@ -21,6 +22,7 @@ import android.net.Uri
  * the app are unaffected.
  */
 @Suppress("DEPRECATION")
+@SuppressLint("BlockedPrivateApi")
 class VirtualContentResolver(
     context: Context,
     private val delegate: ContentResolver,

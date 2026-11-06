@@ -40,6 +40,32 @@ val hostAbis = when (hostAbi) {
     }
 }
 
+// Release signing material is injected through environment variables so CI can
+// keep the keystore and passwords in GitHub Secrets. Local release builds
+// without these variables stay unsigned. Tag builds set
+// NESTSPACE_REQUIRE_RELEASE_SIGNING=1 and fail fast when a secret is missing.
+val releaseKeystorePath = providers.environmentVariable("NESTSPACE_KEYSTORE").orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+val releaseStorePassword = providers.environmentVariable("NESTSPACE_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("NESTSPACE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("NESTSPACE_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(
+    releaseKeystorePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+val requireReleaseSigning =
+    providers.environmentVariable("NESTSPACE_REQUIRE_RELEASE_SIGNING").orNull?.toBoolean() == true
+if (requireReleaseSigning && !hasReleaseSigning) {
+    error(
+        "Release signing is required, but NESTSPACE_KEYSTORE, " +
+            "NESTSPACE_KEYSTORE_PASSWORD, NESTSPACE_KEY_ALIAS and " +
+            "NESTSPACE_KEY_PASSWORD must all be set."
+    )
+}
+
 android {
     namespace = "com.coke.nestspace"
     compileSdk {
@@ -79,8 +105,21 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                 enable = false
             }
