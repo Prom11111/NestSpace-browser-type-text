@@ -23,6 +23,22 @@ android {
         versionName = tagVersionName ?: "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Never ship x86_64 native libraries in the host APK.
+        //
+        // On x86_64 devices with an ARM translator (MuMu and similar),
+        // PackageManager picks the first device ABI found in the APK. If the
+        // host installs as x86_64, target ARM libraries are opened through the
+        // native-bridge "fallback" path, which loses the ARM linker namespace:
+        // WeChat's libwechatnormsg.so aborts in JNI_OnLoad (__stack_chk_fail)
+        // right after dlsym("getenv") from /system/lib64/libc.so. Without an
+        // x86_64 library the same device installs the host as arm64-v8a (an
+        // ARM-translated app), and target ARM libraries load in the ARM
+        // namespace exactly like on a real phone. Plain x86_64 emulators
+        // without ARM translation fall back to 32-bit x86.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "armeabi", "x86")
+        }
     }
 
     buildTypes {
