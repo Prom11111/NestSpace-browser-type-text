@@ -200,6 +200,19 @@ object ContainerProcessPool {
         return SlotOwner(entry.key.substringBefore('@'), instanceOf(entry.key))
     }
 
+    /**
+     * Resolve a live slot from its process id. Slot processes rename argv[0],
+     * so callers cannot rely on the manifest process name after target startup.
+     */
+    @Synchronized
+    fun slotForPid(context: Context, pid: Int): Int? {
+        if (pid <= 0) return null
+        return (0 until SLOT_COUNT).firstOrNull { slot ->
+            markerPid(context, slot) == pid ||
+                processPid(context, slot) == pid
+        }
+    }
+
     @Synchronized
     fun acquire(context: Context, key: String, protectedSlot: Int = -1): Int {
         val prefs = prefs(context)
@@ -218,7 +231,7 @@ object ContainerProcessPool {
         // Free old background sessions before they can push the process over
         // the memory limit. Never evict the session we are about to use.
         evictBackgroundForMemory(context, limit, protectedSlot)
-        var slot = reusableSlot(context, prefs, key, limit)
+        var slot = reusableSlot(context, prefs, key, limit, protectedSlot)
         if (slot < 0) slot = (0 until limit).firstOrNull { owners[it] == null } ?: -1
         if (slot < 0) {
             // Slot pressure: background subprocesses are expendable first, so
@@ -538,10 +551,12 @@ object ContainerProcessPool {
         context: Context,
         prefs: SharedPreferences,
         key: String,
-        limit: Int
+        limit: Int,
+        protectedSlot: Int
     ): Int {
         val previous = prefs.getInt(sessionSlotKey(key), -1)
         if (previous !in 0 until limit) return -1
+        if (previous == protectedSlot) return -1
         val owner = owners[previous]
         if (owner != null && owner != key) return -1
         if (owner == null) {

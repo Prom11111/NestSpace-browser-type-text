@@ -71,7 +71,9 @@ internal object TargetApplicationLifecycle {
                 .getDeclaredField("mActivityLifecycleCallbacks")
                 .apply { isAccessible = true }
                 .get(application) as? Collection<*>
-        }.getOrNull() ?: return
+        }.getOrNull()
+            ?.let { values -> runCatching { values.toList() }.getOrNull() }
+            ?: return
         val hasBundle = callbackName == "onActivityCreated" ||
             callbackName == "onActivitySaveInstanceState"
         val callbackInterface = Class.forName(

@@ -184,7 +184,7 @@ app/       Android 主应用：容器、桌面、AI 助手、浏览器、MCP
 testapp/   验证容器能力的示例 APK
 tools/     nestspace-mcp CLI（零依赖 Python）
 docs/      架构、技术方案、MCP 工具参考和知识包文档
-.github/   CI：单测、构建 APK，打 v* 标签时发布 Release
+.github/   CI：构建 APK，打 v* 标签时发布 Release
 ```
 
 ## 文档

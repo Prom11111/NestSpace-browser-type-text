@@ -284,7 +284,10 @@ class ContainerServiceManager(
         synchronized(this) { pendingBinds.clear() }
         records.entries.toList().forEach { (key, record) ->
             runCatching { record.service.onUnbind(Intent()) }
-            destroy(key, record)
+            // Process-style teardown does not guarantee Service.onDestroy.
+            // Explicit stop and unbind still invoke the target callback.
+            record.destroyed = true
+            records.remove(key)
         }
     }
 
@@ -331,15 +334,7 @@ class ContainerServiceManager(
     private fun destroy(key: String, record: Record) {
         if (record.destroyed) return
         record.destroyed = true
-        // NetEase's MainProcessPlayService blocks the UI thread in
-        // AudioPlayConfigHelper -> CustomConfigImpl while being torn down
-        // during its loading/permission flow. The service is only a local
-        // object here; skip the synchronous target callback so finishing the
-        // splash cannot ANR the process. The session-level destroyAll path
-        // remains available for diagnostics.
-        if (!ContainerCompat.isNetEase(session.spec.packageName)) {
-            runCatching { record.service.onDestroy() }
-        }
+        runCatching { record.service.onDestroy() }
         records.remove(key)
     }
 

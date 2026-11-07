@@ -67,6 +67,8 @@ Release 会分别构建三个宿主变体：
 
 ### 单元测试
 
+单元测试只在本地执行，GitHub Actions 不再运行测试任务。
+
 ```bash
 ./gradlew :app:testDebugUnitTest
 ```
@@ -111,10 +113,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 1. 安装 JDK 21；
 2. 安装 Android SDK；
-3. 运行单元测试；
-4. 构建 `app` 和 `testapp` 的 debug APK；
-5. 上传 `nestspace-debug` 产物；
-6. 如果是 `v*` 标签，创建 GitHub Release 并附带 APK。
+3. 构建 `app` 和 `testapp` 的 debug APK；
+4. 上传 `nestspace-debug` 产物；
+5. 如果是 `v*` 标签，创建 GitHub Release 并附带 APK。
 
 ## 常见构建问题
 

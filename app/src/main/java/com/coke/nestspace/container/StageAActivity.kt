@@ -24,6 +24,7 @@ import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -59,10 +60,12 @@ open class StageAActivity : Activity() {
         const val EXTRA_ACTIVITY_CLASS = "container_activity_class"
         const val EXTRA_TARGET_INTENT = "container_target_intent"
         const val EXTRA_HEADLESS = "container_headless"
+        const val EXTRA_CONTAINER_ENTRY = "container_entry"
         const val EXTRA_MIRROR_DISPLAY_ID = "container_mirror_display_id"
         const val EXTRA_TARGET_PROCESS = "container_target_process"
         private const val TAG = "StageAActivity"
         private const val KEY_HOST_STATE_ID = "nestspace.host_state_id"
+        private const val KEY_CONTAINER_ENTRY = "nestspace.container_entry"
 
         @Volatile
         private var active: StageAActivity? = null
@@ -122,6 +125,9 @@ open class StageAActivity : Activity() {
     private var mirrorRoot: FrameLayout? = null
     private var targetStartScheduled = false
     private var predictiveBackCallback: Any? = null
+    private var containerEntry = false
+    private var backCallbackRunning = false
+    private var backLaunchBlocked = false
 
     private data class MirrorBackEntry(
         val target: Activity,
@@ -161,6 +167,12 @@ open class StageAActivity : Activity() {
 
     /** The target Activity hosted by this host, for permission routing. */
     fun currentTargetActivity(): Activity? = current
+
+    fun blockActivityLaunchFromBack(): Boolean {
+        if (!backCallbackRunning) return false
+        backLaunchBlocked = true
+        return true
+    }
 
     /**
      * Leave headless mode and move this host's existing task to the front.
@@ -1207,6 +1219,7 @@ open class StageAActivity : Activity() {
             targetStateKey?.let { TargetStateStore.put(it, targetState) }
         }
         outState.putInt(KEY_HOST_STATE_ID, hostStateId)
+        outState.putBoolean(KEY_CONTAINER_ENTRY, containerEntry)
         super.onSaveInstanceState(outState)
     }
 
@@ -1425,6 +1438,16 @@ open class StageAActivity : Activity() {
         handleBack()
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_UP && event.repeatCount == 0) {
+                handleBack()
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     /**
      * Slot activities opt out of OnBackInvoked in the manifest, so Android
      * delivers the back key to this host's onBackPressed even when the target
@@ -1444,7 +1467,24 @@ open class StageAActivity : Activity() {
             if (mirrorMode && mirrorBackStack.isNotEmpty()) popMirrorTarget() else finish()
             return
         }
+        val callbacksBefore = hasEnabledBackCallbacks(target)
+        val declaringBefore = runCatching {
+            target.javaClass.getMethod("onBackPressed").declaringClass.name
+        }.getOrNull()
+        Log.d(
+            TAG,
+            "back state hostRoot=$isTaskRoot callbacks=$callbacksBefore " +
+                "entry=$containerEntry declaring=$declaringBefore " +
+                "target=${target.javaClass.name}"
+        )
+        if (containerEntry && !callbacksBefore) {
+            Log.d(TAG, "back on container entry with no target callback; returning desktop")
+            returnToDesktop()
+            return
+        }
         val finishHookArmed = armRootFinishInterceptor()
+        backLaunchBlocked = false
+        backCallbackRunning = true
         Log.d(TAG, "back target=${target.javaClass.name} finishing=${target.isFinishing}")
         var failed = false
         withTargetLoader {
@@ -1453,6 +1493,13 @@ open class StageAActivity : Activity() {
                     failed = true
                     Log.w(TAG, "target onBackPressed failed", it)
                 }
+        }
+        backCallbackRunning = false
+        if (backLaunchBlocked) {
+            if (finishHookArmed) SystemServiceIdentity.clearRootFinishInterceptor()
+            Log.d(TAG, "back triggered a new container activity; returning desktop")
+            returnToDesktop()
+            return
         }
         if (failed) {
             if (finishHookArmed) SystemServiceIdentity.clearRootFinishInterceptor()
@@ -1579,6 +1626,8 @@ open class StageAActivity : Activity() {
     private fun handleIntent(intent: Intent, savedState: Bundle?) {
         val launchPackage = intent.getStringExtra(EXTRA_LAUNCH_PACKAGE)
         val launchInstance = intent.getStringExtra(EXTRA_LAUNCH_INSTANCE)
+        containerEntry = savedState?.getBoolean(KEY_CONTAINER_ENTRY)
+            ?: intent.getBooleanExtra(EXTRA_CONTAINER_ENTRY, false)
         if (!launchPackage.isNullOrBlank() && !launchInstance.isNullOrBlank()) {
             val targetProcess = ContainerProcessRouter.normalize(
                 launchPackage,

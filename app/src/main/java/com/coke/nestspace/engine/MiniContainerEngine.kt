@@ -580,7 +580,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             return EngineResult.Error("APK_INVALID", AppLanguage.tr("APK 与安装记录不一致", "APK does not match the install record"))
         }
         val launchActivity = requestedActivity?.takeIf { it.isNotBlank() }
-            ?: launchActivityFor(app.packageName, app.launcherActivity)
+            ?: descriptor.launcherActivity
         if (requestedActivity != null &&
             descriptor.activities.none {
                 it.name == requestedActivity || it.targetActivity == requestedActivity
@@ -641,6 +641,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             .putExtra(StageAActivity.EXTRA_SESSION_ID, sessionId)
             .putExtra(StageAActivity.EXTRA_TARGET_PROCESS, app.packageName)
             .putExtra(StageAActivity.EXTRA_ACTIVITY_CLASS, launchActivity)
+            .putExtra(StageAActivity.EXTRA_CONTAINER_ENTRY, true)
             .putExtra(StageAActivity.EXTRA_TARGET_INTENT, targetIntent)
             .putExtra(StageAActivity.EXTRA_HEADLESS, headless)
             .addFlags(
@@ -836,14 +837,6 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             runCatching { task.finishAndRemoveTask() }
         }
     }
-
-    /**
-     * Some hardened manifests expose a debug-only MAIN/LAUNCHER activity
-     * before the real launcher alias. Keep the package-specific correction
-     * here as well as in ContainerSpecFactory.
-     */
-    private fun launchActivityFor(packageName: String, fallback: String): String =
-        com.coke.nestspace.container.ContainerCompat.launcherOverride(packageName) ?: fallback
 
     private fun ensureInstanceDirs(packageName: String, instanceId: String) {
         val root = dataDirFor(packageName, instanceId)

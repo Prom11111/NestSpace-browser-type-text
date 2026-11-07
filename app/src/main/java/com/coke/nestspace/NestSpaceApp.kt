@@ -51,15 +51,18 @@ class NestSpaceApp : Application() {
     }
 
     private fun isMainProcess(): Boolean {
-        val current = runCatching {
+        val frameworkName = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 Application.getProcessName()
             } else {
                 null
             }
-        }.getOrNull() ?: runCatching {
+        }.getOrNull()
+        val processName = runCatching {
             File("/proc/self/cmdline").readText().trim('\u0000')
         }.getOrDefault("")
-        return current == packageName
+        if (frameworkName != null && frameworkName != packageName) return false
+        if (processName.isNotBlank() && processName != packageName) return false
+        return frameworkName == packageName || processName == packageName
     }
 }

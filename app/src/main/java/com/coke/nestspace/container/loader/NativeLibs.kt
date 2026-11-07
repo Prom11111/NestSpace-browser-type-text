@@ -112,6 +112,16 @@ object NativeLibs {
             lockDown(tempDir)
             marker(tempDir).writeText("ready")
 
+            // A crash can leave a cache directory without its ready marker.
+            // Re-check first in case another instance completed the entry.
+            if (targetDir.exists()) {
+                if (File(targetDir, READY).isFile && hasLibraries(targetDir)) {
+                    tempDir.deleteRecursively()
+                    lockDown(targetDir)
+                    return targetDir
+                }
+                targetDir.deleteRecursively()
+            }
             if (tempDir.renameTo(targetDir)) {
                 lockDown(targetDir)
                 return targetDir

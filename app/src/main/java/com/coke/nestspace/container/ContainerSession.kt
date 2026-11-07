@@ -124,7 +124,7 @@ class ContainerSession private constructor(
                 compatAppLike.javaClass
                     .getMethod("onBaseContextAttached", Context::class.java)
                     .invoke(compatAppLike, context)
-            }.onFailure { Log.w(TAG, "NetEase ApplicationLike attach failed", it) }
+            }.onFailure { Log.w(TAG, "embedded ApplicationLike attach failed", it) }
         }
         TargetCrashGuard.noteSession(spec.packageName, spec.instanceId, hostContext)
         publishAsProcessApplication()
@@ -135,7 +135,7 @@ class ContainerSession private constructor(
         if (compatAppLike != null) {
             runCatching {
                 compatAppLike.javaClass.getMethod("onCreate").invoke(compatAppLike)
-            }.onFailure { Log.w(TAG, "NetEase ApplicationLike onCreate failed", it) }
+            }.onFailure { Log.w(TAG, "embedded ApplicationLike onCreate failed", it) }
         }
         // Target Application.onCreate often registers its own uncaught
         // exception handler (crash reporting) that terminates the host process.
@@ -274,7 +274,11 @@ class ContainerSession private constructor(
 
         val attach = Activity::class.java.declaredMethods
             .firstOrNull { it.name == "attach" }
-            ?: error("Activity.attach not found")
+            ?: error(
+                "Activity.attach not found: " +
+                    "classLoader=${Activity::class.java.classLoader} " +
+                    "methods=${Activity::class.java.declaredMethods.size}"
+            )
         val activityBase = ContainerUiContext(
             context,
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -307,7 +311,19 @@ class ContainerSession private constructor(
         }
 
         attach.isAccessible = true
-        attach.invoke(target, *args.toTypedArray())
+        try {
+            attach.invoke(target, *args.toTypedArray())
+        } catch (t: Throwable) {
+            val parameterTypes = attach.parameterTypes.joinToString { it.name }
+            val argumentTypes = args.joinToString { it?.javaClass?.name ?: "null" }
+            Log.e(
+                TAG,
+                "Activity.attach failed target=${targetClass.name} " +
+                    "manifest=${info.name} parameters=$parameterTypes arguments=$argumentTypes",
+                t
+            )
+            throw t
+        }
         applyTargetResources(target, resources, theme)
         installVirtualTaskRoot(target)
         targetHosts[target] = host
@@ -346,6 +362,10 @@ class ContainerSession private constructor(
      * launch them normally.
      */
     fun startTargetActivity(host: StageAActivity, intent: Intent, requestCode: Int): Boolean {
+        if (host.blockActivityLaunchFromBack()) {
+            Log.d(TAG, "blocked activity launch triggered by back: ${intent.component}")
+            return true
+        }
         val component = intent.component
         if (component != null && component.packageName != spec.packageName) return false
         val targetPackage = intent.`package`
@@ -467,6 +487,7 @@ class ContainerSession private constructor(
                     putExtra(StageAActivity.EXTRA_LAUNCH_INSTANCE, spec.instanceId)
                 }
                 putExtra(StageAActivity.EXTRA_ACTIVITY_CLASS, info.name)
+                putExtra(StageAActivity.EXTRA_CONTAINER_ENTRY, false)
                 putExtra(
                     StageAActivity.EXTRA_TARGET_INTENT,
                     Intent(intent).setClassName(spec.packageName, info.name)
@@ -696,7 +717,7 @@ class ContainerSession private constructor(
                 apkPaths,
                 nativeAbis,
                 nativeCacheRoot,
-                ContainerCompat.excludedNativeLibs(spec.packageName)
+                emptySet()
             )
             val nativeLibs = sharedNativeLibs ?: legacyNativeLibs.takeIf { dir ->
                 dir.listFiles()?.any { it.isFile && it.name.endsWith(".so") } == true
@@ -708,7 +729,7 @@ class ContainerSession private constructor(
             }
             Log.d(TAG, "native libs: ${nativeLibs?.absolutePath} abi=$nativeAbi")
 
-            val loader = ContainerClassLoader(
+            var loader: ClassLoader = ContainerClassLoader(
                 classPath,
                 nativeLibs?.absolutePath,
                 host.classLoader
@@ -744,7 +765,7 @@ class ContainerSession private constructor(
             }
             if (nativeAbi != null) {
                 // ApplicationPackageManager normally fills this in from the
-                // installed APK. SO loaders (notably NetEase's dynamicso)
+                // installed APK. Dynamic native loaders
                 // read it through reflection and expect a non-null value.
                 runCatching {
                     val field = appInfo.javaClass.getField("primaryCpuAbi")
@@ -760,6 +781,17 @@ class ContainerSession private constructor(
                     .getField("splitSourceDirs")
                     .set(appInfo, spec.splitApkPaths.toTypedArray())
             }
+
+            // Some packers expose their decrypted runtime DEX through the
+            // AppComponentFactory hook that Android normally calls while
+            // creating LoadedApk. Manually attached virtual applications skip
+            // that framework path, so run the hook before attaching the target.
+            loader = ContainerCompat.installRuntimeClassLoader(spec, loader, appInfo)
+            // Some native packers replace the VM hidden-API policy while
+            // installing their runtime loader. Re-apply the exemption before
+            // the Activity attachment path uses framework-private fields.
+            HiddenApiCompat.ensure(force = true)
+            Log.d(TAG, "session class loader: ${loader.javaClass.name}")
 
             val context = ContainerContext(
                 base = host.applicationContext,
@@ -961,9 +993,18 @@ class ContainerSession private constructor(
             loader: ClassLoader,
             context: Context
         ): Application {
-            if (ContainerCompat.isNetEase(spec.packageName)) {
-                return runCatching { attachNeteaseApplication(loader, context) }
-                    .onFailure { Log.w(TAG, "NetEase anti-tamper bypass failed", it) }
+            ContainerCompat.findEmbeddedApplication(spec, loader)?.let { embedded ->
+                return runCatching {
+                    attachRegularApplication(spec, loader, context, embedded.name)
+                }.onFailure {
+                    Log.w(TAG, "embedded Application init failed: ${embedded.name}", it)
+                }.getOrElse {
+                    attachRegularApplication(spec, loader, context)
+                }
+            }
+            if (ContainerCompat.hasEmbeddedApplicationPair(loader)) {
+                return runCatching { attachEmbeddedApplication(loader, context) }
+                    .onFailure { Log.w(TAG, "embedded Application attach failed", it) }
                     .getOrElse {
                         attachRegularApplication(spec, loader, context)
                     }
@@ -972,14 +1013,12 @@ class ContainerSession private constructor(
         }
 
         /**
-         * NetEase Music's NIS wrapper loads a native anti-tamper library in
-         * attachBaseContext and exits the process with status 28 when the
-         * emulator/container checks fail. The APK also contains a standard
-         * Tinker "real application" pair. Build that pair directly and skip
-         * the wrapper: the UI and business dex files are present in the APK,
-         * and Tinker has no patch to apply in a fresh install.
+         * Some APKs wrap a normal Tinker application behind a native security
+         * loader that terminates the process when the runtime is virtualized.
+         * If the embedded application pair is present, initialize that pair
+         * directly and bypass only the outer native wrapper.
          */
-        private fun attachNeteaseApplication(
+        private fun attachEmbeddedApplication(
             loader: ClassLoader,
             context: Context
         ): Application {
@@ -989,7 +1028,7 @@ class ContainerSession private constructor(
             }
             attachBaseContext(base, context)
 
-            val likeClass = loader.loadClass(ContainerCompat.NET_EASE_APPLICATION_LIKE)
+            val likeClass = loader.loadClass(ContainerCompat.EMBEDDED_APPLICATION_LIKE)
             val likeCtor = likeClass.getConstructor(
                 Application::class.java,
                 Int::class.javaPrimitiveType,
@@ -1006,8 +1045,8 @@ class ContainerSession private constructor(
                 System.currentTimeMillis(),
                 null
             )
-            val patchLike = loader.loadClass(ContainerCompat.NET_EASE_PATCH_APPLICATION_LIKE)
-            val realClass = loader.loadClass(ContainerCompat.NET_EASE_REAL_APPLICATION)
+            val patchLike = loader.loadClass(ContainerCompat.EMBEDDED_PATCH_APPLICATION_LIKE)
+            val realClass = loader.loadClass(ContainerCompat.EMBEDDED_REAL_APPLICATION)
             val real = realClass
                 .getConstructor(Application::class.java, patchLike)
                 .newInstance(base, appLike) as Application
@@ -1016,16 +1055,18 @@ class ContainerSession private constructor(
             }
             attachBaseContext(real, context)
             ContainerCompat.rememberAppLike(real, appLike)
-            Log.d(TAG, "NetEase compat application: ${real.javaClass.name}")
+            Log.d(TAG, "embedded application attached: ${real.javaClass.name}")
             return real
         }
 
         private fun attachRegularApplication(
             spec: ContainerLaunchSpec,
             loader: ClassLoader,
-            context: Context
+            context: Context,
+            classNameOverride: String? = null
         ): Application {
-            val className = spec.applicationInfo.className
+            val className = classNameOverride
+                ?: spec.applicationInfo.className
                 ?.takeIf { it.isNotBlank() }
                 ?: Application::class.java.name
             val appClass = loader.loadClass(className).asSubclass(Application::class.java)

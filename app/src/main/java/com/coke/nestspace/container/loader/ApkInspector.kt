@@ -94,15 +94,16 @@ object ApkInspector {
         val activityInfos = info.activities
             ?.filter { !it.name.isNullOrBlank() }
             .orEmpty()
-        val launcher = activityInfos.firstOrNull { candidate ->
+        val enabledActivities = activityInfos.filter { it.enabled }
+        val launcher = enabledActivities.firstOrNull { candidate ->
             filters.activities[candidate.name]?.any { filter ->
                 filter.hasAction(Intent.ACTION_MAIN) &&
                     filter.hasCategory(Intent.CATEGORY_LAUNCHER)
             } == true
         }
         val activity = launcher
-            ?: activityInfos.firstOrNull { it.exported }
-            ?: activityInfos.firstOrNull()
+            ?: enabledActivities.firstOrNull { it.exported }
+            ?: enabledActivities.firstOrNull()
 
         if (requireLauncher && activity == null) {
             error(

@@ -106,10 +106,12 @@ object TargetCrashGuard {
     private fun causedByTarget(thread: Thread, throwable: Throwable): Boolean {
         if (thread.contextClassLoader is ContainerClassLoader) return true
         if (throwable.javaClass.classLoader is ContainerClassLoader) return true
+        val packagePrefix = targetPackage?.let { "$it." }
         var current: Throwable? = throwable
         while (current != null) {
-            if (current.stackTrace.any {
-                    it.className in ContainerClassLoader.loadedClasses
+            if (current.stackTrace.any { frame ->
+                    frame.className in ContainerClassLoader.loadedClasses ||
+                        (packagePrefix != null && frame.className.startsWith(packagePrefix))
                 }
             ) {
                 return true

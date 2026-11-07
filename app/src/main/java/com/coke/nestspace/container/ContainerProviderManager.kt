@@ -60,7 +60,7 @@ class ContainerProviderManager(
         // attaching the real providers. If one provider fails to initialize,
         // its authority must not fall through to the host resolver: the host
         // resolver is the same dispatcher we are inside, which causes infinite
-        // recursion (NetEase's ProviderHooker exposes this path).
+        // recursion.
         authorities.forEach { providers.putIfAbsent(it, UnavailableProvider()) }
 
         try {
@@ -104,15 +104,13 @@ class ContainerProviderManager(
             return
         }
 
-        // Bilibili's provider initializers wait for Application.onCreate in a
-        // way that deadlocks if every provider is attached before onCreate.
-        // Attach only AndroidX Startup eagerly and resolve the rest on first
-        // access, after the target Application has had a chance to initialize.
-        val lazyProviders = session.spec.packageName == "tv.danmaku.bili"
         session.spec.providers.forEach { info ->
             val authorities = authoritiesOf(info)
             if (authorities.isEmpty()) return@forEach
-            if (lazyProviders && info.name != "androidx.startup.InitializationProvider") {
+            // initOrder is the manifest's dependency signal. Providers with no
+            // explicit order resolve on first authority access, after the
+            // target Application has had a chance to initialize.
+            if (info.initOrder <= 0) {
                 synchronized(lock) { authorities.forEach { pending[it] = info } }
                 return@forEach
             }

@@ -42,9 +42,7 @@ internal object ContainerSpecFactory {
                 )
             )
         }
-        val activity = ContainerCompat.launcherOverride(packageName)
-            ?.let { target -> descriptor.activities.firstOrNull { it.name == target } }
-            ?: descriptor.activityInfo
+        val activity = descriptor.activityInfo
             ?: error(AppLanguage.tr("APK 没有入口 Activity", "APK has no launcher activity"))
 
         val dataDir = File(File(root, "data"), sanitize(packageName))

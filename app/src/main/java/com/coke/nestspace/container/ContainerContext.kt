@@ -156,11 +156,11 @@ class ContainerContext(
     override fun getSystemService(name: String): Any? = when (name) {
         Context.LAYOUT_INFLATER_SERVICE -> targetLayoutInflater
         Context.WINDOW_SERVICE ->
-            // The dynamic WindowManager proxy is only needed for NetEase's
-            // Toast package rewrite. Other targets (notably Zhihu's native
-            // SDKs) pass WindowManager into JNI; a java.lang.reflect.Proxy
-            // there trips CheckJNI ("invalid jobject") and aborts the process.
-            if (ContainerCompat.isNetEase(targetPackage)) {
+            // Activity.attach requires the framework's concrete
+            // WindowManagerImpl. Toast is the only caller that needs the
+            // package-rewriting proxy. Selecting by caller instead of package
+            // keeps this behavior consistent for every virtual application.
+            if (calledFromToast()) {
                 targetWindowManager() ?: super.getSystemService(name)
             } else {
                 hostWindowManager ?: super.getSystemService(name)
@@ -172,10 +172,10 @@ class ContainerContext(
         // setting is on) or delegates to the host-identity service.
         Context.LOCATION_SERVICE ->
             virtualLocationManager() ?: super.getSystemService(name)
-        // Android only knows packages installed for the real user, so
-        // LocaleManager.setApplicationLocales("tv.danmaku.bili", ...) throws
-        // "Unknown package" and Bilibili turns that into a startup crash.
-        // Give targets a package-local no-op LocaleManager instead.
+        // Android only knows packages installed for the real user. A virtual
+        // package therefore gets "Unknown package" from LocaleManager, which
+        // some applications treat as a startup failure. Give targets a
+        // package-local no-op LocaleManager instead.
         "locale" -> virtualLocaleManager() ?: super.getSystemService(name)
         Context.AUTOFILL_SERVICE ->
             virtualAutofillManager() ?: super.getSystemService(name)
@@ -360,7 +360,7 @@ class ContainerContext(
 
     /**
      * Android 12+ rejects a Toast whose package does not belong to the caller
-     * UID ("Package tv.danmaku.bili not in UID ..."). The target context still
+     * UID ("Package <target> not in UID ..."). The target context still
      * has to report its virtual package everywhere else, so only the
      * Toast constructor sees the host package.
      */

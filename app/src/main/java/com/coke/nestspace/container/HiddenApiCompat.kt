@@ -15,8 +15,8 @@ object HiddenApiCompat {
     private var ensured = false
 
     @Synchronized
-    fun ensure() {
-        if (ensured) return
+    fun ensure(force: Boolean = false) {
+        if (ensured && !force) return
         // Hidden API enforcement starts with Android 9 (API 28). Older
         // releases (including API 25 x86 emulators) can crash inside
         // HiddenApiBypass even though no exemption is needed there.

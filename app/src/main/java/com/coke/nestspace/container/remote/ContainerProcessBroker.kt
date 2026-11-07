@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Build
+import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -36,8 +37,21 @@ class ContainerProcessBrokerService : Service() {
             val instance = instanceId ?: return -1
             val process = ContainerProcessRouter.normalize(pkg, targetProcess)
             val key = ContainerProcessRouter.slotKey(pkg, instance, process)
+            val callerPid = Binder.getCallingPid()
+            val resolvedCallerSlot = ContainerProcessPool
+                .slotForPid(applicationContext, callerPid)
+                ?: callerSlot
+            Log.d(
+                TAG,
+                "acquire $process callerPid=$callerPid " +
+                    "callerSlot=$callerSlot resolved=$resolvedCallerSlot"
+            )
             return runCatching {
-                ContainerProcessPool.acquireProcess(applicationContext, key, callerSlot)
+                ContainerProcessPool.acquireProcess(
+                    applicationContext,
+                    key,
+                    resolvedCallerSlot
+                )
             }.onFailure {
                 Log.w(TAG, "acquire $process failed", it)
             }.getOrDefault(-1)
