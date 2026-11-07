@@ -77,21 +77,11 @@ data class LlmConfig(
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank()
 
-    fun endpoint(): String {
-        val path = when (protocol) {
-            LlmProtocol.ANTHROPIC -> "/v1/messages"
-            LlmProtocol.OPENAI -> "/v1/chat/completions"
-        }
-        val base = baseUrl.trim().trimEnd('/')
-        if (base.endsWith(path)) return base
-        if (base.endsWith("/v1") && path.startsWith("/v1/")) {
-            return base + path.removePrefix("/v1")
-        }
-        return base + path
-    }
+    /** The Base URL field stores the complete request endpoint. */
+    fun endpoint(): String = baseUrl.trim()
 
     companion object {
-        const val DEFAULT_ANTHROPIC_BASE = "https://api.anthropic.com"
+        const val DEFAULT_ANTHROPIC_BASE = "https://api.anthropic.com/v1/messages"
         const val DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5"
         const val DEFAULT_CONTEXT_TOKENS = 800_000
         const val MIN_CONTEXT_TOKENS = 100_000
@@ -99,8 +89,8 @@ data class LlmConfig(
         const val DEFAULT_MAX_TOOL_ROUNDS = 128
         const val MIN_TOOL_ROUNDS = 1
         const val MAX_TOOL_ROUNDS = 1_000
-        const val DEFAULT_OPENAI_BASE = "https://api.openai.com"
-        const val DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+        const val DEFAULT_OPENAI_BASE = "https://api.openai.com/v1/chat/completions"
+        const val DEFAULT_OPENAI_MODEL = "gpt-6.1-sol"
 
         fun defaultsFor(protocol: LlmProtocol): LlmConfig = when (protocol) {
             LlmProtocol.ANTHROPIC -> LlmConfig(

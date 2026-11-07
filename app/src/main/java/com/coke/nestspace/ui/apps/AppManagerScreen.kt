@@ -119,7 +119,6 @@ internal fun AppManagerScreen(
     installing: Boolean,
     notice: String,
     onInstallApk: () -> Unit,
-    onLoadTestApk: () -> Unit,
     onLaunchVirtual: (String, String?) -> Unit,
     onMultiOpen: (String) -> Unit,
     onUninstall: (String) -> Unit,
@@ -127,8 +126,11 @@ internal fun AppManagerScreen(
 ) {
     var pendingUninstall by remember { mutableStateOf<VirtualApp?>(null) }
     var showSystemPicker by remember { mutableStateOf(false) }
-    var showVirtualInfo by remember { mutableStateOf(false) }
-    val desktopApps = systemApps.filter { it.packageName in desktopSystemPackages }
+    val importedHostApps = systemApps.filter { it.packageName in desktopSystemPackages }
+    val standaloneHostApps = importedHostApps.filter { hostApp ->
+        virtualApps.none { it.packageName == hostApp.packageName }
+    }
+    val appCount = virtualApps.size + standaloneHostApps.size
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -143,9 +145,8 @@ internal fun AppManagerScreen(
             ) {
                 Text(
                     AppLanguage.tr(
-                        "导入 APK 安装到虚拟空间；导入桌面应用从已安装应用里挑选桌面图标。",
-                        "Import an APK into the virtual space, or pick installed " +
-                            "apps to add desktop shortcuts."
+                        "导入宿主已安装的应用，也可以从 APK 文件安装。",
+                        "Import apps already installed on the host, or install from an APK file."
                     ),
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -161,42 +162,33 @@ internal fun AppManagerScreen(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { showSystemPicker = true }) {
-                        Text(AppLanguage.tr("导入桌面应用", "Import desktop apps"))
+                        Text(AppLanguage.tr("导入应用", "Import apps"))
                     }
                     Button(onClick = onInstallApk, enabled = !installing) {
                         Text(AppLanguage.tr("导入 APK", "Import APK"))
                     }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onLoadTestApk, enabled = !installing) {
-                        Text(AppLanguage.tr("测试 APK", "Test APK"))
-                    }
-                    TextButton(onClick = { showVirtualInfo = true }) { Text(AppLanguage.tr("说明", "Details")) }
                 }
             }
         }
 
         item {
             SettingsSection(
-                AppLanguage.tr(
-                    "虚拟应用（${virtualApps.size}）",
-                    "Virtual apps (${virtualApps.size})"
-                )
+                AppLanguage.tr("应用（$appCount）", "Apps ($appCount)")
             )
         }
-        if (virtualApps.isEmpty()) {
+        if (appCount == 0) {
             item {
                 Text(
                     AppLanguage.tr(
-                        "还没有虚拟应用。点上方“导入 APK”；如需 split，可一次多选 base + split。",
-                        "No virtual apps yet. Tap \"Import APK\" above; for split " +
-                            "packages, select the base and split APKs together."
+                        "还没有应用。点击上方“导入应用”，或从 APK 文件安装。",
+                        "No apps yet. Tap \"Import apps\" above, or install from an APK file."
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        } else {
+        }
+        if (virtualApps.isNotEmpty()) {
             items(virtualApps, key = { it.packageName }) { app ->
                 VirtualAppRow(
                     app = app,
@@ -206,36 +198,8 @@ internal fun AppManagerScreen(
                 )
             }
         }
-
-        item {
-            SettingsSection(
-                AppLanguage.tr(
-                    "桌面应用（${desktopApps.size}）",
-                    "Desktop apps (${desktopApps.size})"
-                )
-            )
-        }
-        item {
-            Text(
-                AppLanguage.tr(
-                    "已导入的应用会显示在桌面；在上方“导入桌面应用”中添加或取消。",
-                    "Imported apps appear on the desktop. Add or remove them with " +
-                        "\"Import desktop apps\" above."
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (desktopApps.isEmpty()) {
-            item {
-                Text(
-                    AppLanguage.tr("桌面还没有系统应用。", "No system apps on the desktop yet."),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            items(desktopApps, key = { it.packageName }) { app ->
+        if (standaloneHostApps.isNotEmpty()) {
+            items(standaloneHostApps, key = { "host:${it.packageName}" }) { app ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -317,30 +281,6 @@ internal fun AppManagerScreen(
         )
     }
 
-    if (showVirtualInfo) {
-        AlertDialog(
-            onDismissRequest = { showVirtualInfo = false },
-            title = { Text(AppLanguage.tr("导入与多开", "Import & multiple instances")) },
-            text = {
-                Text(
-                    AppLanguage.tr(
-                        "导入 base APK（可同时选择 split）后会校验包名、签名、minSdk 和 " +
-                            "REQUIRE_SECURE_ENV，并持久化到应用内部存储。\n\n" +
-                            "每个应用可以有多个实例，每个实例有独立的 files/cache/databases/" +
-                            "code_cache 目录。",
-                        "After importing the base APK (optionally with splits), the " +
-                            "package name, signature, minSdk and REQUIRE_SECURE_ENV are " +
-                            "verified and the APK is stored in app-private storage.\n\n" +
-                            "Each app can have several instances, and every instance has " +
-                            "its own files/cache/databases/code_cache directories."
-                    )
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showVirtualInfo = false }) { Text(AppLanguage.tr("知道了", "Got it")) }
-            }
-        )
-    }
 }
 
 @Composable
@@ -375,15 +315,15 @@ private fun SystemAppPickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(AppLanguage.tr("导入桌面应用", "Import desktop apps")) },
+        title = { Text(AppLanguage.tr("导入应用", "Import apps")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     AppLanguage.tr(
-                    "勾选的已安装应用会出现在桌面；虚拟应用会自动显示。",
-                    "Checked installed apps appear on the desktop; virtual apps " +
-                        "are shown automatically."
-                ),
+                        "勾选宿主上已安装的应用，导入后会显示在 NestSpace 桌面。",
+                        "Choose apps already installed on the host; imported apps " +
+                            "appear on the NestSpace desktop."
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

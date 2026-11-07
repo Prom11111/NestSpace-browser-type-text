@@ -42,7 +42,7 @@ internal fun AgentHeader(
     onOpenSettings: () -> Unit
 ) {
     val status = when {
-        !llmConfig.isConfigured -> AppLanguage.tr("规则模式 · 未配置模型", "Rule mode · no model")
+        !llmConfig.isConfigured -> AppLanguage.tr("欢迎使用", "Welcome")
         busy -> AppLanguage.tr("正在处理任务…", "Working on it…")
         else -> AppLanguage.tr("在线 · 可操作容器与浏览器", "Online · can operate containers and the browser")
     }

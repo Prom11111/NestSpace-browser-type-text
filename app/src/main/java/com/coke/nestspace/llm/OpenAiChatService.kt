@@ -21,7 +21,7 @@ class OpenAiChatService(private val config: LlmConfig) : ChatService {
     override val supportsVision: Boolean
         get() = config.model.lowercase().let { name ->
             listOf(
-                "gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4",
+                "gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "o1", "o3", "o4",
                 "qwen-vl", "glm-4v", "doubao", "vision",
                 "deepseek-flash", "deepseek-v4-flash"
             ).any { name.contains(it) }
@@ -157,11 +157,20 @@ class OpenAiChatService(private val config: LlmConfig) : ChatService {
 
     private fun supportsReasoning(model: String): Boolean {
         val name = model.lowercase()
-        return listOf("o1", "o3", "o4", "gpt-5", "codex").any { name.contains(it) }
+        return listOf("o1", "o3", "o4", "gpt-5", "gpt-6", "codex").any {
+            name.contains(it)
+        }
     }
 
     private fun reasoningValue(model: String, effort: ReasoningEffort): String = when (effort) {
-        ReasoningEffort.OFF -> if (model.contains("gpt-5", ignoreCase = true)) "minimal" else "low"
+        ReasoningEffort.OFF -> if (
+            model.contains("gpt-5", ignoreCase = true) ||
+            model.contains("gpt-6", ignoreCase = true)
+        ) {
+            "minimal"
+        } else {
+            "low"
+        }
         ReasoningEffort.LOW -> "low"
         ReasoningEffort.MEDIUM -> "medium"
         ReasoningEffort.HIGH -> "high"

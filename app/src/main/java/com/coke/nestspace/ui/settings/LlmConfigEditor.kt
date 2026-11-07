@@ -7,17 +7,27 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,12 +37,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.coke.nestspace.data.LlmConfig
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.data.LlmProtocol
 import com.coke.nestspace.data.ReasoningEffort
-import java.util.Locale
 
 /**
  * Full-screen editor for one LLM config. Opened as its own settings page so
@@ -52,12 +62,14 @@ fun LlmConfigEditor(
     var protocol by remember(config) { mutableStateOf(config.protocol) }
     var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
     var apiKey by remember(config) { mutableStateOf(config.apiKey) }
+    var showApiKey by remember(config) { mutableStateOf(false) }
     var model by remember(config) { mutableStateOf(config.model) }
     var contextTokens by remember(config) { mutableStateOf(config.contextTokens.toString()) }
     var maxToolRounds by remember(config) { mutableStateOf(config.maxToolRounds.toString()) }
     var maxTokens by remember(config) { mutableStateOf(config.maxTokens.toString()) }
     var temperature by remember(config) { mutableStateOf(config.temperature.toString()) }
     var reasoningEffort by remember(config) { mutableStateOf(config.reasoningEffort) }
+    var showPresets by remember(config) { mutableStateOf(false) }
 
     fun contextValue(): Int = (contextTokens.toIntOrNull() ?: config.contextTokens)
         .coerceAtLeast(LlmConfig.MIN_CONTEXT_TOKENS)
@@ -89,6 +101,18 @@ fun LlmConfigEditor(
         reasoningEffort = reasoningEffort
     )
 
+    fun applyPreset(preset: ProviderPreset) {
+        val previousDefaultName = LlmConfig.defaultsFor(protocol).name
+        if (name.isBlank() || name == previousDefaultName ||
+            providerPresets(protocol).any { it.name == name }
+        ) {
+            name = preset.name
+        }
+        baseUrl = preset.baseUrl
+        model = preset.model
+        showPresets = false
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -96,16 +120,6 @@ fun LlmConfigEditor(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            AppLanguage.tr(
-                "AI 助手只控制 virtual-1 内部应用；模型通过 space_* / ui_* 工具操作。",
-                "The AI assistant only controls apps inside virtual-1. The model " +
-                    "operates them through the space_* / ui_* tools."
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
         if (status.isNotBlank()) {
             Text(
                 status,
@@ -150,37 +164,61 @@ fun LlmConfigEditor(
             }
         }
 
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = { baseUrl = it },
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Base URL") },
-            placeholder = {
-                Text(
-                    when (protocol) {
-                        LlmProtocol.ANTHROPIC -> LlmConfig.DEFAULT_ANTHROPIC_BASE
-                        LlmProtocol.OPENAI -> LlmConfig.DEFAULT_OPENAI_BASE
-                    }
-                )
-            },
-            singleLine = true
-        )
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = { baseUrl = it },
+                modifier = Modifier.weight(1f),
+                label = { Text("Base URL") },
+                placeholder = {
+                    Text(
+                        when (protocol) {
+                            LlmProtocol.ANTHROPIC -> LlmConfig.DEFAULT_ANTHROPIC_BASE
+                            LlmProtocol.OPENAI -> LlmConfig.DEFAULT_OPENAI_BASE
+                        }
+                    )
+                },
+                singleLine = true
+            )
+            OutlinedButton(
+                onClick = { showPresets = true },
+                modifier = Modifier.height(56.dp)
+            ) {
+                Text(AppLanguage.tr("预设", "Presets"))
+            }
+        }
 
         OutlinedTextField(
             value = apiKey,
             onValueChange = { apiKey = it },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("API Key") },
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation = if (showApiKey) {
+                VisualTransformation.None
+            } else {
+                PasswordVisualTransformation()
+            },
+            trailingIcon = {
+                IconButton(onClick = { showApiKey = !showApiKey }) {
+                    Icon(
+                        imageVector = if (showApiKey) {
+                            Icons.Rounded.VisibilityOff
+                        } else {
+                            Icons.Rounded.Visibility
+                        },
+                        contentDescription = if (showApiKey) {
+                            AppLanguage.tr("隐藏 API Key", "Hide API key")
+                        } else {
+                            AppLanguage.tr("显示 API Key", "Show API key")
+                        }
+                    )
+                }
+            },
             singleLine = true
-        )
-        Text(
-            AppLanguage.tr(
-                "API Key 使用 Android Keystore 加密保存在本机",
-                "The API key is encrypted with the Android Keystore on this device"
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         OutlinedTextField(
@@ -188,14 +226,10 @@ fun LlmConfigEditor(
             onValueChange = { model = it },
             modifier = Modifier.fillMaxWidth(),
             label = { Text(AppLanguage.tr("模型", "Model")) },
-            placeholder = { Text(AppLanguage.tr("例如 claude-sonnet-5-5 / gpt-4o-mini", "e.g. claude-sonnet-5-5 / gpt-4o-mini")) },
+            placeholder = { Text(AppLanguage.tr("例如 claude-sonnet-5-5 / gpt-6.1-sol", "e.g. claude-sonnet-5-5 / gpt-6.1-sol")) },
             singleLine = true
         )
 
-        Text(
-            AppLanguage.tr("上下文大小", "Context size"),
-            style = MaterialTheme.typography.titleSmall
-        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -205,32 +239,24 @@ fun LlmConfigEditor(
                 onClick = { stepContext(-LlmConfig.CONTEXT_TOKEN_STEP) },
                 enabled = contextValue() > LlmConfig.MIN_CONTEXT_TOKENS
             ) {
-                Text(AppLanguage.tr("−10万", "−100k"))
+                Text("-")
             }
             OutlinedTextField(
                 value = contextTokens,
                 onValueChange = { contextTokens = it.filter(Char::isDigit).take(9) },
                 modifier = Modifier.weight(1f),
-                label = { Text("Tokens") },
+                label = {
+                    Text(AppLanguage.tr("最大上下文 tokens", "Max context tokens"))
+                },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true
             )
             OutlinedButton(
                 onClick = { stepContext(LlmConfig.CONTEXT_TOKEN_STEP) }
             ) {
-                Text(AppLanguage.tr("+10万", "+100k"))
+                Text("+")
             }
         }
-        Text(
-            AppLanguage.tr(
-                "默认 800,000；左右按钮每次调整 100,000；最低 100,000，最高不限。" +
-                    "当前 ${formatTokens(contextValue())}。",
-                "Default 800,000; the left/right buttons step 100,000; minimum " +
-                    "100,000, no upper limit. Current: ${formatTokens(contextValue())}."
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
@@ -252,19 +278,6 @@ fun LlmConfigEditor(
                 singleLine = true
             )
         }
-        Text(
-            AppLanguage.tr(
-                "最大输出只限制可见回答，思考另算。当前思考档位会自动额外预留 " +
-                    "${formatTokens(reasoningEffort.reasoningReserveTokens)} tokens；" +
-                    "仅对把思考计入 max_tokens 的模型生效。",
-                "Max answer tokens limits visible text only; thinking is budgeted " +
-                    "separately. The current effort adds " +
-                    "${formatTokens(reasoningEffort.reasoningReserveTokens)} tokens of " +
-                    "headroom for models that count reasoning in max_tokens."
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
 
         OutlinedTextField(
             value = maxToolRounds,
@@ -273,15 +286,6 @@ fun LlmConfigEditor(
             label = { Text(AppLanguage.tr("最大工具轮次", "Max tool rounds")) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true
-        )
-        Text(
-            AppLanguage.tr(
-                "默认 128 轮。达到上限后会停止调用工具，并先让模型输出文字总结。",
-                "Default 128 rounds. At the limit the agent stops calling tools and " +
-                    "asks the model for a text summary."
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Text(AppLanguage.tr("思考程度", "Reasoning effort"), style = MaterialTheme.typography.titleSmall)
@@ -299,31 +303,6 @@ fun LlmConfigEditor(
         }
         Text(
             reasoningEffort.description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Text(
-            when (protocol) {
-                LlmProtocol.ANTHROPIC -> AppLanguage.tr(
-                    "请求：POST /v1/messages，使用原生 tools / tool_use / tool_result。",
-                    "Request: POST /v1/messages with native tools / tool_use / tool_result."
-                )
-                LlmProtocol.OPENAI -> AppLanguage.tr(
-                    "请求：POST /v1/chat/completions，使用原生 tool_calls / tool 消息。",
-                    "Request: POST /v1/chat/completions with native tool_calls / tool messages."
-                )
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Text(
-            AppLanguage.tr(
-                "系统提示词已移到「空间设置 → 系统提示词」，所有模型共用。",
-                "The system prompt now lives under Space settings → System prompt " +
-                    "and is shared by all models."
-            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -346,7 +325,195 @@ fun LlmConfigEditor(
             }
         }
     }
+
+    if (showPresets) {
+        val presets = providerPresets(protocol)
+        AlertDialog(
+            onDismissRequest = { showPresets = false },
+            title = {
+                Text(
+                    when (protocol) {
+                        LlmProtocol.ANTHROPIC ->
+                            AppLanguage.tr("Claude 兼容预设", "Claude-compatible presets")
+                        LlmProtocol.OPENAI ->
+                            AppLanguage.tr("OpenAI 兼容预设", "OpenAI-compatible presets")
+                    },
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        presets.forEach { preset ->
+                            AssistChip(
+                                onClick = { applyPreset(preset) },
+                                label = { Text(preset.name) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPresets = false }) {
+                    Text(AppLanguage.tr("取消", "Cancel"))
+                }
+            }
+        )
+    }
 }
 
-private fun formatTokens(value: Int): String =
-    String.format(Locale.getDefault(), "%,d", value)
+private data class ProviderPreset(
+    val name: String,
+    val baseUrl: String,
+    val model: String
+)
+
+private fun providerPresets(protocol: LlmProtocol): List<ProviderPreset> = when (protocol) {
+    LlmProtocol.ANTHROPIC -> listOf(
+        ProviderPreset(
+            name = "Anthropic",
+            baseUrl = LlmConfig.DEFAULT_ANTHROPIC_BASE,
+            model = "claude-haiku-5-5"
+        ),
+        ProviderPreset(
+            name = "DeepSeek",
+            baseUrl = "https://api.deepseek.com/anthropic/v1/messages",
+            model = "deepseek-flash"
+        ),
+        ProviderPreset(
+            name = "Kimi",
+            baseUrl = "https://api.moonshot.cn/anthropic/v1/messages",
+            model = "kimi-k3.1-pro"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("智谱 GLM", "Zhipu GLM"),
+            baseUrl = "https://open.bigmodel.cn/api/anthropic/v1/messages",
+            model = "glm-5.3"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("阿里云百炼", "Alibaba Cloud"),
+            baseUrl = "https://dashscope.aliyuncs.com/apps/anthropic/v1/messages",
+            model = "qwen3.8-flash"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("火山方舟", "Volcengine Ark"),
+            baseUrl = "https://ark.cn-beijing.volces.com/api/compatible/v1/messages",
+            model = "doubao-seed-2-1-pro-260915"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("百度千帆", "Baidu Qianfan"),
+            baseUrl = "https://qianfan.baidubce.com/anthropic/tokenplan/personal/v1/messages",
+            model = "deepseek-v4-flash"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("腾讯混元", "Tencent Hunyuan"),
+            baseUrl = "https://api.lkeap.cloud.tencent.com/plan/anthropic/v1/messages",
+            model = "tc-code-latest"
+        ),
+        ProviderPreset(
+            name = "MiniMax",
+            baseUrl = "https://api.minimax.cn/anthropic/v1/messages",
+            model = "MiniMax-M3.1-Flash"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("阶跃星辰", "StepFun"),
+            baseUrl = "https://api.stepfun.com/step_plan/v1/messages",
+            model = "step-5-preview"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("讯飞星火", "iFlytek Spark"),
+            baseUrl = "https://maas-api.cn-huabei-1.xf-yun.com/anthropic/v1/messages",
+            model = "spark-x2.6"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("小米 MiMo", "Xiaomi MiMo"),
+            baseUrl = "https://api.xiaomimimo.com/anthropic/v1/messages",
+            model = "mimo-v2.6-pro"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("美团 LongCat", "Meituan LongCat"),
+            baseUrl = "https://api.longcat.chat/anthropic/v1/messages",
+            model = "LongCat-2.0"
+        )
+    )
+    LlmProtocol.OPENAI -> listOf(
+        ProviderPreset(
+            name = "OpenAI",
+            baseUrl = LlmConfig.DEFAULT_OPENAI_BASE,
+            model = LlmConfig.DEFAULT_OPENAI_MODEL
+        ),
+        ProviderPreset(
+            name = "DeepSeek",
+            baseUrl = "https://api.deepseek.com/v1/chat/completions",
+            model = "deepseek-flash"
+        ),
+        ProviderPreset(
+            name = "Kimi",
+            baseUrl = "https://api.moonshot.cn/v1/chat/completions",
+            model = "kimi-k3"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("智谱 GLM", "Zhipu GLM"),
+            baseUrl = "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+            model = "glm-5.3-flash"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("阿里云百炼", "Alibaba Cloud"),
+            baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            model = "qwen3.8-flash"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("火山方舟", "Volcengine Ark"),
+            baseUrl = "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+            model = "doubao-seed-2-1-pro-260915"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("百度千帆", "Baidu Qianfan"),
+            baseUrl = "https://qianfan.baidubce.com/v2/chat/completions",
+            model = "deepseek-v4-flash"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("腾讯混元", "Tencent Hunyuan"),
+            baseUrl = "https://tokenhub.tencentmaas.com/v1/chat/completions",
+            model = "hy3"
+        ),
+        ProviderPreset(
+            name = "MiniMax",
+            baseUrl = "https://api.minimax.cn/v1/chat/completions",
+            model = "MiniMax-M3.1-Flash"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("阶跃星辰", "StepFun"),
+            baseUrl = "https://api.stepfun.com/v1/chat/completions",
+            model = "step-3.7-flash"
+        ),
+        ProviderPreset(
+            name = "xAI",
+            baseUrl = "https://api.x.ai/v1/chat/completions",
+            model = "grok-4.7"
+        ),
+        ProviderPreset(
+            name = "Mistral AI",
+            baseUrl = "https://api.mistral.ai/v1/chat/completions",
+            model = "mistral-large-4"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("小米 MiMo", "Xiaomi MiMo"),
+            baseUrl = "https://api.xiaomimimo.com/v1/chat/completions",
+            model = "mimo-v2.6-flash"
+        ),
+        ProviderPreset(
+            name = AppLanguage.tr("美团 LongCat", "Meituan LongCat"),
+            baseUrl = "https://api.longcat.chat/openai/v1/chat/completions",
+            model = "LongCat-2.0"
+        )
+    )
+}

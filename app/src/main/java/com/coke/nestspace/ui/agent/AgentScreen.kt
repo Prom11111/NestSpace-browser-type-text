@@ -47,6 +47,7 @@ import com.coke.nestspace.agent.AssistantBridge
 import com.coke.nestspace.agent.AssistantConversation
 import com.coke.nestspace.agent.ChildRunRegistry
 import com.coke.nestspace.container.ContainerProcessPool
+import com.coke.nestspace.container.HeadlessMirrorWindow
 import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.control.LivePreview
 import com.coke.nestspace.agent.ToolPermissionLevel
@@ -175,8 +176,10 @@ internal fun AgentScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME ->
+                Lifecycle.Event.ON_RESUME -> {
                     FloatingDotOverlay.setAssistantPageVisible(context, true)
+                    HeadlessMirrorWindow.setAssistantVisible(true)
+                }
                 Lifecycle.Event.ON_PAUSE ->
                     FloatingDotOverlay.setAssistantPageVisible(context, false)
                 else -> Unit
@@ -185,10 +188,12 @@ internal fun AgentScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             FloatingDotOverlay.setAssistantPageVisible(context, true)
+            HeadlessMirrorWindow.setAssistantVisible(true)
         }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             FloatingDotOverlay.setAssistantPageVisible(context, false)
+            HeadlessMirrorWindow.setAssistantVisible(false)
         }
     }
 
@@ -364,27 +369,29 @@ internal fun AgentScreen(
             )
         }
 
-        Composer(
-            input = input,
-            onInputChange = {
-                input = it
-                AssistantBridge.updateInput(it)
-            },
-            onSend = ::submit,
-            onStop = onStop,
-            busy = busy,
-            queuedSteering = queuedSteering,
-            config = llmConfig,
-            configs = llmConfigs,
-            activeLlmId = activeLlmId,
-            onSelectModel = onSelectModel,
-            onOpenSettings = onOpenModelSettings,
-            permissionLevel = permissionLevel,
-            onPermissionLevelChange = onPermissionLevelChange,
-            onOpenPermissionSettings = onOpenPermissionSettings,
-            onReasoningEffortChange = onReasoningEffortChange,
-            focusRequester = focusRequester
-        )
+        if (llmConfig.isConfigured) {
+            Composer(
+                input = input,
+                onInputChange = {
+                    input = it
+                    AssistantBridge.updateInput(it)
+                },
+                onSend = ::submit,
+                onStop = onStop,
+                busy = busy,
+                queuedSteering = queuedSteering,
+                config = llmConfig,
+                configs = llmConfigs,
+                activeLlmId = activeLlmId,
+                onSelectModel = onSelectModel,
+                onOpenSettings = onOpenModelSettings,
+                permissionLevel = permissionLevel,
+                onPermissionLevelChange = onPermissionLevelChange,
+                onOpenPermissionSettings = onOpenPermissionSettings,
+                onReasoningEffortChange = onReasoningEffortChange,
+                focusRequester = focusRequester
+            )
+        }
     }
 
     if (showLivePreview && liveFrame != null) {

@@ -8,7 +8,6 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -34,9 +33,8 @@ import java.util.concurrent.CopyOnWriteArraySet
  * device resolution. The SurfaceView only scales that finished frame down;
  * this is a live mirror, not a screenshot or screen recording.
  *
- * When the assistant Activity is available the window is added as an
- * application panel, so target dialogs and system toasts stay above it. The
- * panel can be dragged by its title bar and closed with the X button.
+ * The mirror is an application panel owned by the AI assistant page. It is
+ * never promoted to a system overlay and disappears with that page.
  */
 object HeadlessMirrorWindow {
 
@@ -60,6 +58,8 @@ object HeadlessMirrorWindow {
     @Volatile
     private var hostResumed = false
     @Volatile
+    private var assistantVisible = false
+    @Volatile
     private var activeSlot: Int = -1
     private val backListeners = CopyOnWriteArraySet<(Boolean) -> Unit>()
 
@@ -81,6 +81,11 @@ object HeadlessMirrorWindow {
 
     fun onHostPaused(activity: Activity) {
         if (hostActivity.get() === activity) hostResumed = false
+    }
+
+    fun setAssistantVisible(visible: Boolean) {
+        assistantVisible = visible
+        if (!visible) hide()
     }
 
     /**
@@ -117,9 +122,8 @@ object HeadlessMirrorWindow {
     suspend fun awaitDisplay(context: Context): Int? = withContext(Dispatchers.Main) {
         while (hiding) kotlinx.coroutines.delay(10)
         if (displayId != INVALID) return@withContext displayId
-        val activity = hostActivity.get()
-        if (activity == null && !Settings.canDrawOverlays(context.applicationContext)) {
-            Log.w(TAG, "overlay permission missing")
+        if (!assistantVisible || !hostResumed || hostActivity.get() == null) {
+            Log.w(TAG, "mirror hidden: assistant page is not visible")
             return@withContext null
         }
         ensureWindow(context)
@@ -189,13 +193,9 @@ object HeadlessMirrorWindow {
     private fun ensureWindow(context: Context) {
         if (overlay != null) return
         appContext = context.applicationContext
-        // A panel can only receive a Surface while its Activity window is
-        // visible. Launches started from the voice assistant leave MainActivity
-        // stopped, so use an application overlay there instead; a panel would
-        // be attached but never drawn and the mirror would time out; the
-        // launch then falls back to an invisible background host.
-        val activity = hostActivity.get()?.takeIf { hostResumed }
-        val host = activity ?: context.applicationContext
+        val activity = hostActivity.get()?.takeIf { hostResumed && assistantVisible }
+            ?: return
+        val host = activity
         val manager = host.getSystemService(WindowManager::class.java) ?: return
         val metrics = host.resources.displayMetrics
         val density = metrics.density
@@ -284,25 +284,15 @@ object HeadlessMirrorWindow {
         val layoutParams = WindowManager.LayoutParams(
             width,
             height,
-            if (activity != null) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL
-            } else {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            },
+            WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            if (activity != null) {
-                token = activity.window?.decorView?.windowToken
-                gravity = Gravity.TOP or Gravity.START
-                x = metrics.widthPixels - width - margin
-                y = metrics.heightPixels - height - (72 * density).toInt()
-            } else {
-                gravity = Gravity.BOTTOM or Gravity.END
-                x = margin
-                y = (96 * density).toInt()
-            }
+            token = activity.window?.decorView?.windowToken
+            gravity = Gravity.TOP or Gravity.START
+            x = metrics.widthPixels - width - margin
+            y = metrics.heightPixels - height - (72 * density).toInt()
         }
 
         // Publish the new surface before addView: surfaceCreated can be
@@ -314,17 +304,9 @@ object HeadlessMirrorWindow {
         windowManager = manager
         params = layoutParams
 
-        var installed = runCatching { manager.addView(root, layoutParams) }.isSuccess
-        if (!installed && activity != null) {
-            // Panel token may be unavailable during a transient lifecycle;
-            // fall back to the system overlay when permission is granted.
-            layoutParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            layoutParams.token = null
-            layoutParams.gravity = Gravity.BOTTOM or Gravity.END
-            installed = runCatching { manager.addView(root, layoutParams) }.isSuccess
-        }
+        val installed = runCatching { manager.addView(root, layoutParams) }.isSuccess
         if (!installed) {
-            Log.w(TAG, "mirror window could not be added (panel=${activity != null})")
+            Log.w(TAG, "mirror panel could not be added")
             overlay = null
             surfaceView = null
             windowManager = null
@@ -333,7 +315,7 @@ object HeadlessMirrorWindow {
             ready = null
             return
         }
-        Log.i(TAG, "mirror window added overlay=${activity == null}")
+        Log.i(TAG, "mirror panel added")
 
         var downRawX = 0f
         var downRawY = 0f

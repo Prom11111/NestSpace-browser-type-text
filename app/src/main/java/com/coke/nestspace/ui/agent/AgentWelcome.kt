@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -26,7 +27,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.SmartToy
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -97,6 +98,18 @@ internal fun WelcomeState(
     modifier: Modifier = Modifier,
     onSuggestion: (String) -> Unit
 ) {
+    if (!configured) {
+        Box(
+            modifier = modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Button(onClick = onConfigure) {
+                Text(AppLanguage.tr("去配置", "Configure"))
+            }
+        }
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -125,7 +138,7 @@ internal fun WelcomeState(
         }
         Spacer(Modifier.height(18.dp))
         Text(
-            AppLanguage.tr("你好，我是 NestSpace Agent", "Hi, I'm NestSpace Agent"),
+            AppLanguage.tr("欢迎使用 NestSpace Agent", "Welcome to NestSpace Agent"),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
@@ -147,45 +160,6 @@ internal fun WelcomeState(
             FeaturePill(AppLanguage.tr("无头浏览器", "Headless browser"))
             FeaturePill(AppLanguage.tr("容器控制", "Container control"))
             FeaturePill(AppLanguage.tr("系统诊断", "System diagnostics"))
-        }
-
-        if (!configured) {
-            Spacer(Modifier.height(16.dp))
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Rounded.SmartToy,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(9.dp))
-                    Text(
-                        AppLanguage.tr(
-                        "配置模型后可使用完整的浏览器与容器 Agent",
-                        "Configure a model to use the full browser and container agent"
-                    ),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        AppLanguage.tr("去配置", "Configure"),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(onClick = onConfigure)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
         }
 
         Spacer(Modifier.height(24.dp))

@@ -115,6 +115,7 @@ import com.coke.nestspace.data.AppSettingsEvents
 import com.coke.nestspace.data.LlmConfig
 import com.coke.nestspace.data.LlmProtocol
 import com.coke.nestspace.data.McpStatus
+import com.coke.nestspace.data.ModelOnboardingStore
 import com.coke.nestspace.data.VirtualApp
 import androidx.core.view.WindowCompat
 import com.coke.nestspace.vm.VirtualViewModel
@@ -140,6 +141,7 @@ import com.coke.nestspace.ui.settings.SystemPromptScreen
 import com.coke.nestspace.ui.settings.ContainerSelfCheckScreen
 import com.coke.nestspace.ui.settings.McpClientSettingsScreen
 import com.coke.nestspace.ui.settings.MemorySkillsScreen
+import com.coke.nestspace.ui.settings.ModelOnboardingScreen
 import com.coke.nestspace.ui.settings.ScheduledTasksScreen
 import com.coke.nestspace.ui.settings.EvaluationReplayScreen
 import com.coke.nestspace.ui.settings.TokenUsageScreen
@@ -147,10 +149,16 @@ import com.coke.nestspace.ui.settings.ToolPermissionScreen
 import com.coke.nestspace.ui.settings.HostControlScreen
 import com.coke.nestspace.ui.settings.LocationSimulationScreen
 import com.coke.nestspace.ui.settings.SettingsHomeScreen
+import com.coke.nestspace.ui.settings.SettingsCategory
 import com.coke.nestspace.location.MockLocationSettings
 
 private enum class SpacesPage {
     ROOT,
+    SETTINGS_APPS,
+    SETTINGS_ASSISTANT,
+    SETTINGS_SYSTEM,
+    SETTINGS_CONTAINER_ADVANCED,
+    SETTINGS_ASSISTANT_ADVANCED,
     APPS,
     SERVICES,
     APPEARANCE,
@@ -220,6 +228,15 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
         }
     val context = LocalContext.current
     val uiScope = rememberCoroutineScope()
+    val modelOnboardingStore = remember(context) { ModelOnboardingStore(context) }
+    var modelOnboardingCompleted by remember(context) {
+        mutableStateOf(modelOnboardingStore.isCompleted() || llmConfigs.isNotEmpty())
+    }
+    val showModelOnboarding = !modelOnboardingCompleted && llmConfigs.isEmpty()
+    val completeModelOnboarding: () -> Unit = {
+        modelOnboardingStore.markCompleted()
+        modelOnboardingCompleted = true
+    }
     var slotMode by remember {
         mutableIntStateOf(ContainerProcessPool.slotLimitMode(context))
     }
@@ -271,6 +288,11 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     }
     LaunchedEffect(Unit) {
         AssistantBridge.sendRequests.collect { viewModel.runAgent(it) }
+    }
+    LaunchedEffect(llmConfigs.isNotEmpty()) {
+        if (llmConfigs.isNotEmpty() && !modelOnboardingCompleted) {
+            completeModelOnboarding()
+        }
     }
     LaunchedEffect(Unit) {
         AssistantBridge.externalRequest.collect { text ->
@@ -333,6 +355,12 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
             FloatingDotOverlay.setOverlayHidden(context, "settings-detail", false)
         }
     }
+    DisposableEffect(showModelOnboarding) {
+        FloatingDotOverlay.setOverlayHidden(context, "model-onboarding", showModelOnboarding)
+        onDispose {
+            FloatingDotOverlay.setOverlayHidden(context, "model-onboarding", false)
+        }
+    }
     val navigateBack: () -> Unit = {
         when {
             tab != 1 -> tab = 0
@@ -355,14 +383,56 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                 spacesPage = SpacesPage.ROOT
                 tab = 2
             }
+            spacesPage in setOf(
+                SpacesPage.HOST_CONTROL,
+                SpacesPage.SELF_CHECK
+            ) -> spacesPage = SpacesPage.SETTINGS_CONTAINER_ADVANCED
+            spacesPage in setOf(
+                SpacesPage.MCP_CLIENTS,
+                SpacesPage.MEMORY,
+                SpacesPage.SCHEDULE,
+                SpacesPage.EVAL,
+                SpacesPage.CHILD_RUNS,
+                SpacesPage.TOKEN_USAGE,
+                SpacesPage.SERVICES
+            ) -> spacesPage = SpacesPage.SETTINGS_ASSISTANT_ADVANCED
+            spacesPage in setOf(
+                SpacesPage.APPS,
+                SpacesPage.SLOTS,
+                SpacesPage.LOCATION
+            ) -> spacesPage = SpacesPage.SETTINGS_APPS
+            spacesPage in setOf(
+                SpacesPage.MODEL,
+                SpacesPage.SYSTEM_PROMPT,
+                SpacesPage.PERMISSIONS,
+                SpacesPage.FLOATING_DOT
+            ) -> spacesPage = SpacesPage.SETTINGS_ASSISTANT
+            spacesPage in setOf(
+                SpacesPage.APPEARANCE,
+                SpacesPage.LANGUAGE
+            ) -> spacesPage = SpacesPage.SETTINGS_SYSTEM
+            spacesPage == SpacesPage.SETTINGS_CONTAINER_ADVANCED ->
+                spacesPage = SpacesPage.SETTINGS_APPS
+            spacesPage == SpacesPage.SETTINGS_ASSISTANT_ADVANCED ->
+                spacesPage = SpacesPage.SETTINGS_ASSISTANT
             spacesPage != SpacesPage.ROOT -> spacesPage = SpacesPage.ROOT
             else -> tab = 0
         }
     }
     BackHandler(enabled = tab != 0) { navigateBack() }
+    BackHandler(enabled = showModelOnboarding) {
+        completeModelOnboarding()
+    }
     val appBarTitle = when {
         tab == 1 -> when (spacesPage) {
             SpacesPage.ROOT -> AppLanguage.tr("空间设置", "Space settings")
+            SpacesPage.SETTINGS_APPS -> AppLanguage.tr("应用与容器", "Apps & containers")
+            SpacesPage.SETTINGS_ASSISTANT -> AppLanguage.tr("AI 助手设置", "AI assistant settings")
+            SpacesPage.SETTINGS_SYSTEM -> AppLanguage.tr("系统与网络", "System & network")
+            SpacesPage.SETTINGS_CONTAINER_ADVANCED ->
+                AppLanguage.tr("容器高级", "Container advanced")
+            SpacesPage.SETTINGS_ASSISTANT_ADVANCED ->
+                AppLanguage.tr("高级助手工具", "Advanced assistant tools")
             SpacesPage.APPS -> AppLanguage.tr("应用管理", "App management")
             SpacesPage.SERVICES -> AppLanguage.tr("MCP 控制服务", "MCP control service")
             SpacesPage.APPEARANCE -> AppLanguage.tr("外观", "Appearance")
@@ -395,26 +465,26 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     }
 
     Scaffold(
-        topBar = {
-            if (tab != 0) {
-                TopAppBar(
-                    title = { Text(appBarTitle) },
-                    navigationIcon = {
-                        IconButton(onClick = navigateBack) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = if (inSpacesDetail) {
-                                    AppLanguage.tr("返回空间设置", "Back to space settings")
-                                } else {
-                                    AppLanguage.tr("返回桌面", "Back to desktop")
-                                }
-                            )
+            topBar = {
+                if (tab != 0) {
+                    TopAppBar(
+                        title = { Text(appBarTitle) },
+                        navigationIcon = {
+                            IconButton(onClick = navigateBack) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = if (inSpacesDetail) {
+                                        AppLanguage.tr("返回空间设置", "Back to space settings")
+                                    } else {
+                                        AppLanguage.tr("返回桌面", "Back to desktop")
+                                    }
+                                )
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
-        }
-    ) { padding ->
+        ) { padding ->
         val contentPadding = if (tab == 0) {
             PaddingValues(bottom = padding.calculateBottomPadding())
         } else {
@@ -452,8 +522,23 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                 )
 
                 1 -> when (spacesPage) {
-                    SpacesPage.ROOT -> {
+                    SpacesPage.ROOT,
+                    SpacesPage.SETTINGS_APPS,
+                    SpacesPage.SETTINGS_ASSISTANT,
+                    SpacesPage.SETTINGS_SYSTEM,
+                    SpacesPage.SETTINGS_CONTAINER_ADVANCED,
+                    SpacesPage.SETTINGS_ASSISTANT_ADVANCED -> {
                         SettingsHomeScreen(
+                            category = when (spacesPage) {
+                                SpacesPage.SETTINGS_APPS -> SettingsCategory.APPS
+                                SpacesPage.SETTINGS_ASSISTANT -> SettingsCategory.ASSISTANT
+                                SpacesPage.SETTINGS_SYSTEM -> SettingsCategory.SYSTEM
+                                SpacesPage.SETTINGS_CONTAINER_ADVANCED ->
+                                    SettingsCategory.CONTAINER_ADVANCED
+                                SpacesPage.SETTINGS_ASSISTANT_ADVANCED ->
+                                    SettingsCategory.ASSISTANT_ADVANCED
+                                else -> null
+                            },
                             appCount = virtualApps.count { it.spaceId == "virtual-1" },
                             desktopAppCount = selectedSystemApps.size,
                             mcpStatus = mcpStatus,
@@ -487,7 +572,18 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                             onOpenSlots = { spacesPage = SpacesPage.SLOTS },
                             onOpenSelfCheck = { spacesPage = SpacesPage.SELF_CHECK },
                             onOpenLanguage = { spacesPage = SpacesPage.LANGUAGE },
-                            onOpenAbout = { spacesPage = SpacesPage.ABOUT }
+                            onOpenAbout = { spacesPage = SpacesPage.ABOUT },
+                            onOpenCategory = { category ->
+                                spacesPage = when (category) {
+                                    SettingsCategory.APPS -> SpacesPage.SETTINGS_APPS
+                                    SettingsCategory.ASSISTANT -> SpacesPage.SETTINGS_ASSISTANT
+                                    SettingsCategory.SYSTEM -> SpacesPage.SETTINGS_SYSTEM
+                                    SettingsCategory.CONTAINER_ADVANCED ->
+                                        SpacesPage.SETTINGS_CONTAINER_ADVANCED
+                                    SettingsCategory.ASSISTANT_ADVANCED ->
+                                        SpacesPage.SETTINGS_ASSISTANT_ADVANCED
+                                }
+                            }
                         )
                         if (showBrowserProxyDialog) {
                             BrowserProxyDialog(
@@ -503,7 +599,6 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                         installing = installing,
                         notice = notice,
                         onInstallApk = { apkPicker.launch(apkMimeTypes) },
-                        onLoadTestApk = viewModel::loadStageBTestApk,
                         onLaunchVirtual = { packageName, instanceId ->
                             viewModel.launchVirtual(packageName, instanceId)
                         },
@@ -666,6 +761,19 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                 )
             }
         }
+    }
+
+    if (showModelOnboarding) {
+        ModelOnboardingScreen(
+            onConfigure = {
+                completeModelOnboarding()
+                modelSettingsFromAssistant = false
+                editingLlm = LlmConfig.defaultsFor(LlmProtocol.ANTHROPIC)
+                spacesPage = SpacesPage.MODEL_EDIT
+                tab = 1
+            },
+            onSkip = completeModelOnboarding
+        )
     }
 
     UserGateHost()

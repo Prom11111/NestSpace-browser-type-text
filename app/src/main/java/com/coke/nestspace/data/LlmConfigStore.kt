@@ -18,12 +18,13 @@ class LlmConfigStore(context: Context) {
     fun load(): LlmConfigState = synchronized(lock) {
         val stored = prefs.getString(KEY_CONFIGS, null)
         if (stored != null) {
-            val (configs, legacyPlaintext) = parseConfigs(stored)
+            val (storedConfigs, needsSave) = parseConfigs(stored)
+            val configs = storedConfigs.filterNot { it.isUnusedGeneratedDefault() }
             val activeId = prefs.getString(KEY_ACTIVE_ID, "").orEmpty()
                 .takeIf { id -> configs.any { it.id == id } }
                 ?: configs.firstOrNull()?.id.orEmpty()
             val state = LlmConfigState(configs, activeId)
-            if (legacyPlaintext) save(state)
+            if (needsSave || configs.size != storedConfigs.size) save(state)
             return state
         }
 
@@ -32,9 +33,7 @@ class LlmConfigStore(context: Context) {
             return migrated
         }
 
-        val defaults = LlmConfig.defaultsFor(LlmProtocol.ANTHROPIC)
-        val defaultConfig = defaults.copy(id = DEFAULT_ID)
-        val state = LlmConfigState(listOf(defaultConfig), defaultConfig.id)
+        val state = LlmConfigState()
         save(state)
         return state
     }
@@ -114,12 +113,13 @@ class LlmConfigStore(context: Context) {
             maxTokens = prefs.getInt(KEY_MAX_TOKENS, 2048),
             temperature = prefs.getString(KEY_TEMPERATURE, "0.7")?.toDoubleOrNull() ?: 0.7
         )
-        return LlmConfigState(listOf(config), config.id)
+        val normalized = config.withCompleteEndpoint()
+        return LlmConfigState(listOf(normalized), normalized.id)
     }
 
     private fun parseConfigs(raw: String): Pair<List<LlmConfig>, Boolean> = runCatching {
         val array = JSONArray(raw)
-        var legacyPlaintext = false
+        var needsSave = false
         val configs = (0 until array.length()).mapNotNull { index ->
             val json = array.optJSONObject(index) ?: return@mapNotNull null
             val protocol = LlmProtocol.entries
@@ -128,9 +128,9 @@ class LlmConfigStore(context: Context) {
             val defaults = LlmConfig.defaultsFor(protocol)
             val storedKey = json.optString("apiKey", "")
             if (storedKey.isNotBlank() && !ApiKeyCipher.isEncrypted(storedKey)) {
-                legacyPlaintext = true
+                needsSave = true
             }
-            LlmConfig(
+            val config = LlmConfig(
                 id = json.optString("id").ifBlank { UUID.randomUUID().toString() },
                 name = json.optString("name"),
                 protocol = protocol,
@@ -151,15 +151,46 @@ class LlmConfigStore(context: Context) {
                     it.name == json.optString("reasoningEffort")
                 } ?: ReasoningEffort.MEDIUM
             )
+            val normalized = config.withCompleteEndpoint()
+            if (normalized != config) needsSave = true
+            normalized
         }
-        configs to legacyPlaintext
+        configs to needsSave
     }.getOrDefault(emptyList<LlmConfig>() to false)
+
+    private fun LlmConfig.withCompleteEndpoint(): LlmConfig {
+        val url = baseUrl.trim().trimEnd('/')
+        if (url.isEmpty()) return this
+        val suffix = when (protocol) {
+            LlmProtocol.ANTHROPIC -> {
+                if (url.endsWith("/messages")) return copy(baseUrl = url)
+                if (url.endsWith("/v1")) "/messages" else "/v1/messages"
+            }
+            LlmProtocol.OPENAI -> {
+                if (url.endsWith("/chat/completions")) return copy(baseUrl = url)
+                if (Regex("/v\\d+$").containsMatchIn(url)) {
+                    "/chat/completions"
+                } else {
+                    "/v1/chat/completions"
+                }
+            }
+        }
+        return copy(baseUrl = url + suffix)
+    }
+
+    private fun LlmConfig.isUnusedGeneratedDefault(): Boolean =
+        id == LEGACY_GENERATED_DEFAULT_ID &&
+            protocol == LlmProtocol.ANTHROPIC &&
+            name == "Claude" &&
+            baseUrl == LlmConfig.DEFAULT_ANTHROPIC_BASE &&
+            model == LlmConfig.DEFAULT_ANTHROPIC_MODEL &&
+            apiKey.isBlank()
 
     companion object {
         // Shared across instances; settings UI and assistant runtime each
         // create their own store but must not race on the config list.
         private val LOCK = Any()
-        private const val DEFAULT_ID = "claude-default"
+        private const val LEGACY_GENERATED_DEFAULT_ID = "claude-default"
 
         private const val KEY_CONFIGS = "configs"
         private const val KEY_ACTIVE_ID = "active_id"

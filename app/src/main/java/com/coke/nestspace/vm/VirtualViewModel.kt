@@ -36,7 +36,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.UUID
 
 class VirtualViewModel(app: Application) : AndroidViewModel(app) {
@@ -228,31 +227,6 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
-
-    fun loadStageBTestApk() {
-        val dir = getApplication<Application>().getExternalFilesDir(null)
-        if (dir == null) {
-            addError(AppLanguage.tr("外部文件目录不可用", "External files directory unavailable"))
-            return
-        }
-        val file = listOf("stage-b-test.apk", "stage-a-test.apk")
-            .map { File(dir, it) }
-            .firstOrNull { it.isFile }
-        if (file == null) {
-            fail(
-                AppLanguage.tr(
-                    "找不到测试 APK。请先执行：\n" +
-                        "adb push testapp-debug.apk ${File(dir, "stage-b-test.apk").absolutePath}",
-                    "Test APK not found. Run:\n" +
-                        "adb push testapp-debug.apk ${File(dir, "stage-b-test.apk").absolutePath}"
-                )
-            )
-            return
-        }
-        installApks(listOf(Uri.fromFile(file)))
-    }
-
-    fun loadStageATestApk() = loadStageBTestApk()
 
     fun launchVirtual(packageName: String, instanceId: String? = null) {
         viewModelScope.launch {

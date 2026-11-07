@@ -63,11 +63,8 @@ internal fun ModelDetailScreen(
                 )
                 Text(
                     AppLanguage.tr(
-                        "添加一个模型配置后，AI 助手会使用大模型调用 space_* / ui_* " +
-                            "工具操作虚拟应用；未配置时只执行本地规则。",
-                        "Add a model and the AI assistant can use space_* / ui_* " +
-                            "tools to operate virtual apps. Without one it only runs " +
-                            "local rules."
+                        "添加模型配置后即可使用 AI 助手。",
+                        "Add a model to start using the AI assistant."
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
