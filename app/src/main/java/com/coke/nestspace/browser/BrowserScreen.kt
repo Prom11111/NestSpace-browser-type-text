@@ -422,6 +422,19 @@ private fun openDownloadedFile(
     val extension = download.name.substringAfterLast('.', "").lowercase()
     val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
         ?: if (extension == "apk") "application/vnd.android.package-archive" else "*/*"
+    if (mime.equals("text/html", true) ||
+        mime.equals("application/xhtml+xml", true) ||
+        mime.equals("image/svg+xml", true)
+    ) {
+        runCatching { BrowserSession.openLocalContent(context, uri) }.onFailure {
+            Toast.makeText(
+                context,
+                AppLanguage.tr("无法在自带浏览器中打开这个文件", "Could not open this file in the browser"),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        return
+    }
     val intent = Intent(Intent.ACTION_VIEW)
         .setDataAndType(uri, mime)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)

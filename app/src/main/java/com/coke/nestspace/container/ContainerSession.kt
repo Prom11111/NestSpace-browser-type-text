@@ -13,6 +13,7 @@ import com.coke.nestspace.container.loader.withContainerClassLoader
 import com.coke.nestspace.container.remote.ContainerProcessBrokerClient
 import com.coke.nestspace.container.vpm.VirtualPackageRegistry
 import com.coke.nestspace.browser.BrowserActivity
+import com.coke.nestspace.browser.webUrlFromViewIntent
 
 
 import android.annotation.SuppressLint
@@ -504,12 +505,13 @@ class ContainerSession private constructor(
     }
 
     fun startExternalActivity(host: StageAActivity, intent: Intent, requestCode: Int): Boolean {
-        if (isExternalWebIntent(intent)) {
+        val webUrl = webUrlFromViewIntent(intent)
+        if (webUrl != null) {
             return runCatching {
                 host.startActivity(
                     Intent()
                         .setClassName(HostIdentity.packageName, BrowserActivity::class.java.name)
-                        .putExtra(BrowserActivity.EXTRA_URL, intent.dataString.orEmpty())
+                        .putExtra(BrowserActivity.EXTRA_URL, webUrl)
                         .addFlags(
                             Intent.FLAG_ACTIVITY_NEW_TASK or
                                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -535,12 +537,6 @@ class ContainerSession private constructor(
             Log.w(TAG, "start external activity failed: ${intent.component}", t)
             false
         }
-    }
-
-    private fun isExternalWebIntent(intent: Intent): Boolean {
-        if (intent.action != Intent.ACTION_VIEW) return false
-        val uri: Uri = intent.data ?: return false
-        return uri.scheme.equals("http", true) || uri.scheme.equals("https", true)
     }
 
     /**

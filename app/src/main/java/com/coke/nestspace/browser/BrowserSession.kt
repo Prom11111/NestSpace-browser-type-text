@@ -293,6 +293,37 @@ object BrowserSession {
         return entry.id
     }
 
+    /**
+     * Open a content:// document produced by the download manager. This path
+     * bypasses URL normalization and never delegates HTML/SVG files to the
+     * system browser.
+     */
+    fun openLocalContent(context: Context, uri: Uri): String {
+        val target = uri.toString()
+        val entry = createEntry(target)
+        entry.url = target
+        entry.loading = true
+        val view = createWebView(context.applicationContext, entry, forUi = false)
+        entry.webView = view
+        entry.uiOwned = false
+        activeTabId = entry.id
+        selectedTabId = entry.id
+        publish()
+        view.loadUrl(target)
+
+        val intent = Intent(context, BrowserActivity::class.java)
+            .putExtra(BrowserActivity.EXTRA_TAB_ID, entry.id)
+        val activity = activityRef?.get()
+        if (activity != null) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            runCatching { activity.startActivity(intent) }
+        } else {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(intent) }
+        }
+        return entry.id
+    }
+
     fun selectTab(tabId: String): Boolean {
         val entry = entries[tabId] ?: return false
         activeTabId = tabId
@@ -483,8 +514,10 @@ object BrowserSession {
             // File uploads hand WebView content:// URIs from the system picker.
             allowContentAccess = true
             // Download and handoff pages often use target=_blank/window.open.
-            // Never let WebView promote those windows into an external app.
-            setSupportMultipleWindows(false)
+            // Enable popup callbacks so WebChromeClient can capture the URL
+            // and keep it inside NestSpace instead of letting WebView hand it
+            // to the system browser.
+            setSupportMultipleWindows(true)
             javaScriptCanOpenWindowsAutomatically = false
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             mediaPlaybackRequiresUserGesture = true
@@ -550,8 +583,54 @@ object BrowserSession {
                 isUserGesture: Boolean,
                 resultMsg: android.os.Message?
             ): Boolean {
-                // Consume popup requests. Some download pages otherwise hand
-                // the popup URL to Chrome even though the tab stays in-app.
+                val source = view ?: return true
+                val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return true
+                val popup = WebView(app)
+                var routed = false
+                fun routePopup(url: String?): Boolean {
+                    if (routed) return true
+                    val uri = url?.let(Uri::parse) ?: return true
+                    if (uri.scheme.equals("http", true) ||
+                        uri.scheme.equals("https", true)
+                    ) {
+                        routed = true
+                        source.post {
+                            runCatching {
+                                BrowserSession.open(
+                                    context = app,
+                                    url = uri.toString(),
+                                    headless = !entry.visible,
+                                    newTab = true,
+                                    showActivity = false
+                                )
+                            }
+                            popup.destroy()
+                        }
+                    }
+                    return true
+                }
+                popup.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): Boolean = routePopup(request?.url?.toString())
+
+                    @Suppress("DEPRECATION")
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        url: String?
+                    ): Boolean = routePopup(url)
+
+                    override fun doUpdateVisitedHistory(
+                        view: WebView?,
+                        url: String?,
+                        isReload: Boolean
+                    ) {
+                        routePopup(url)
+                    }
+                }
+                transport.webView = popup
+                runCatching { resultMsg.sendToTarget() }
                 return true
             }
 
@@ -640,14 +719,8 @@ object BrowserSession {
         val scheme = uri.scheme?.lowercase()
         if (scheme == "http" || scheme == "https") return false
         if (scheme == "intent") {
-            val fallback = runCatching {
-                uri.getQueryParameter("S.browser_fallback_url")
-            }.getOrNull()
-            val fallbackUri = fallback?.let(Uri::parse)
-            if (fallbackUri?.scheme.equals("http", true) ||
-                fallbackUri?.scheme.equals("https", true)
-            ) {
-                view?.loadUrl(fallbackUri.toString())
+            webUrlFromUri(uri)?.let { fallback ->
+                view?.loadUrl(fallback)
             }
         }
         return true

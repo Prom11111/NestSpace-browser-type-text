@@ -246,6 +246,13 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                     }
                 }
             }
+            if (isHostBrowserPackage(pkg)) {
+                return@ToolSpec ToolResult(
+                    false,
+                    "Use browser_open for web pages; launching the system browser is disabled.",
+                    errorCode = "USE_BUILT_IN_BROWSER"
+                )
+            }
             if (!apps.launch(pkg)) {
                 return@ToolSpec ToolResult(false, "Cannot launch $pkg", errorCode = "LAUNCH_FAILED")
             }

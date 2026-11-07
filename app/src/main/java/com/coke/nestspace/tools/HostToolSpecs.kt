@@ -183,7 +183,7 @@ internal fun ToolRegistry.hostToolSpecs(): List<ToolSpec> = listOf(
         },
     )
 
-private fun ToolRegistry.isHostBrowserPackage(packageName: String): Boolean {
+internal fun ToolRegistry.isHostBrowserPackage(packageName: String): Boolean {
     if (packageName.isBlank()) return false
     if (packageName in HOST_BROWSER_PACKAGES) return true
     val intent = Intent(

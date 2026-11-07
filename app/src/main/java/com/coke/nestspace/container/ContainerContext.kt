@@ -35,6 +35,7 @@ import java.io.FileOutputStream
 import java.util.concurrent.Executor
 import com.coke.nestspace.container.gms.GmsBridge
 import com.coke.nestspace.browser.BrowserActivity
+import com.coke.nestspace.browser.webUrlFromViewIntent
 
 /**
  * Stage B context virtualization.
@@ -581,16 +582,12 @@ class ContainerContext(
     }
 
     private fun openWebIntentInside(intent: Intent): Boolean {
-        if (intent.action != Intent.ACTION_VIEW) return false
-        val uri = intent.data ?: return false
-        if (!uri.scheme.equals("http", true) && !uri.scheme.equals("https", true)) {
-            return false
-        }
+        val url = webUrlFromViewIntent(intent) ?: return false
         return runCatching {
             super.startActivity(
                 Intent()
                     .setClassName(HostIdentity.packageName, BrowserActivity::class.java.name)
-                    .putExtra(BrowserActivity.EXTRA_URL, uri.toString())
+                    .putExtra(BrowserActivity.EXTRA_URL, url)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
             true
