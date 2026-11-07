@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -34,6 +35,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +72,7 @@ internal fun FloatingDotDetailScreen() {
     val context = LocalContext.current
     var config by remember { mutableStateOf(FloatingDotSettings.load(context)) }
     var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var showSpeechSources by remember { mutableStateOf(false) }
     val speechProgress by LocalSpeechModelStore.progress.collectAsState()
     val speechSource by LocalSpeechModelStore.source.collectAsState()
     val modelRevision by LocalSpeechModelStore.revision.collectAsState()
@@ -342,14 +345,23 @@ internal fun FloatingDotDetailScreen() {
                         progress = { (speechPercent ?: 0).coerceIn(0, 100) / 100f },
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text(
-                        AppLanguage.tr(
-                            "当前线路：${speechSource[config.speechLanguage] ?: "测速中…"}",
-                            "Current mirror: ${speechSource[config.speechLanguage] ?: "testing speed…"}"
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            AppLanguage.tr(
+                                "当前线路：${speechSource[config.speechLanguage] ?: "测速中…"}",
+                                "Current path: ${speechSource[config.speechLanguage] ?: "testing speed…"}"
+                            ),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        TextButton(onClick = { showSpeechSources = true }) {
+                            Text(AppLanguage.tr("切换下载路径", "Change path"))
+                        }
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
@@ -411,6 +423,43 @@ internal fun FloatingDotDetailScreen() {
                 )
             }
         }
+    }
+
+    if (showSpeechSources) {
+        AlertDialog(
+            onDismissRequest = { showSpeechSources = false },
+            title = { Text(AppLanguage.tr("切换下载路径", "Change download path")) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    speechSpec.mirrors.forEach { mirror ->
+                        OutlinedButton(
+                            onClick = {
+                                showSpeechSources = false
+                                LocalSpeechModelStore.switchDownloadSource(
+                                    context,
+                                    config.speechLanguage,
+                                    mirror.label
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                if (speechSource[config.speechLanguage] == mirror.label) {
+                                    "${mirror.label}  ·  ${AppLanguage.tr("当前", "Current")}"
+                                } else {
+                                    mirror.label
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSpeechSources = false }) {
+                    Text(AppLanguage.tr("取消", "Cancel"))
+                }
+            }
+        )
     }
 }
 

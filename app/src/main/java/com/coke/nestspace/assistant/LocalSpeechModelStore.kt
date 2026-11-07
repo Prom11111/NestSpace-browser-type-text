@@ -7,8 +7,11 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipInputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +19,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -43,7 +49,7 @@ internal object LocalSpeechModelStore {
         val approximateMb: Int
     )
 
-    private fun mirrors(path: String): List<Mirror> = listOf(
+    private fun buildMirrors(path: String): List<Mirror> = listOf(
         // Hugging Face mirror operated for mainland China users.
         Mirror(
             AppLanguage.tr("HF 国内镜像", "HF mirror (China)"),
@@ -66,18 +72,19 @@ internal object LocalSpeechModelStore {
         "zh" to Spec(
             language = "zh",
             displayName = "中文",
-            mirrors = mirrors("zh/vosk-model-small-cn-0.22.zip"),
+            mirrors = buildMirrors("zh/vosk-model-small-cn-0.22.zip"),
             approximateMb = 42
         ),
         "en" to Spec(
             language = "en",
             displayName = "English",
-            mirrors = mirrors("en/vosk-model-small-en-us-0.15.zip"),
+            mirrors = buildMirrors("en/vosk-model-small-en-us-0.15.zip"),
             approximateMb = 40
         )
     )
 
     private val downloads = ConcurrentHashMap<String, Deferred<File>>()
+    private val manualSources = ConcurrentHashMap<String, String>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _progress = MutableStateFlow<Map<String, Int>>(emptyMap())
     private val _source = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -93,6 +100,21 @@ internal object LocalSpeechModelStore {
     val revision: StateFlow<Long> = _revision
 
     fun spec(language: String): Spec = specs[language] ?: specs.getValue("zh")
+
+    fun mirrors(language: String): List<Mirror> = spec(language).mirrors
+
+    fun switchDownloadSource(context: Context, language: String, label: String) {
+        val app = context.applicationContext
+        val spec = spec(language)
+        val mirror = spec.mirrors.firstOrNull { it.label == label } ?: return
+        manualSources[spec.language] = mirror.label
+        downloads.remove(spec.language)?.cancel()
+        _progress.update { it + (spec.language to 0) }
+        _source.update { it + (spec.language to mirror.label) }
+        scope.launch {
+            runCatching { ensure(app, spec.language) }
+        }
+    }
 
     fun modelDir(context: Context, language: String): File =
         File(context.applicationContext.filesDir, "vosk/model-${spec(language).language}")
@@ -121,12 +143,15 @@ internal object LocalSpeechModelStore {
             val job = scope.async {
                 try {
                     install(app, spec, target)
+                    manualSources.remove(spec.language)
                     _progress.update { it + (spec.language to 100) }
                     _revision.update { it + 1 }
                     // Load immediately after a successful download, so the
                     // next voice interaction doesn't wait for model init.
                     LocalSpeechEngine.preload(app, spec.language)
                     target
+                } catch (t: CancellationException) {
+                    throw t
                 } catch (t: Throwable) {
                     _progress.update { it + (spec.language to -1) }
                     throw t
@@ -141,11 +166,15 @@ internal object LocalSpeechModelStore {
 
     private suspend fun install(context: Context, spec: Spec, target: File) {
         val voskRoot = File(context.filesDir, "vosk").apply { mkdirs() }
-        val zip = File(context.cacheDir, "vosk-${spec.language}.zip")
-        val temp = File(voskRoot, "model-${spec.language}.tmp")
+        val downloadId = UUID.randomUUID().toString().take(8)
+        val zip = File(context.cacheDir, "vosk-${spec.language}-$downloadId.zip")
+        val temp = File(voskRoot, "model-${spec.language}-$downloadId.tmp")
         try {
             _progress.update { it + (spec.language to 0) }
-            val ordered = chooseMirrors(spec)
+            val ordered = chooseMirrors(
+                spec,
+                manualSources[spec.language]
+            )
             var lastError: Throwable? = null
             for (mirror in ordered) {
                 try {
@@ -164,6 +193,7 @@ internal object LocalSpeechModelStore {
             if (lastError != null) {
                 throw lastError ?: IOException(AppLanguage.tr("语音模型下载失败", "Speech model download failed"))
             }
+            currentCoroutineContext().ensureActive()
             extract(zip, temp)
             if (!File(temp, "am/final.mdl").isFile) {
                 throw IOException(AppLanguage.tr("语音模型文件不完整", "The speech model file is incomplete"))
@@ -178,7 +208,15 @@ internal object LocalSpeechModelStore {
         }
     }
 
-    private suspend fun chooseMirrors(spec: Spec): List<Mirror> {
+    private suspend fun chooseMirrors(spec: Spec, preferredLabel: String?): List<Mirror> {
+        val preferred = preferredLabel?.let { label ->
+            spec.mirrors.firstOrNull { it.label == label }
+        }
+        if (preferred != null) {
+            return listOf(preferred) + spec.mirrors.filterNot {
+                it.label == preferred.label
+            }
+        }
         val results = coroutineScope {
             spec.mirrors.map { mirror ->
                 async(Dispatchers.IO) {
@@ -188,19 +226,24 @@ internal object LocalSpeechModelStore {
         }
         Log.i(
             TAG,
-            "mirror probe: " + results.joinToString { "${it.first.label}=${it.second}ms" }
+            "mirror probe: " + results.joinToString {
+                "${it.first.label}=${String.format(Locale.US, "%.1f", it.second)}KB/s"
+            }
         )
         return results
-            .sortedWith(
-                compareBy(
-                    { if (it.second < 0) 1 else 0 },
-                    { it.second }
-                )
-            )
+            .sortedByDescending { it.second }
             .map { it.first }
     }
 
-    private fun probe(mirror: Mirror): Long {
+    private fun probe(mirror: Mirror): Double {
+        var best = -1.0
+        repeat(MIRROR_TESTS) {
+            best = maxOf(best, probeOnce(mirror))
+        }
+        return best
+    }
+
+    private fun probeOnce(mirror: Mirror): Double {
         var connection: HttpURLConnection? = null
         return try {
             val startedAt = System.nanoTime()
@@ -211,7 +254,7 @@ internal object LocalSpeechModelStore {
                 setRequestProperty("User-Agent", "NestSpace/1.0")
             }
             connection.connect()
-            if (connection.responseCode !in 200..299) return -1
+            if (connection.responseCode !in 200..299) return -1.0
             val buffer = ByteArray(8 * 1024)
             var total = 0
             connection.inputStream.use { input ->
@@ -222,15 +265,21 @@ internal object LocalSpeechModelStore {
                     total += read
                 }
             }
-            if (total <= 0) -1 else (System.nanoTime() - startedAt) / 1_000_000L
+            if (total <= 0) {
+                -1.0
+            } else {
+                val elapsedMs = ((System.nanoTime() - startedAt) / 1_000_000.0)
+                    .coerceAtLeast(1.0)
+                total / 1024.0 / elapsedMs * 1_000.0
+            }
         } catch (t: Throwable) {
-            -1
+            -1.0
         } finally {
             runCatching { connection?.disconnect() }
         }
     }
 
-    private fun download(mirror: Mirror, zip: File, onProgress: (Int) -> Unit) {
+    private suspend fun download(mirror: Mirror, zip: File, onProgress: (Int) -> Unit) {
         val connection = (URL(mirror.url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 30_000
             readTimeout = 60_000
@@ -254,6 +303,7 @@ internal object LocalSpeechModelStore {
                     var downloaded = 0L
                     var lastPercent = -1
                     while (true) {
+                        currentCoroutineContext().ensureActive()
                         val read = input.read(buffer)
                         if (read < 0) break
                         output.write(buffer, 0, read)
@@ -329,4 +379,5 @@ internal object LocalSpeechModelStore {
     private const val MAX_DOWNLOAD_BYTES = 200L * 1024 * 1024
     private const val MAX_EXTRACTED_BYTES = 300L * 1024 * 1024
     private const val PROBE_BYTES = 32 * 1024
+    private const val MIRROR_TESTS = 3
 }
