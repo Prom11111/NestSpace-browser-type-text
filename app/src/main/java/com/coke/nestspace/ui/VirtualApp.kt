@@ -76,6 +76,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -202,7 +203,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     val llmTesting by viewModel.llmTesting.collectAsState()
     val agentBusy by viewModel.agentBusy.collectAsState()
     val mcpStatus by viewModel.mcpStatus.collectAsState()
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     var spacesPage by remember { mutableStateOf(SpacesPage.ROOT) }
     var lastHomeBackAt by remember { mutableStateOf(0L) }
     var mirrorBackEnabled by remember {
