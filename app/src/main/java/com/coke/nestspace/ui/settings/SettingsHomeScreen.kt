@@ -73,7 +73,6 @@ internal enum class SettingsCategory {
 internal fun SettingsHomeScreen(
     category: SettingsCategory?,
     appCount: Int,
-    desktopAppCount: Int,
     mcpStatus: McpStatus,
     hasWallpaper: Boolean,
     llmConfig: LlmConfig,
@@ -119,10 +118,7 @@ internal fun SettingsHomeScreen(
                         SettingsMenuRow(
                             icon = Icons.Default.Apps,
                             title = AppLanguage.tr("应用管理", "App management"),
-                            summary = AppLanguage.tr(
-                                "$appCount 个应用 · $desktopAppCount 个宿主应用",
-                                "$appCount apps · $desktopAppCount host apps"
-                            ),
+                            summary = AppLanguage.tr("$appCount 个应用", "$appCount apps"),
                             onClick = onOpenApps
                         )
                         HorizontalDivider(Modifier.padding(start = 68.dp))
@@ -181,10 +177,7 @@ internal fun SettingsHomeScreen(
                         SettingsMenuRow(
                             icon = Icons.Default.Apps,
                             title = AppLanguage.tr("应用与容器", "Apps & containers"),
-                            summary = AppLanguage.tr(
-                                "$appCount 个应用 · $desktopAppCount 个宿主应用",
-                                "$appCount apps · $desktopAppCount host apps"
-                            ),
+                            summary = AppLanguage.tr("$appCount 个应用", "$appCount apps"),
                             onClick = { onOpenCategory(SettingsCategory.APPS) }
                         )
                         HorizontalDivider(Modifier.padding(start = 68.dp))
@@ -231,10 +224,7 @@ internal fun SettingsHomeScreen(
                         SettingsMenuRow(
                             icon = Icons.Default.Apps,
                             title = AppLanguage.tr("应用管理", "App management"),
-                            summary = AppLanguage.tr(
-                                "$appCount 个应用 · $desktopAppCount 个宿主应用",
-                                "$appCount apps · $desktopAppCount host apps"
-                            ),
+                            summary = AppLanguage.tr("$appCount 个应用", "$appCount apps"),
                             onClick = onOpenApps
                         )
                     }

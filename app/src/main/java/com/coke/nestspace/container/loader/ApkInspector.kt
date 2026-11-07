@@ -44,6 +44,8 @@ data class ApkDescriptor(
     val minSdk: Int,
     val targetSdk: Int,
     val signatureSha256: String?,
+    val signingCertDigests: Set<String>,
+    val v1SignatureSha256: String?,
     val requiresSecureEnv: Boolean,
     val nativeAbis: Set<String>
 ) {
@@ -141,6 +143,8 @@ object ApkInspector {
             minSdk = appInfo.minSdkVersion.takeIf { it > 0 } ?: 1,
             targetSdk = appInfo.targetSdkVersion,
             signatureSha256 = signatureDigest(info),
+            signingCertDigests = signingCertDigests(info),
+            v1SignatureSha256 = v1SignatureDigest(apkPath),
             requiresSecureEnv = requiresSecureEnv(appInfo),
             nativeAbis = nativeAbis(apkPath)
         )
@@ -160,6 +164,28 @@ object ApkInspector {
         val digest = MessageDigest.getInstance("SHA-256")
         signatures.sortedBy { it.toCharsString() }.forEach { digest.update(it.toByteArray()) }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * All certificates the platform associates with an APK, including older
+     * certificates retained for signing-key rotation. A config split may only
+     * expose the older v1 certificate, so comparing one certificate digest
+     * against the base APK's current signer rejects valid split installs.
+     */
+    @Suppress("DEPRECATION")
+    private fun signingCertDigests(info: PackageInfo): Set<String> {
+        val certificates = buildList {
+            info.signingInfo?.apkContentsSigners?.let(::addAll)
+            info.signingInfo?.signingCertificateHistory?.let(::addAll)
+            info.signatures?.let(::addAll)
+        }
+        return certificates
+            .map { signature ->
+                MessageDigest.getInstance("SHA-256")
+                    .digest(signature.toByteArray())
+                    .joinToString("") { "%02x".format(it) }
+            }
+            .toSet()
     }
 
     private fun requiresSecureEnv(appInfo: ApplicationInfo): Boolean {
@@ -254,6 +280,8 @@ object ApkInspector {
             minSdk = manifest.minSdk,
             targetSdk = manifest.targetSdk,
             signatureSha256 = signature,
+            signingCertDigests = v1CertificateDigests(apkPath),
+            v1SignatureSha256 = signature,
             requiresSecureEnv = false,
             nativeAbis = nativeAbis(apkPath)
         )
@@ -355,6 +383,26 @@ object ApkInspector {
             digest.digest().joinToString("") { "%02x".format(it) }
         }
     }.onFailure { Log.w(TAG, "read v1 signature failed: $apkPath", it) }.getOrNull()
+
+    private fun v1CertificateDigests(apkPath: String): Set<String> = runCatching {
+        JarFile(File(apkPath)).use { jar ->
+            val entry = jar.entries().asSequence().firstOrNull { entry ->
+                entry.name.startsWith("META-INF/") &&
+                    (entry.name.endsWith(".RSA", true) ||
+                        entry.name.endsWith(".DSA", true) ||
+                        entry.name.endsWith(".EC", true))
+            } ?: return@use emptySet()
+            CertificateFactory.getInstance("X.509")
+                .generateCertificates(jar.getInputStream(entry))
+                .map { certificate ->
+                    MessageDigest.getInstance("SHA-256")
+                        .digest(certificate.encoded)
+                        .joinToString("") { "%02x".format(it) }
+                }
+                .toSet()
+        }
+    }.onFailure { Log.w(TAG, "read v1 certificates failed: $apkPath", it) }
+        .getOrDefault(emptySet())
 
     private const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
 }

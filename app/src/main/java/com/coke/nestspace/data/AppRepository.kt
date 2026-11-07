@@ -30,7 +30,11 @@ class AppRepository(private val context: Context) {
                     packageName = ai.packageName,
                     label = label,
                     icon = icon,
-                    isSystem = (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    isSystem = (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
+                    apkPaths = listOfNotNull(
+                        ai.publicSourceDir ?: ai.sourceDir,
+                        *(ai.splitPublicSourceDirs ?: ai.splitSourceDirs ?: emptyArray())
+                    ).filter { it.isNotBlank() }.distinct()
                 )
             }
             .sortedBy { it.label.lowercase() }

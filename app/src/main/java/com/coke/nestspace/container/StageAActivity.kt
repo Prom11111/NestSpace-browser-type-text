@@ -669,26 +669,25 @@ open class StageAActivity : Activity() {
         }
         if (mirrorMode) {
             // The real target view lives on the full-resolution mirror
-            // display. Keep this host window full-screen but matching the
-            // assistant background: if the system moves the host task to the
-            // front for one frame during a target Activity transition, the
-            // flash is a light desktop frame instead of a black one.
-            val taskBackground = Color.rgb(246, 247, 251)
+            // display. Keep this host window completely transparent so any
+            // transient task transition can never replace the assistant page
+            // with a full-screen container frame.
             window.setBackgroundDrawable(
-                android.graphics.drawable.ColorDrawable(taskBackground)
+                android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
             )
+            window.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             window.addFlags(
                 android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             )
-            frame.setBackgroundColor(taskBackground)
+            frame.setBackgroundColor(Color.TRANSPARENT)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 setRecentsScreenshotEnabled(false)
             }
             setTaskDescription(
                 ActivityManager.TaskDescription.Builder()
-                    .setBackgroundColor(taskBackground)
+                    .setBackgroundColor(Color.TRANSPARENT)
                     .build()
             )
         } else if (headless) {
@@ -730,6 +729,8 @@ open class StageAActivity : Activity() {
         setContentView(frame)
         registerPredictiveBack()
         if (mirrorMode) {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
             frame.post(mirrorFinishPoller)
             // Move the host task behind the assistant immediately, before the
             // target starts and before any transition can show this window.

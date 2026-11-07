@@ -558,7 +558,6 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                                 else -> null
                             },
                             appCount = virtualApps.count { it.spaceId == "virtual-1" },
-                            desktopAppCount = selectedSystemApps.size,
                             mcpStatus = mcpStatus,
                             hasWallpaper = wallpaper != null,
                             llmConfig = llmConfig,
@@ -613,7 +612,6 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                     SpacesPage.APPS -> AppManagerScreen(
                         virtualApps = virtualApps.filter { it.spaceId == "virtual-1" },
                         systemApps = apps,
-                        desktopSystemPackages = selectedSystemApps,
                         installing = installing,
                         notice = notice,
                         onInstallApk = { apkPicker.launch(apkMimeTypes) },
@@ -622,7 +620,8 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                         },
                         onMultiOpen = viewModel::multiOpenVirtual,
                         onUninstall = viewModel::uninstallVirtual,
-                        onToggleSystemApp = viewModel::toggleDesktopSystemApp
+                        onImportApps = viewModel::importHostApps,
+                        onRefreshApps = viewModel::refreshApps
                     )
 
                     SpacesPage.SERVICES -> ServicesDetailScreen(

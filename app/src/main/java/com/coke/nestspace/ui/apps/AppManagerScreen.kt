@@ -115,22 +115,18 @@ import com.coke.nestspace.ui.settings.rememberAppVersion
 internal fun AppManagerScreen(
     virtualApps: List<VirtualApp>,
     systemApps: List<AppInfo>,
-    desktopSystemPackages: Set<String>,
     installing: Boolean,
     notice: String,
     onInstallApk: () -> Unit,
     onLaunchVirtual: (String, String?) -> Unit,
     onMultiOpen: (String) -> Unit,
     onUninstall: (String) -> Unit,
-    onToggleSystemApp: (String) -> Unit
+    onImportApps: (Set<String>) -> Unit,
+    onRefreshApps: () -> Unit
 ) {
     var pendingUninstall by remember { mutableStateOf<VirtualApp?>(null) }
     var showSystemPicker by remember { mutableStateOf(false) }
-    val importedHostApps = systemApps.filter { it.packageName in desktopSystemPackages }
-    val standaloneHostApps = importedHostApps.filter { hostApp ->
-        virtualApps.none { it.packageName == hostApp.packageName }
-    }
-    val appCount = virtualApps.size + standaloneHostApps.size
+    val appCount = virtualApps.size
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -161,7 +157,12 @@ internal fun AppManagerScreen(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { showSystemPicker = true }) {
+                    OutlinedButton(
+                        onClick = {
+                            onRefreshApps()
+                            showSystemPicker = true
+                        }
+                    ) {
                         Text(AppLanguage.tr("导入应用", "Import apps"))
                     }
                     Button(onClick = onInstallApk, enabled = !installing) {
@@ -196,43 +197,6 @@ internal fun AppManagerScreen(
                     onMultiOpen = onMultiOpen,
                     onUninstall = { pendingUninstall = it }
                 )
-            }
-        }
-        if (standaloneHostApps.isNotEmpty()) {
-            items(standaloneHostApps, key = { "host:${it.packageName}" }) { app ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    DesktopAppIcon(app)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            app.label,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            app.packageName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    TextButton(onClick = { onToggleSystemApp(app.packageName) }) {
-                        Text(
-                            AppLanguage.tr("移除", "Remove"),
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
             }
         }
     }
@@ -275,8 +239,8 @@ internal fun AppManagerScreen(
     if (showSystemPicker) {
         SystemAppPickerDialog(
             apps = systemApps,
-            selected = desktopSystemPackages,
-            onToggle = onToggleSystemApp,
+            installedPackages = virtualApps.map { it.packageName }.toSet(),
+            onImport = onImportApps,
             onDismiss = { showSystemPicker = false }
         )
     }
@@ -309,10 +273,11 @@ private fun DesktopAppIcon(app: AppInfo) {
 @Composable
 private fun SystemAppPickerDialog(
     apps: List<AppInfo>,
-    selected: Set<String>,
-    onToggle: (String) -> Unit,
+    installedPackages: Set<String>,
+    onImport: (Set<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var selected by remember(apps) { mutableStateOf<Set<String>>(emptySet()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(AppLanguage.tr("导入应用", "Import apps")) },
@@ -320,22 +285,28 @@ private fun SystemAppPickerDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     AppLanguage.tr(
-                        "勾选宿主上已安装的应用，导入后会显示在 NestSpace 桌面。",
-                        "Choose apps already installed on the host; imported apps " +
-                            "appear on the NestSpace desktop."
+                        "勾选要安装到虚拟空间的应用。",
+                        "Choose apps to install in the virtual space."
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 420.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    items(apps, key = { it.packageName }) { app ->
+                if (apps.isNotEmpty()) {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 420.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        items(apps, key = { it.packageName }) { app ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onToggle(app.packageName) }
+                                .clickable {
+                                    selected = if (app.packageName in selected) {
+                                        selected - app.packageName
+                                    } else {
+                                        selected + app.packageName
+                                    }
+                                }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -373,7 +344,11 @@ private fun SystemAppPickerDialog(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    app.packageName,
+                                    if (app.packageName in installedPackages) {
+                                        "${app.packageName} · ${AppLanguage.tr("已导入，将覆盖", "Imported; will replace")}"
+                                    } else {
+                                        app.packageName
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -384,10 +359,22 @@ private fun SystemAppPickerDialog(
                     }
                 }
             }
+        }
         },
         confirmButton = {
+            TextButton(
+                enabled = selected.isNotEmpty(),
+                onClick = {
+                    onImport(selected)
+                    onDismiss()
+                }
+            ) {
+                Text(AppLanguage.tr("导入", "Import"))
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(AppLanguage.tr("完成", "Done"))
+                Text(AppLanguage.tr("取消", "Cancel"))
             }
         }
     )

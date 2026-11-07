@@ -407,7 +407,14 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             }
             val signature = base.signatureSha256?.takeIf { it.isNotBlank() }
                 ?: throw InstallFailure("SIGNATURE_INVALID", AppLanguage.tr("无法读取 APK 签名", "Could not read the APK signature"))
-            if (descriptors.any { it.signatureSha256 != signature }) {
+            val certificatesMatch = base.signingCertDigests.isNotEmpty() &&
+                descriptors.all { descriptor ->
+                    descriptor.signingCertDigests.isNotEmpty() &&
+                        base.signingCertDigests.containsAll(descriptor.signingCertDigests)
+                }
+            val legacySignersMatch = base.v1SignatureSha256 != null &&
+                descriptors.all { it.v1SignatureSha256 == base.v1SignatureSha256 }
+            if (!certificatesMatch && !legacySignersMatch) {
                 throw InstallFailure(
                     "SIGNATURE_MISMATCH",
                     AppLanguage.tr(

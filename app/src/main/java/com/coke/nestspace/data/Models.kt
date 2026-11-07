@@ -17,7 +17,8 @@ data class AppInfo(
     val packageName: String,
     val label: String,
     val icon: ImageBitmap?,
-    val isSystem: Boolean
+    val isSystem: Boolean,
+    val apkPaths: List<String> = emptyList()
 )
 
 data class VirtualInstance(

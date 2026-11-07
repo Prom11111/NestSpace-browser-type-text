@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 
 class VirtualViewModel(app: Application) : AndroidViewModel(app) {
@@ -221,6 +222,51 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
                             is EngineResult.Ok -> Unit
                         }
                     }
+                }
+            } finally {
+                installing.value = false
+            }
+        }
+    }
+
+    fun importHostApps(packageNames: Set<String>) {
+        if (packageNames.isEmpty() || installing.value) return
+        viewModelScope.launch {
+            installing.value = true
+            val available = apps.value.associateBy { it.packageName }
+            val failures = mutableListOf<String>()
+            var imported = 0
+            try {
+                packageNames.forEachIndexed { index, packageName ->
+                    val app = available[packageName]
+                    if (app == null || app.apkPaths.isEmpty()) {
+                        failures += packageName
+                        return@forEachIndexed
+                    }
+                    notice.value = AppLanguage.tr(
+                        "正在导入 ${app.label}（${index + 1}/${packageNames.size}）…",
+                        "Importing ${app.label} (${index + 1}/${packageNames.size})…"
+                    )
+                    val apkUris = app.apkPaths.map { Uri.fromFile(File(it)).toString() }
+                    when (val result = engine.install(SPACE_ID, apkUris)) {
+                        is EngineResult.Ok -> imported++
+                        is EngineResult.Error -> failures += "${app.label}: ${result.code}"
+                    }
+                }
+                refreshVirtualApps()
+                notice.value = when {
+                    failures.isEmpty() -> AppLanguage.tr(
+                        "已成功导入 $imported 个应用",
+                        "Imported $imported app(s)"
+                    )
+                    imported == 0 -> AppLanguage.tr(
+                        "导入失败：${failures.joinToString("；")}",
+                        "Import failed: ${failures.joinToString("; ")}"
+                    )
+                    else -> AppLanguage.tr(
+                        "已导入 $imported 个，失败 ${failures.size} 个：${failures.joinToString("；")}",
+                        "Imported $imported; failed ${failures.size}: ${failures.joinToString("; ")}"
+                    )
                 }
             } finally {
                 installing.value = false
