@@ -9,6 +9,7 @@ import com.coke.nestspace.container.loader.withContainerClassLoader
 
 import android.app.Activity
 import android.app.ActivityManager
+import android.app.PictureInPictureParams
 import android.app.Presentation
 import android.content.Intent
 import android.hardware.display.DisplayManager
@@ -731,6 +732,7 @@ open class StageAActivity : Activity() {
             showLaunchPlaceholder(frame)
         }
         setContentView(frame)
+        syncAiInfoCaptureGuard()
         registerPredictiveBack()
         if (mirrorMode) {
             @Suppress("DEPRECATION")
@@ -913,6 +915,10 @@ open class StageAActivity : Activity() {
 
     private fun launchOverlayReason(): String = "container-launch-$hostStateId"
 
+    private fun syncAiInfoCaptureGuard() {
+        SystemServiceIdentity.setAiInfoCaptureActive(headless || mirrorMode)
+    }
+
     private fun restoreLoadingWindowFocus() {
         window.clearFlags(
             android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -934,6 +940,7 @@ open class StageAActivity : Activity() {
             headlessBackDone = false
             session?.headless = false
             root?.alpha = 1f
+            syncAiInfoCaptureGuard()
             return
         }
         setIntent(intent)
@@ -950,6 +957,7 @@ open class StageAActivity : Activity() {
         ) {
             headless = intent.getBooleanExtra(EXTRA_HEADLESS, headless)
             session?.headless = headless
+            syncAiInfoCaptureGuard()
             val targetIntent = targetIntentFrom(intent) ?: Intent(intent)
             withTargetLoader {
                 runCatching {
@@ -969,6 +977,7 @@ open class StageAActivity : Activity() {
         }
 
         headless = intent.getBooleanExtra(EXTRA_HEADLESS, false)
+        syncAiInfoCaptureGuard()
         closeCurrent()
         releaseSession()
         handleIntent(intent, null)
@@ -1026,6 +1035,7 @@ open class StageAActivity : Activity() {
         active = this
         hostResumed = true
         session?.navigator = this
+        syncAiInfoCaptureGuard()
         FloatingDotOverlay.publishContainerMode(this, true)
         scheduleHeadlessBack()
         if (mirrorMode && !mirrorBackDone) {
@@ -1103,6 +1113,9 @@ open class StageAActivity : Activity() {
     }
 
     override fun onPause() {
+        if (!headless && !mirrorMode) {
+            SystemServiceIdentity.setAiInfoCaptureActive(false)
+        }
         if (!returningToDesktop && current?.isFinishing != true) {
             SystemServiceIdentity.clearRootFinishInterceptor()
         }
@@ -1255,6 +1268,22 @@ open class StageAActivity : Activity() {
                 target.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
             }.onFailure { Log.w(TAG, "target onPictureInPictureModeChanged failed", it) }
         }
+    }
+
+    override fun enterPictureInPictureMode() {
+        if (headless || mirrorMode) {
+            Log.d(TAG, "blocked PiP while AI assistant is reading the container")
+            return
+        }
+        super.enterPictureInPictureMode()
+    }
+
+    override fun enterPictureInPictureMode(params: PictureInPictureParams): Boolean {
+        if (headless || mirrorMode) {
+            Log.d(TAG, "blocked parameterized PiP while AI assistant is reading the container")
+            return false
+        }
+        return super.enterPictureInPictureMode(params)
     }
 
     override fun onTopResumedActivityChanged(isTopResumed: Boolean) {
@@ -1508,6 +1537,7 @@ open class StageAActivity : Activity() {
         Log.d(TAG, "host onDestroy target=${current?.javaClass?.name}")
         FloatingDotOverlay.setOverlayHidden(this, launchOverlayReason(), false)
         SystemServiceIdentity.clearRootFinishInterceptor()
+        SystemServiceIdentity.setAiInfoCaptureActive(false)
         returnToDesktopIfRootTargetFinished()
         root?.removeCallbacks(mirrorFinishPoller)
         mirrorPresentation?.let { runCatching { it.dismiss() } }

@@ -67,7 +67,7 @@ internal fun LivePreviewCard(
             .width(112.dp)
             .height(196.dp)
             .clickable(onClick = onOpen),
-        shape = RoundedCornerShape(12.dp),
+        shape = RectangleShape,
         color = Color.Black,
         shadowElevation = 7.dp
     ) {

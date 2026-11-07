@@ -659,7 +659,6 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                 .getOrNull()
             if (mirrorId != null) {
                 Log.i(TAG, "using mirror display $mirrorId")
-                // Only one target can be visible in the shared mirror display.
                 val previousMirrorSlot = HeadlessMirrorWindow.activeSlot()
                 if (previousMirrorSlot >= 0 && previousMirrorSlot != slot) {
                     finishPreviousHostTasks(previousMirrorSlot)
@@ -674,10 +673,10 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             }
         }
         try {
-            if (mirrorLaunch) {
-                // Keep the host Activity behind the assistant. It only holds
-                // the target's Activity token; the visible pixels come from
-                // the mirror display and its floating window.
+            if (headless && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // The target host must never become the foreground task, even
+                // for one transition frame. This also keeps the assistant page
+                // stable when the mirror display is unavailable.
                 context.startActivity(
                     intent,
                     ActivityOptions.makeTaskLaunchBehind().toBundle()
@@ -695,6 +694,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                 t.message ?: t.javaClass.simpleName
             )
         }
+        Log.d(TAG, "headless=$headless mirror=$mirrorLaunch slot=$slot")
         ContainerProcessPool.markLaunched(context, sessionId)
         // Headless keep-alive is established by the agent tools once the UI
         // service is reachable, so a failed launch cannot start a service-only

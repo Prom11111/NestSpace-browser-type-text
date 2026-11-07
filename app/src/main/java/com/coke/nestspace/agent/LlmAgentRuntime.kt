@@ -525,14 +525,11 @@ class LlmAgentRuntime(
         val hint = AppLanguage.tr(
             "当前本地时间：$now。\n" +
                 "当前虚拟空间 ID：$VIRTUAL_SPACE。\n" +
-                "先判断用户意图：如果用户只是说了 App 名称或说“打开/启动某个 App”，" +
-                "或者要求你在 App 里执行操作（搜索、点击、关注、发布、下单等），" +
-                "就调用 space_launch 并传 headless=false，把 App 全屏打开，再用 ui_* 操作，" +
-                "让用户能看到过程；单纯打开 App 时不要 ui_observe，也不要播报页面内容。" +
-                "只有用户只是想获取信息（查看内容、热榜、页面总结等）时，才用默认无头模式" +
-                "（不传 headless）。\n" +
-                "浏览器和虚拟 App 都默认用无头模式（browser_open 不传 headless、space_launch 不传 headless 即为无头），" +
-                "不要打开可见窗口，除非用户明确要求。操作虚拟 App 前先检查它是否仍在运行" +
+                "AI 助手通过 space_launch 和 ui_* 操作虚拟 App 时必须使用无头模式，" +
+                "不要传 headless=false，也不要为了展示过程或执行搜索、点击等操作打开全屏窗口。" +
+                "用户从空间首页手动启动 App 才会显示普通窗口；需要用户接管登录、验证码或支付时，" +
+                "用 hand_to_user 切换前台。\n" +
+                "浏览器和虚拟 App 的 AI 任务都使用无头模式。操作虚拟 App 前先检查它是否仍在运行" +
                 "（space_running 或直接 ui_observe）；已运行就直接用 ui_*，不要重复 space_launch。" +
                 "无头任务在多次读取之间保持 App 运行，只有整个任务结束或用户要求时才 space_stop。" +
                 "browser_open 默认新建标签页；可以用 browser_tabs 查看所有标签，" +
@@ -556,16 +553,12 @@ class LlmAgentRuntime(
                 "需要看画面时用 ui_screenshot；支持视觉的模型会自动收到截图。",
             "Current local time: $now.\n" +
                 "Current virtual space ID: $VIRTUAL_SPACE.\n" +
-                "Decide the intent first: if the user only names an app, asks to open/start " +
-                "it, or asks you to perform an action inside the app (search, tap, follow, " +
-                "post, order, etc.), call space_launch with headless=false to open it " +
-                "full-screen, then use ui_* so the user can see it happen. For a plain open " +
-                "request, do not ui_observe or summarize the page. Use the default headless " +
-                "launch only when the user just wants information (content, rankings, a page " +
-                "summary, etc.).\n" +
-                "The browser and virtual apps are headless by default (browser_open and " +
-                "space_launch without headless), so do not open a visible window unless " +
-                "the user explicitly asks. Before operating a virtual app, check whether it is " +
+                "All virtual-app work performed by the in-app AI assistant through " +
+                "space_launch and ui_* must be headless. Never pass headless=false or show " +
+                "a full-screen window to demonstrate searching, tapping, or other work. " +
+                "Only manual app launches from the space UI show a normal window. Use " +
+                "hand_to_user when the user must take over login, verification, or payment. " +
+                "Before operating a virtual app, check whether it is " +
                 "already running (space_running or ui_observe); if it is, continue with ui_* " +
                 "and do not call space_launch again. Keep a headless app running between " +
                 "related reads and call space_stop only when the whole task is finished or " +

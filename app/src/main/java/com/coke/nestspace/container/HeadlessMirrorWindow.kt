@@ -233,7 +233,7 @@ object HeadlessMirrorWindow {
             textSize = 22f
             gravity = Gravity.CENTER
             setPadding(0, 0, (10 * density).toInt(), 0)
-            setOnClickListener { hide() }
+            setOnClickListener { closeAndStopTarget() }
         }
         header.addView(
             title,
@@ -344,6 +344,29 @@ object HeadlessMirrorWindow {
                 else -> false
             }
         }
+    }
+
+    /**
+     * The title-bar close button means "close this app", not merely hide its
+     * preview. Keeping the target process alive would leave video apps playing
+     * audio with no visible window.
+     */
+    private fun closeAndStopTarget() {
+        val slot = activeSlot
+        val context = appContext
+        hide()
+        if (slot < 0 || context == null) return
+        Thread(
+            {
+                val closed = runCatching {
+                    ContainerProcessPool.closeSlot(context, slot)
+                }.onFailure {
+                    Log.w(TAG, "failed to close slot $slot", it)
+                }.getOrDefault(false)
+                Log.d(TAG, "close button stopped slot $slot: $closed")
+            },
+            "NestSpace-mirror-close"
+        ).start()
     }
 
     private fun createDisplay(context: Context, holder: SurfaceHolder) {

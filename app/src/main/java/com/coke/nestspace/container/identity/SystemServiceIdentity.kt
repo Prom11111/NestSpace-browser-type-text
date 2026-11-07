@@ -54,6 +54,7 @@ object SystemServiceIdentity {
     @Volatile private var registry: VirtualPackageRegistry? = null
     @Volatile private var virtualPermissions: ContainerPermissions? = null
     @Volatile private var hostContext: Context? = null
+    @Volatile private var aiInfoCaptureActive = false
     private data class RootExitHook(
         val interceptFinish: Boolean,
         val interceptTaskExit: Boolean,
@@ -92,6 +93,11 @@ object SystemServiceIdentity {
 
     fun clearRootFinishInterceptor() {
         rootExitHook.set(null)
+    }
+
+    /** AI headless/mirror reads must never be promoted to system PiP. */
+    fun setAiInfoCaptureActive(active: Boolean) {
+        aiInfoCaptureActive = active
     }
 
     fun install(
@@ -379,6 +385,16 @@ object SystemServiceIdentity {
      */
     private class AmRewriteHandler(private val delegate: Any) : InvocationHandler {
         override fun invoke(proxy: Any, method: Method, args: Array<Any?>?): Any? {
+            if (aiInfoCaptureActive &&
+                method.name.startsWith("enterPictureInPictureMode")
+            ) {
+                Log.d(TAG, "blocked PiP during AI info capture via ${method.name}")
+                return when (method.returnType) {
+                    Boolean::class.javaPrimitiveType -> false
+                    Int::class.javaPrimitiveType -> 0
+                    else -> null
+                }
+            }
             val isFinish = method.name.startsWith("finishActivity")
             val isMinimize = method.name.startsWith("moveTaskToBack")
             val activeHook = rootExitHook.get()

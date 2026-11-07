@@ -227,21 +227,21 @@ class ToolRegistry(
     )
 
     /**
-     * The assistant closes the mirror window when a run ends, but the headless
-     * target stays alive for follow-ups. Re-open the window when a later run
-     * starts observing or operating that app; the container host follows the
-     * new display id and attaches its existing target view to it.
+     * The assistant closes the square mirror when a run ends, while the
+     * headless target stays alive for follow-ups. Re-open it when a later run
+     * starts observing or operating that app.
      */
     internal suspend fun ensureMirrorPreview(args: JSONObject) {
         val slot = containerSlot(args) ?: return
         val activeMirrorSlot = HeadlessMirrorWindow.activeSlot()
-        // Never take over a mirror that is currently showing another app.
         if (activeMirrorSlot >= 0 && activeMirrorSlot != slot) return
         if (ContainerUiClient.isMirrorMode(context, slot) != true) return
         val displayId = runCatching { HeadlessMirrorWindow.awaitDisplay(context) }
             .onFailure { Log.w("ToolRegistry", "mirror preview unavailable", it) }
             .getOrNull() ?: return
-        if (HeadlessMirrorWindow.activeSlot() != slot) HeadlessMirrorWindow.setActiveSlot(slot)
+        if (HeadlessMirrorWindow.activeSlot() != slot) {
+            HeadlessMirrorWindow.setActiveSlot(slot)
+        }
         Log.d("ToolRegistry", "mirror preview on display $displayId for slot $slot")
     }
 
