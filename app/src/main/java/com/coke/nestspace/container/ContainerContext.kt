@@ -34,6 +34,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.Executor
 import com.coke.nestspace.container.gms.GmsBridge
+import com.coke.nestspace.browser.BrowserActivity
 
 /**
  * Stage B context virtualization.
@@ -559,6 +560,7 @@ class ContainerContext(
 
     override fun startActivity(intent: Intent) {
         if (navigator?.startTargetActivity(intent, -1) == true) return
+        if (openWebIntentInside(intent)) return
         android.util.Log.w(
             "ContainerContext",
             "startActivity falls back to host: component=${intent.component} " +
@@ -571,10 +573,28 @@ class ContainerContext(
 
     override fun startActivity(intent: Intent, options: Bundle?) {
         if (navigator?.startTargetActivity(intent, -1) == true) return
+        if (openWebIntentInside(intent)) return
         super.startActivity(
             Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             options
         )
+    }
+
+    private fun openWebIntentInside(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_VIEW) return false
+        val uri = intent.data ?: return false
+        if (!uri.scheme.equals("http", true) && !uri.scheme.equals("https", true)) {
+            return false
+        }
+        return runCatching {
+            super.startActivity(
+                Intent()
+                    .setClassName(HostIdentity.packageName, BrowserActivity::class.java.name)
+                    .putExtra(BrowserActivity.EXTRA_URL, uri.toString())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        }.getOrDefault(false)
     }
 
     override fun startService(service: Intent): ComponentName? {

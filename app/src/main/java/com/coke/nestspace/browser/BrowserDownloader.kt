@@ -26,7 +26,11 @@ object BrowserDownloader {
         val size: Long
     )
 
-    suspend fun download(context: Context, url: String): DownloadResult = withContext(Dispatchers.IO) {
+    suspend fun download(
+        context: Context,
+        url: String,
+        onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> }
+    ): DownloadResult = withContext(Dispatchers.IO) {
         var currentUrl = url
         var redirects = 0
         while (true) {
@@ -73,10 +77,12 @@ object BrowserDownloader {
                     context,
                     fileName(currentUrl, contentDisposition, contentType)
                 )
+                val total = connection.contentLengthLong
+                onProgress(0L, total)
                 return@withContext if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    writeToMediaStore(context, connection, name, contentType)
+                    writeToMediaStore(context, connection, name, contentType, total, onProgress)
                 } else {
-                    writeToLegacyDownloads(context, connection, name)
+                    writeToLegacyDownloads(context, connection, name, total, onProgress)
                 }
             } finally {
                 connection.disconnect()
@@ -90,7 +96,9 @@ object BrowserDownloader {
         context: Context,
         connection: HttpURLConnection,
         name: String,
-        contentType: String
+        contentType: String,
+        total: Long,
+        onProgress: (downloaded: Long, total: Long) -> Unit
     ): DownloadResult {
         val resolver = context.contentResolver
         val mime = when {
@@ -110,7 +118,7 @@ object BrowserDownloader {
         try {
             connection.inputStream.use { input ->
                 resolver.openOutputStream(uri)?.use { output ->
-                    input.copyTo(output)
+                    copyWithProgress(input, output, total, onProgress)
                 } ?: throw IOException("Cannot open Downloads file")
             }
             values.clear()
@@ -133,7 +141,9 @@ object BrowserDownloader {
     private fun writeToLegacyDownloads(
         context: Context,
         connection: HttpURLConnection,
-        name: String
+        name: String,
+        total: Long,
+        onProgress: (downloaded: Long, total: Long) -> Unit
     ): DownloadResult {
         // Public Downloads needs WRITE_EXTERNAL_STORAGE before Android 10.
         // The app never prompts for it, so fall back to the app-specific
@@ -161,7 +171,9 @@ object BrowserDownloader {
                 continue
             }
             output.use { to ->
-                connection.inputStream.use { from -> from.copyTo(to) }
+                connection.inputStream.use { from ->
+                    copyWithProgress(from, to, total, onProgress)
+                }
             }
             if (!target.isFile || target.length() == 0L) {
                 throw IOException("Downloaded file is empty")
@@ -174,6 +186,32 @@ object BrowserDownloader {
             )
         }
         throw IOException(lastError?.message ?: "Cannot write the download", lastError)
+    }
+
+    private fun copyWithProgress(
+        input: java.io.InputStream,
+        output: java.io.OutputStream,
+        total: Long,
+        onProgress: (downloaded: Long, total: Long) -> Unit
+    ) {
+        val buffer = ByteArray(64 * 1024)
+        var downloaded = 0L
+        var lastReported = 0L
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            if (count == 0) continue
+            output.write(buffer, 0, count)
+            downloaded += count
+            if (downloaded - lastReported >= 256 * 1024 ||
+                (total > 0L && downloaded >= total)
+            ) {
+                lastReported = downloaded
+                onProgress(downloaded, total)
+            }
+        }
+        output.flush()
+        onProgress(downloaded, total)
     }
 
     private fun uniqueName(context: Context, name: String): String {

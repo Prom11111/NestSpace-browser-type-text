@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -127,6 +128,7 @@ import com.coke.nestspace.ui.apps.AppManagerScreen
 import com.coke.nestspace.browser.BrowserActivity
 import com.coke.nestspace.browser.BrowserProxyDialog
 import com.coke.nestspace.container.ContainerProcessPool
+import com.coke.nestspace.container.HeadlessMirrorWindow
 import com.coke.nestspace.ui.desktop.DesktopScreen
 import com.coke.nestspace.ui.running.RunningAppsScreen
 import com.coke.nestspace.ui.settings.AboutDetailScreen
@@ -200,9 +202,12 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     val llmTesting by viewModel.llmTesting.collectAsState()
     val agentBusy by viewModel.agentBusy.collectAsState()
     val mcpStatus by viewModel.mcpStatus.collectAsState()
-
     var tab by remember { mutableIntStateOf(0) }
     var spacesPage by remember { mutableStateOf(SpacesPage.ROOT) }
+    var lastHomeBackAt by remember { mutableStateOf(0L) }
+    var mirrorBackEnabled by remember {
+        mutableStateOf(HeadlessMirrorWindow.isBackEnabled())
+    }
     var childRunsFromAssistant by remember { mutableStateOf(false) }
     var historyFromAssistant by remember { mutableStateOf(false) }
     var modelSettingsFromAssistant by remember { mutableStateOf(false) }
@@ -283,6 +288,22 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     LaunchedEffect(Unit) {
         DesktopNavigation.requests.collect { tab = 0 }
     }
+    LaunchedEffect(Unit) {
+        val openModelSettings = {
+            completeModelOnboarding()
+            modelSettingsFromAssistant = true
+            spacesPage = SpacesPage.MODEL
+            tab = 1
+        }
+        if (ModelSettingsNavigation.consumeRequest()) {
+            openModelSettings()
+        }
+        ModelSettingsNavigation.requests.collect {
+            if (ModelSettingsNavigation.consumeRequest()) {
+                openModelSettings()
+            }
+        }
+    }
     LaunchedEffect(AppLanguage.revision) {
         AppLanguage.revision
         AssistantConversation.refreshWelcome()
@@ -308,6 +329,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
         }
     }
     LaunchedEffect(tab) {
+        if (tab == 0) lastHomeBackAt = 0L
         if (tab != 1) {
             spacesPage = SpacesPage.ROOT
             editingLlm = null
@@ -439,6 +461,26 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     BackHandler(enabled = tab != 0) { navigateBack() }
     BackHandler(enabled = showModelOnboarding) {
         completeModelOnboarding()
+    }
+    DisposableEffect(Unit) {
+        val listener: (Boolean) -> Unit = { mirrorBackEnabled = it }
+        HeadlessMirrorWindow.addBackEnabledListener(listener)
+        onDispose { HeadlessMirrorWindow.removeBackEnabledListener(listener) }
+    }
+    BackHandler(
+        enabled = tab == 0 && !showModelOnboarding && !mirrorBackEnabled
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        if (lastHomeBackAt > 0L && now - lastHomeBackAt <= 2_000L) {
+            context.findActivity()?.finish()
+        } else {
+            lastHomeBackAt = now
+            Toast.makeText(
+                context,
+                AppLanguage.tr("再按一次返回退出", "Press back again to exit"),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
     val appBarTitle = when {
         tab == 1 -> when (spacesPage) {

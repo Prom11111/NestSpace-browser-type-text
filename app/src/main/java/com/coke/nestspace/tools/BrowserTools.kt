@@ -6,7 +6,6 @@ import android.webkit.WebView
 import com.coke.nestspace.agent.ToolConfirmationCategory
 import com.coke.nestspace.agent.ToolPermissionSettings
 import com.coke.nestspace.agent.UserGateManager
-import com.coke.nestspace.browser.BrowserDownloader
 import com.coke.nestspace.browser.BrowserSession
 import androidx.core.content.FileProvider
 import com.coke.nestspace.control.LivePreview
@@ -591,18 +590,19 @@ internal object BrowserTools {
                     )
                 }
             }
-            runCatching { BrowserDownloader.download(context, url) }
+            runCatching { BrowserSession.download(context, url) }
                 .fold(
-                    onSuccess = { result ->
+                    onSuccess = { download ->
                         ToolResult(
-                            true,
+                            download.state == "done",
                             JSONObject()
                                 .put("downloaded", true)
                                 .put("url", url)
-                                .put("path", result.path)
-                                .put("uri", result.uri)
-                                .put("name", result.name)
-                                .put("size", result.size)
+                                .put("download_id", download.id)
+                                .put("path", download.path.orEmpty())
+                                .put("uri", download.uri.orEmpty())
+                                .put("name", download.name)
+                                .put("size", download.size)
                                 .toString()
                         )
                     },

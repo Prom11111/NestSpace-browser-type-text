@@ -99,7 +99,13 @@ fun LlmConfigEditor(
             ?.coerceIn(0.0, 2.0)
             ?: config.temperature,
         reasoningEffort = reasoningEffort
-    )
+    ).withNormalizedEndpoint()
+
+    fun normalizedConfig(): LlmConfig {
+        val normalized = buildConfig()
+        if (normalized.baseUrl != baseUrl) baseUrl = normalized.baseUrl
+        return normalized
+    }
 
     fun applyPreset(preset: ProviderPreset) {
         val previousDefaultName = LlmConfig.defaultsFor(protocol).name
@@ -309,7 +315,7 @@ fun LlmConfigEditor(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
-                onClick = { onTest(buildConfig()) },
+                onClick = { onTest(normalizedConfig()) },
                 enabled = !testing
             ) {
                 Text(
@@ -318,7 +324,7 @@ fun LlmConfigEditor(
                 )
             }
             Button(
-                onClick = { onSave(buildConfig()) },
+                onClick = { onSave(normalizedConfig()) },
                 enabled = !testing
             ) {
                 Text(AppLanguage.tr("保存", "Save"))

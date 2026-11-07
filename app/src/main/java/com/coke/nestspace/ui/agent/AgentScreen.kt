@@ -52,6 +52,7 @@ import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.control.LivePreview
 import com.coke.nestspace.agent.ToolPermissionLevel
 import com.coke.nestspace.assistant.FloatingDotOverlay
+import com.coke.nestspace.browser.BrowserSession
 import com.coke.nestspace.data.AgentMessage
 import com.coke.nestspace.data.AppSettingsEvents
 import com.coke.nestspace.data.LlmConfig
@@ -105,6 +106,7 @@ internal fun AgentScreen(
     val liveFrame by LivePreview.frame.collectAsState()
     val lastRun by AssistantConversation.lastRun.collectAsState()
     val streamingText by AssistantConversation.streamingText.collectAsState()
+    val downloads by BrowserSession.downloadsFlow.collectAsState()
     var showLivePreview by remember { mutableStateOf(false) }
 
     LaunchedEffect(injectedText) {
@@ -201,10 +203,12 @@ internal fun AgentScreen(
         messages.filterNot { it.welcome }
     }
     val showWelcome = displayMessages.isEmpty() && !busy
+    val activeDownloads = downloads.filter { it.state == "downloading" }
 
-    LaunchedEffect(displayMessages.size, busy, streamingText.length) {
+    LaunchedEffect(displayMessages.size, busy, streamingText.length, activeDownloads.size) {
         if (!showWelcome) {
-            val count = displayMessages.size + if (busy) 1 else 0
+            val count = displayMessages.size + if (busy) 1 else 0 +
+                activeDownloads.size
             if (count > 0) listState.animateScrollToItem(count - 1)
         }
     }
@@ -252,16 +256,26 @@ internal fun AgentScreen(
                 .fillMaxWidth()
         ) {
             if (showWelcome) {
-                WelcomeState(
-                    configured = llmConfig.isConfigured,
-                    onConfigure = onOpenModelSettings,
-                    modifier = Modifier.fillMaxSize(),
-                    onSuggestion = {
-                        input = it
-                        AssistantBridge.updateInput(it)
-                        focusRequester.requestFocus()
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        WelcomeState(
+                            configured = llmConfig.isConfigured,
+                            onConfigure = onOpenModelSettings,
+                            modifier = Modifier.fillMaxSize(),
+                            onSuggestion = {
+                                input = it
+                                AssistantBridge.updateInput(it)
+                                focusRequester.requestFocus()
+                            }
+                        )
                     }
-                )
+                    activeDownloads.take(2).forEach { download ->
+                        DownloadProgressCard(
+                            download = download,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                    }
+                }
             } else {
                 LazyColumn(
                     state = listState,
@@ -301,6 +315,9 @@ internal fun AgentScreen(
                         }
                     } else if (busy) {
                         item { ThinkingRow(displayMessages.lastOrNull()) }
+                    }
+                    items(activeDownloads, key = { "download:${it.id}" }) { download ->
+                        DownloadProgressCard(download)
                     }
                     item { Spacer(Modifier.height(2.dp)) }
                 }

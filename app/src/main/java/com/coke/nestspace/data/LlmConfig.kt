@@ -80,7 +80,31 @@ data class LlmConfig(
     /** The Base URL field stores the complete request endpoint. */
     fun endpoint(): String = baseUrl.trim()
 
+    /**
+     * Anthropic-compatible clients commonly accept a base URL such as
+     * `https://api.deepseek.com/anthropic` and append `/v1/messages`
+     * themselves. NestSpace sends the complete endpoint, so normalize the
+     * value when the user saves or tests it. Existing versioned message
+     * endpoints are left unchanged.
+     */
+    fun withNormalizedEndpoint(): LlmConfig {
+        if (protocol != LlmProtocol.ANTHROPIC) return this
+        val raw = baseUrl.trim()
+        if (raw.isEmpty()) return this
+        val suffixIndex = listOf(raw.indexOf('?'), raw.indexOf('#'))
+            .filter { it >= 0 }
+            .minOrNull()
+        val path = suffixIndex?.let { raw.substring(0, it) } ?: raw
+        val suffix = suffixIndex?.let { raw.substring(it) }.orEmpty()
+        if (VERSIONED_MESSAGES_PATH.containsMatchIn(path)) {
+            return if (baseUrl == raw) this else copy(baseUrl = raw)
+        }
+        return copy(baseUrl = path.trimEnd('/') + "/v1/messages" + suffix)
+    }
+
     companion object {
+        private val VERSIONED_MESSAGES_PATH =
+            Regex("/v\\d+[a-z0-9._-]*/messages/?$", RegexOption.IGNORE_CASE)
         const val DEFAULT_ANTHROPIC_BASE = "https://api.anthropic.com/v1/messages"
         const val DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5"
         const val DEFAULT_CONTEXT_TOKENS = 800_000

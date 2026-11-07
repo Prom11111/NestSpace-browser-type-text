@@ -2,6 +2,7 @@ package com.coke.nestspace.assistant
 
 import com.coke.nestspace.i18n.AppLanguage
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.inputmethod.InputMethodManager
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
@@ -71,6 +73,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -89,9 +92,14 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.coke.nestspace.container.HeadlessMirrorWindow
 import com.coke.nestspace.control.ContainerUiClient
+import com.coke.nestspace.browser.BrowserSession
 import com.coke.nestspace.ui.FrameSpinner
+import com.coke.nestspace.MainActivity
 import com.coke.nestspace.agent.AssistantConversation
+import com.coke.nestspace.data.LlmConfigStore
+import com.coke.nestspace.ui.ModelSettingsNavigation
 import com.coke.nestspace.ui.agent.UserGateHost
+import com.coke.nestspace.ui.agent.DownloadProgressCard
 import com.coke.nestspace.data.AgentMessage
 import com.coke.nestspace.ui.markdown.MarkdownBlock
 import com.coke.nestspace.ui.markdown.markdownAnnotatedString
@@ -132,12 +140,15 @@ class AssistantVoiceActivity : ComponentActivity() {
     private var level by mutableFloatStateOf(0f)
     private var showInput by mutableStateOf(false)
     private var busy by mutableStateOf(false)
+    private var modelConfigured by mutableStateOf(false)
+    private var speechBootstrapped = false
     private var resumeAfterReply = true
     private var userEdited = false
     private var resumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        modelConfigured = hasConfiguredModel()
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
@@ -161,6 +172,7 @@ class AssistantVoiceActivity : ComponentActivity() {
                     input = input,
                     level = level,
                     showInput = showInput,
+                    modelConfigured = modelConfigured,
                     onInputChange = {
                         userEdited = true
                         input = it
@@ -169,6 +181,7 @@ class AssistantVoiceActivity : ComponentActivity() {
                     onStop = { AssistantConversation.cancel() },
                     onToggleListening = { toggleListening() },
                     onToggleInput = { toggleInput() },
+                    onConfigureModel = { openModelSettings() },
                     onBack = { backOrClose() },
                     onClose = { finish() }
                 )
@@ -251,11 +264,7 @@ class AssistantVoiceActivity : ComponentActivity() {
             }
         }
 
-        if (hasAudioPermission()) {
-            prepareLocalSpeech()
-        } else {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO)
-        }
+        bootstrapSpeechIfConfigured()
     }
 
     /**
@@ -279,8 +288,10 @@ class AssistantVoiceActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         resumed = true
+        modelConfigured = hasConfiguredModel()
         FloatingDotOverlay.setSuppressed(this, true)
         FloatingDotOverlay.onHostActivityResumed(this)
+        bootstrapSpeechIfConfigured()
         // If the reply finished while the sheet was in the background, start
         // listening only once the Activity is visible again.
         if (resumeAfterReply && !busy && !preparing && !showInput &&
@@ -333,6 +344,36 @@ class AssistantVoiceActivity : ComponentActivity() {
     private fun hasAudioPermission(): Boolean =
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
+
+    private fun hasConfiguredModel(): Boolean {
+        val state = LlmConfigStore(this).load()
+        val active = state.configs.firstOrNull { it.id == state.activeId }
+            ?: state.configs.firstOrNull()
+        return active?.isConfigured == true
+    }
+
+    private fun bootstrapSpeechIfConfigured() {
+        if (!modelConfigured || speechBootstrapped) return
+        speechBootstrapped = true
+        if (hasAudioPermission()) {
+            prepareLocalSpeech()
+        } else {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO)
+        }
+    }
+
+    private fun openModelSettings() {
+        stopListening(cancel = true)
+        ModelSettingsNavigation.requestModelSettings()
+        startActivity(
+            Intent(this, MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        )
+        finish()
+    }
 
     private fun prepareLocalSpeech() {
         if (speechService != null) {
@@ -507,6 +548,10 @@ class AssistantVoiceActivity : ComponentActivity() {
 
     private fun submit(text: String) {
         if (text.isBlank()) return
+        if (!modelConfigured) {
+            openModelSettings()
+            return
+        }
         stopListening(cancel = true)
         transcript = ""
         userEdited = false
@@ -637,17 +682,21 @@ private fun AssistantVoiceScreen(
     input: String,
     level: Float,
     showInput: Boolean,
+    modelConfigured: Boolean,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
     onToggleListening: () -> Unit,
     onToggleInput: () -> Unit,
+    onConfigureModel: () -> Unit,
     onBack: () -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
     val accent = remember { Color(FloatingDotSettings.load(context).hostColor) }
     val focusRequester = remember { FocusRequester() }
+    val downloads by BrowserSession.downloadsFlow.collectAsState()
+    val activeDownload = downloads.firstOrNull { it.state == "downloading" }
     val latestReply = remember(messages) {
         messages.lastOrNull {
             it.role == AgentMessage.Role.AGENT && !it.welcome
@@ -712,7 +761,12 @@ private fun AssistantVoiceScreen(
                     }
                 }
 
-                if (preparing) {
+                if (!modelConfigured) {
+                    ModelSetupPrompt(
+                        accent = accent,
+                        onConfigure = onConfigureModel
+                    )
+                } else if (preparing) {
                     Text(
                         status,
                         color = Color.White.copy(alpha = 0.72f),
@@ -790,7 +844,14 @@ private fun AssistantVoiceScreen(
                     }
                 }
 
-                if (showInput) {
+                activeDownload?.let { download ->
+                    DownloadProgressCard(
+                        download = download,
+                        dark = true
+                    )
+                }
+
+                if (modelConfigured && showInput) {
                     OutlinedTextField(
                         value = input,
                         onValueChange = onInputChange,
@@ -833,36 +894,93 @@ private fun AssistantVoiceScreen(
                     )
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onToggleInput) {
-                        Icon(
-                            if (showInput) Icons.Default.Mic else Icons.Default.Keyboard,
-                            contentDescription = if (showInput) {
-                                AppLanguage.tr("切换到语音", "Switch to voice")
-                            } else {
-                                AppLanguage.tr("切换到键盘", "Switch to keyboard")
+                if (modelConfigured) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onToggleInput) {
+                            Icon(
+                                if (showInput) Icons.Default.Mic else Icons.Default.Keyboard,
+                                contentDescription = if (showInput) {
+                                    AppLanguage.tr("切换到语音", "Switch to voice")
+                                } else {
+                                    AppLanguage.tr("切换到键盘", "Switch to keyboard")
+                                },
+                                tint = Color.White.copy(alpha = 0.72f)
+                            )
+                        }
+                        Text(
+                            when {
+                                busy -> AppLanguage.tr("正在处理", "Working")
+                                preparing -> AppLanguage.tr("正在准备语音", "Preparing voice")
+                                listening -> AppLanguage.tr("正在聆听", "Listening")
+                                available -> AppLanguage.tr("点按圆点开始", "Tap the dot to start")
+                                else -> AppLanguage.tr("语音不可用", "Voice unavailable")
                             },
-                            tint = Color.White.copy(alpha = 0.72f)
+                            modifier = Modifier.weight(1f),
+                            color = Color.White.copy(alpha = 0.48f),
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
                         )
+                        Spacer(Modifier.size(48.dp))
                     }
-                    Text(
-                        when {
-                            busy -> AppLanguage.tr("正在处理", "Working")
-                            preparing -> AppLanguage.tr("正在准备语音", "Preparing voice")
-                            listening -> AppLanguage.tr("正在聆听", "Listening")
-                            available -> AppLanguage.tr("点按圆点开始", "Tap the dot to start")
-                            else -> AppLanguage.tr("语音不可用", "Voice unavailable")
-                        },
-                        modifier = Modifier.weight(1f),
-                        color = Color.White.copy(alpha = 0.48f),
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.size(48.dp))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelSetupPrompt(
+    accent: Color,
+    onConfigure: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = accent.copy(alpha = 0.13f)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Icon(
+                Icons.Default.Settings,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(24.dp)
+            )
+            Text(
+                AppLanguage.tr("请先配置模型", "Configure a model first"),
+                color = Color.White,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                AppLanguage.tr(
+                    "配置后即可使用语音和文字对话",
+                    "Configure one to use voice and text chat"
+                ),
+                color = Color.White.copy(alpha = 0.62f),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center
+            )
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .clickable(onClick = onConfigure),
+                shape = RoundedCornerShape(50),
+                color = accent
+            ) {
+                Text(
+                    AppLanguage.tr("去配置", "Configure"),
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 9.dp),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }

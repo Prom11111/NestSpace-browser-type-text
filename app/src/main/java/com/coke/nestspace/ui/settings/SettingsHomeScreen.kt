@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -51,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.coke.nestspace.data.LlmConfig
 import com.coke.nestspace.data.McpStatus
@@ -105,12 +108,21 @@ internal fun SettingsHomeScreen(
     onOpenCategory: (SettingsCategory) -> Unit
 ) {
     val versionName = rememberAppVersion()
+    val configuration = LocalConfiguration.current
+    val tabletLayout = configuration.smallestScreenWidthDp >= 480
     AppLanguage.isChinese()
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        LazyColumn(
+            modifier = Modifier
+                .widthIn(max = 760.dp)
+                .fillMaxHeight()
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(
+                horizontal = if (tabletLayout) 28.dp else 16.dp,
+                vertical = if (tabletLayout) 24.dp else 16.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
         when (category) {
             null -> {
                 item {
@@ -496,6 +508,7 @@ internal fun SettingsHomeScreen(
                     }
                 }
             }
+        }
         }
     }
 }

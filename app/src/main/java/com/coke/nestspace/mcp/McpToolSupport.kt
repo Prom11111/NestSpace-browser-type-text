@@ -172,7 +172,7 @@ internal suspend fun llmConfig(context: Context, args: JSONObject): ToolResult {
                     existing?.temperature ?: 0.7
                 },
                 reasoningEffort = reasoning
-            )
+            ).withNormalizedEndpoint()
             val replace = existing?.id ?: config.id
             val next = state.configs.filterNot { it.id == replace } + config
             val select = args.optBoolean("select", existing == null)
@@ -227,9 +227,10 @@ internal suspend fun llmConfig(context: Context, args: JSONObject): ToolResult {
         }
 
         "test" -> {
-            val target = findConfig(state, args.optString("id"))
+            val target = (findConfig(state, args.optString("id"))
                 ?: findConfig(state, args.optString("name"))
-                ?: state.configs.firstOrNull { it.id == state.activeId }
+                ?: state.configs.firstOrNull { it.id == state.activeId })
+                ?.withNormalizedEndpoint()
                 ?: return ToolResult(
                     false,
                     "config not found",

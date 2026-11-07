@@ -351,7 +351,7 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveLlmConfig(config: LlmConfig) {
-        val normalized = config.copy(
+        val normalized = config.withNormalizedEndpoint().copy(
             id = config.id.ifBlank { UUID.randomUUID().toString() },
             name = config.name.ifBlank { config.model.ifBlank { config.protocol.label } },
             temperature = config.temperature
@@ -432,11 +432,12 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
         if (llmTesting.value) return
         viewModelScope.launch {
             llmTesting.value = true
+            val tested = config.withNormalizedEndpoint()
             llmStatus.value = AppLanguage.tr(
-                "正在连接 ${config.endpoint()}…",
-                "Connecting to ${config.endpoint()}…"
+                "正在连接 ${tested.endpoint()}…",
+                "Connecting to ${tested.endpoint()}…"
             )
-            runCatching { LlmProbe.test(config, getApplication()) }
+            runCatching { LlmProbe.test(tested, getApplication()) }
                 .onSuccess { llmStatus.value = AppLanguage.tr(
                     "连接成功：${it.take(160)}",
                     "Connected: ${it.take(160)}"

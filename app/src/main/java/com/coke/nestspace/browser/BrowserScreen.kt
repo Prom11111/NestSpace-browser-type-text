@@ -2,7 +2,9 @@ package com.coke.nestspace.browser
 
 import com.coke.nestspace.i18n.AppLanguage
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.net.Uri
+import android.webkit.MimeTypeMap
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -19,12 +21,14 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -35,11 +39,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -67,7 +74,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import com.coke.nestspace.agent.UserGateManager
+import com.coke.nestspace.ui.agent.DownloadProgressCard
+import java.io.File
 
 private const val HOME_URL = BrowserSession.HOME_URL
 
@@ -80,12 +90,14 @@ fun BrowserScreen(
 ) {
     val context = LocalContext.current
     val tabs by BrowserSession.tabsFlow.collectAsState()
+    val downloads by BrowserSession.downloadsFlow.collectAsState()
     val takeover by UserGateManager.takeover.collectAsState()
     val browserTakeover = takeover?.takeIf {
         it.target == UserGateManager.TakeoverTarget.BROWSER
     }
     val proxyStatus by BrowserProxyManager.status.collectAsState()
     var showProxyDialog by rememberSaveable { mutableStateOf(false) }
+    var showDownloads by rememberSaveable { mutableStateOf(false) }
     // Session state lives in BrowserSession, not in the saved instance. Reset
     // this on recreation so a stale "initialized" value cannot close a fresh
     // activity before the first tab is attached.
@@ -157,7 +169,10 @@ fun BrowserScreen(
             BrowserHeader(
                 tabCount = tabs.size,
                 proxyEnabled = proxyStatus.applied,
+                downloadCount = downloads.size,
+                downloading = downloads.any { it.state == "downloading" },
                 onBack = onBack,
+                onOpenDownloads = { showDownloads = true },
                 onOpenProxy = { showProxyDialog = true }
             )
             TabStrip(
@@ -271,13 +286,162 @@ fun BrowserScreen(
     if (showProxyDialog) {
         BrowserProxyDialog(onDismiss = { showProxyDialog = false })
     }
+    if (showDownloads) {
+        DownloadMenu(
+            downloads = downloads,
+            onDismiss = { showDownloads = false },
+            onOpen = { openDownloadedFile(context, it) },
+            onDelete = { BrowserSession.deleteDownload(context, it.id) }
+        )
+    }
+}
+
+@Composable
+private fun DownloadMenu(
+    downloads: List<BrowserSession.DownloadState>,
+    onDismiss: () -> Unit,
+    onOpen: (BrowserSession.DownloadState) -> Unit,
+    onDelete: (BrowserSession.DownloadState) -> Unit
+) {
+    var pendingDelete by remember { mutableStateOf<BrowserSession.DownloadState?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(AppLanguage.tr("下载", "Downloads")) },
+        text = {
+            if (downloads.isEmpty()) {
+                Text(
+                    AppLanguage.tr("还没有下载文件", "No downloads yet"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 440.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    items(downloads, key = { it.id }) { download ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            DownloadProgressCard(
+                                download = download,
+                                modifier = Modifier.weight(1f),
+                                onClick = download.state.takeIf { it == "done" }?.let {
+                                    { onOpen(download) }
+                                }
+                            )
+                            IconButton(
+                                onClick = { pendingDelete = download },
+                                enabled = download.state != "downloading"
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = AppLanguage.tr("删除下载", "Delete download"),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(AppLanguage.tr("关闭", "Close"))
+            }
+        }
+    )
+    pendingDelete?.let { download ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(AppLanguage.tr("删除下载？", "Delete download?")) },
+            text = {
+                Text(
+                    AppLanguage.tr(
+                        "将从列表移除并删除文件：${download.name}",
+                        "Remove from the list and delete the file: ${download.name}"
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        onDelete(download)
+                    }
+                ) {
+                    Text(
+                        AppLanguage.tr("删除", "Delete"),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(AppLanguage.tr("取消", "Cancel"))
+                }
+            }
+        )
+    }
+}
+
+private fun openDownloadedFile(
+    context: android.content.Context,
+    download: BrowserSession.DownloadState
+) {
+    if (download.state != "done") return
+    val uri = runCatching {
+        val stored = download.uri?.let(Uri::parse)
+        when (stored?.scheme?.lowercase()) {
+            "content" -> stored
+            "file" -> stored.path?.let { path ->
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.files",
+                    File(path)
+                )
+            }
+            else -> download.path?.let { path ->
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.files",
+                    File(path)
+                )
+            }
+        }
+    }.getOrNull()
+    if (uri == null) {
+        Toast.makeText(
+            context,
+            AppLanguage.tr("找不到下载的文件", "Downloaded file was not found"),
+            Toast.LENGTH_SHORT
+        ).show()
+        return
+    }
+    val extension = download.name.substringAfterLast('.', "").lowercase()
+    val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+        ?: if (extension == "apk") "application/vnd.android.package-archive" else "*/*"
+    val intent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, mime)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    runCatching { context.startActivity(intent) }.onFailure {
+        Toast.makeText(
+            context,
+            AppLanguage.tr("无法打开这个文件", "Could not open this file"),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
 }
 
 @Composable
 private fun BrowserHeader(
     tabCount: Int,
     proxyEnabled: Boolean,
+    downloadCount: Int,
+    downloading: Boolean,
     onBack: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onOpenProxy: () -> Unit
 ) {
     Row(
@@ -294,6 +458,28 @@ private fun BrowserHeader(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.weight(1f)
         )
+        Box {
+            IconButton(onClick = onOpenDownloads) {
+                Icon(
+                    Icons.Default.Download,
+                    contentDescription = AppLanguage.tr("下载", "Downloads"),
+                    tint = if (downloading) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+            if (downloadCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 7.dp, end = 7.dp)
+                        .size(7.dp)
+                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
+                )
+            }
+        }
         IconButton(onClick = onOpenProxy) {
             Icon(
                 Icons.Default.Settings,

@@ -12,6 +12,7 @@ object LlmProbe {
 
     suspend fun test(config: LlmConfig, context: Context? = null): String =
         withContext(Dispatchers.IO) {
+            val config = config.withNormalizedEndpoint()
             if (config.baseUrl.isBlank() || config.model.isBlank() ||
                 config.apiKey.isBlank()
             ) {

@@ -315,6 +315,13 @@ internal fun DesktopScreen(
     var dragDistance by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
+    val gridColumns = when {
+        configuration.screenWidthDp >= 1_000 -> 8
+        configuration.screenWidthDp >= 760 -> 7
+        configuration.screenWidthDp >= 480 -> 5
+        else -> 4
+    }
+    val tabletLayout = configuration.smallestScreenWidthDp >= 480
     val haptic = LocalHapticFeedback.current
     val dragThreshold = with(density) { 8.dp.toPx() }
     // Deliberate product rule: a small overlap creates a folder, while a
@@ -587,20 +594,24 @@ internal fun DesktopScreen(
         ) {
             Text(
                 dateLabel,
-                style = MaterialTheme.typography.titleMedium,
+                style = if (tabletLayout) {
+                    MaterialTheme.typography.headlineSmall
+                } else {
+                    MaterialTheme.typography.titleMedium
+                },
                 fontWeight = FontWeight.Medium,
                 color = labelColor(wallpaper != null)
             )
         }
 
         LazyVerticalGrid(
-            columns = GridCells.Fixed(4),
+            columns = GridCells.Fixed(gridColumns),
             state = gridState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 16.dp,
-                top = 78.dp,
-                end = 16.dp,
+                start = if (tabletLayout) 24.dp else 16.dp,
+                top = if (tabletLayout) 92.dp else 78.dp,
+                end = if (tabletLayout) 24.dp else 16.dp,
                 bottom = 128.dp
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -636,6 +647,7 @@ internal fun DesktopScreen(
                     dropTarget = dragIndex != index && dragTargetIndex == index,
                     folderTarget = folderTargetIndex == index,
                     onWallpaper = wallpaper != null,
+                    tabletLayout = tabletLayout,
                     onLaunch = {
                         when (slot) {
                             is DesktopSlot.App -> launch(slot.entry)
@@ -739,7 +751,6 @@ internal fun DesktopScreen(
             onLaunch = { launch(it) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 18.dp)
                 .padding(bottom = 16.dp)
         )
     }

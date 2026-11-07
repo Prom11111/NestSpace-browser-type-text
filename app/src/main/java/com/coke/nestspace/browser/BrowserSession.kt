@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 import java.lang.ref.WeakReference
 
 /**
@@ -46,6 +47,7 @@ object BrowserSession {
     const val MODE_HEADLESS = "headless"
     const val MODE_CLOSED = "closed"
     const val MAX_TABS = 10
+    private const val MAX_DOWNLOADS = 30
 
     private const val SEARCH_URL = "https://www.bing.com/search?q="
 
@@ -95,16 +97,29 @@ object BrowserSession {
     val tabsFlow: StateFlow<List<Tab>> = _tabs.asStateFlow()
 
     data class DownloadState(
+        val id: String,
         val url: String,
+        val name: String,
         val state: String,
+        val downloadedBytes: Long = 0L,
+        val totalBytes: Long = -1L,
+        val startedAt: Long = System.currentTimeMillis(),
         val path: String? = null,
         val uri: String? = null,
         val size: Long = 0L,
         val error: String? = null
-    )
+    ) {
+        val progress: Float?
+            get() = totalBytes.takeIf { it > 0L }?.let {
+                (downloadedBytes.toFloat() / it).coerceIn(0f, 1f)
+            }
+    }
 
     @Volatile
     private var downloadState: DownloadState? = null
+    private val downloadLock = Any()
+    private val _downloads = MutableStateFlow<List<DownloadState>>(emptyList())
+    val downloadsFlow: StateFlow<List<DownloadState>> = _downloads.asStateFlow()
 
     private data class PendingFileChooser(
         val callback: ValueCallback<Array<Uri>>,
@@ -467,6 +482,10 @@ object BrowserSession {
             allowFileAccess = false
             // File uploads hand WebView content:// URIs from the system picker.
             allowContentAccess = true
+            // Download and handoff pages often use target=_blank/window.open.
+            // Never let WebView promote those windows into an external app.
+            setSupportMultipleWindows(false)
+            javaScriptCanOpenWindowsAutomatically = false
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             mediaPlaybackRequiresUserGesture = true
             setSupportZoom(forUi)
@@ -515,19 +534,27 @@ object BrowserSession {
                 request: WebResourceRequest?
             ): Boolean {
                 val uri = request?.url ?: return false
-                val scheme = uri.scheme?.lowercase()
-                if (scheme == "http" || scheme == "https") return false
-                // Pages use intent:// links to force the user into an
-                // external app or the system browser. Stay inside the
-                // built-in browser instead; otherwise a signin redirect can
-                // suddenly cover the screen with Chrome.
-                if (scheme == "intent") return true
-                // Both visible and headless tabs stay inside NestSpace for
-                // tel:, market:, zhihu:, app handoff and similar schemes.
-                return true
+                return keepNavigationInside(view, uri)
+            }
+
+            @Suppress("DEPRECATION")
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                val uri = url?.let(Uri::parse) ?: return true
+                return keepNavigationInside(view, uri)
             }
         }
         view.webChromeClient = object : WebChromeClient() {
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?
+            ): Boolean {
+                // Consume popup requests. Some download pages otherwise hand
+                // the popup URL to Chrome even though the tab stays in-app.
+                return true
+            }
+
             override fun onShowFileChooser(
                 webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
@@ -558,11 +585,9 @@ object BrowserSession {
         }
         view.setDownloadListener { url, _, _, _, _ ->
             if (url.startsWith("http://") || url.startsWith("https://")) {
-                startDownload(url)
                 headlessScope.launch {
-                    runCatching { BrowserDownloader.download(app, url) }
+                    runCatching { download(app, url) }
                         .onSuccess { result ->
-                            finishDownload(url, result)
                             if (forUi) {
                                 android.widget.Toast.makeText(
                                     app,
@@ -575,7 +600,6 @@ object BrowserSession {
                             }
                         }
                         .onFailure { error ->
-                            failDownload(url, error)
                             if (forUi) {
                                 android.widget.Toast.makeText(
                                     app,
@@ -605,6 +629,28 @@ object BrowserSession {
             view.layout(0, 0, 1080, 1920)
         }
         return view
+    }
+
+    /**
+     * HTTP(S) remains in this tab. Non-web schemes such as intent:, market:,
+     * tel: and app-specific links are consumed instead of being promoted to
+     * Android; otherwise a download button can replace NestSpace with Chrome.
+     */
+    private fun keepNavigationInside(view: WebView?, uri: Uri): Boolean {
+        val scheme = uri.scheme?.lowercase()
+        if (scheme == "http" || scheme == "https") return false
+        if (scheme == "intent") {
+            val fallback = runCatching {
+                uri.getQueryParameter("S.browser_fallback_url")
+            }.getOrNull()
+            val fallbackUri = fallback?.let(Uri::parse)
+            if (fallbackUri?.scheme.equals("http", true) ||
+                fallbackUri?.scheme.equals("https", true)
+            ) {
+                view?.loadUrl(fallbackUri.toString())
+            }
+        }
+        return true
     }
 
     private fun onTabPageStarted(entry: Entry, url: String?) {
@@ -715,29 +761,104 @@ object BrowserSession {
         downloadState = null
     }
 
-    fun startDownload(url: String) {
-        downloadState = DownloadState(url, "downloading")
-    }
-
-    fun finishDownload(url: String, result: BrowserDownloader.DownloadResult) {
-        downloadState = DownloadState(
-            url,
-            "done",
-            result.path,
-            result.uri,
-            result.size
+    fun startDownload(url: String): DownloadState {
+        val record = DownloadState(
+            id = "download-${System.currentTimeMillis()}-${System.nanoTime()}",
+            url = url,
+            name = downloadName(url),
+            state = "downloading"
         )
+        synchronized(downloadLock) {
+            downloadState = record
+            _downloads.value = (listOf(record) + _downloads.value).take(MAX_DOWNLOADS)
+        }
+        return record
     }
 
-    fun failDownload(url: String, error: Throwable) {
-        downloadState = DownloadState(
-            url,
-            "failed",
+    fun updateDownloadProgress(id: String, downloaded: Long, total: Long) {
+        synchronized(downloadLock) {
+            val current = _downloads.value.firstOrNull { it.id == id } ?: return
+            val updated = current.copy(
+                downloadedBytes = downloaded.coerceAtLeast(0L),
+                totalBytes = total.coerceAtLeast(-1L)
+            )
+            replaceDownload(updated)
+            if (downloadState?.id == id) downloadState = updated
+        }
+    }
+
+    fun finishDownload(id: String, result: BrowserDownloader.DownloadResult): DownloadState {
+        val current = _downloads.value.firstOrNull { it.id == id }
+            ?: startDownload(result.uri)
+        val finished = current.copy(
+            name = result.name,
+            state = "done",
+            downloadedBytes = result.size,
+            totalBytes = result.size,
+            path = result.path,
+            uri = result.uri,
+            size = result.size,
+            error = null
+        )
+        synchronized(downloadLock) {
+            replaceDownload(finished)
+            if (downloadState?.id == id) downloadState = finished
+        }
+        return finished
+    }
+
+    fun failDownload(id: String, error: Throwable): DownloadState {
+        val current = _downloads.value.firstOrNull { it.id == id }
+            ?: startDownload("")
+        val failed = current.copy(
+            state = "failed",
             error = error.message ?: error.javaClass.simpleName
         )
+        synchronized(downloadLock) {
+            replaceDownload(failed)
+            if (downloadState?.id == id) downloadState = failed
+        }
+        return failed
+    }
+
+    suspend fun download(context: Context, url: String): DownloadState {
+        val record = startDownload(url)
+        return try {
+            val result = BrowserDownloader.download(context, url) { downloaded, total ->
+                updateDownloadProgress(record.id, downloaded, total)
+            }
+            finishDownload(record.id, result)
+        } catch (t: Throwable) {
+            failDownload(record.id, t)
+            throw t
+        }
     }
 
     fun latestDownload(): DownloadState? = downloadState
+
+    fun deleteDownload(context: Context, id: String): Boolean {
+        val target = synchronized(downloadLock) {
+            val item = _downloads.value.firstOrNull { it.id == id } ?: return false
+            if (item.state == "downloading") return false
+            _downloads.value = _downloads.value.filterNot { it.id == id }
+            if (downloadState?.id == id) downloadState = null
+            item
+        }
+        target.uri?.let { raw ->
+            runCatching {
+                val uri = Uri.parse(raw)
+                when (uri.scheme?.lowercase()) {
+                    "content" -> context.contentResolver.delete(uri, null, null) > 0
+                    "file" -> uri.path?.let { File(it).delete() } == true
+                    else -> false
+                }
+            }
+        }
+        target.path?.let { path ->
+            runCatching { File(path).delete() }
+        }
+        return true
+    }
 
     suspend fun awaitDownload(timeoutMs: Long = 30_000): DownloadState? {
         val deadline = System.currentTimeMillis() + timeoutMs
@@ -747,6 +868,19 @@ object BrowserSession {
             current = downloadState
         }
         return current
+    }
+
+    private fun replaceDownload(updated: DownloadState) {
+        _downloads.value = _downloads.value.map { item ->
+            if (item.id == updated.id) updated else item
+        }
+    }
+
+    private fun downloadName(url: String): String {
+        val fromUrl = runCatching { Uri.parse(url).lastPathSegment }.getOrNull()
+            ?.substringBefore('?')
+            ?.takeIf { it.isNotBlank() }
+        return fromUrl ?: "download"
     }
 
     fun normalizeInput(input: String?): String {

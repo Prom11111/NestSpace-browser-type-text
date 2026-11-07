@@ -12,6 +12,7 @@ import com.coke.nestspace.container.loader.SharedLibraries
 import com.coke.nestspace.container.loader.withContainerClassLoader
 import com.coke.nestspace.container.remote.ContainerProcessBrokerClient
 import com.coke.nestspace.container.vpm.VirtualPackageRegistry
+import com.coke.nestspace.browser.BrowserActivity
 
 
 import android.annotation.SuppressLint
@@ -20,6 +21,7 @@ import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -501,6 +503,24 @@ class ContainerSession private constructor(
     }
 
     fun startExternalActivity(host: StageAActivity, intent: Intent, requestCode: Int): Boolean {
+        if (isExternalWebIntent(intent)) {
+            return runCatching {
+                host.startActivity(
+                    Intent()
+                        .setClassName(HostIdentity.packageName, BrowserActivity::class.java.name)
+                        .putExtra(BrowserActivity.EXTRA_URL, intent.dataString.orEmpty())
+                        .addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        )
+                )
+                true
+            }.getOrElse {
+                Log.w(TAG, "open web intent inside NestSpace failed", it)
+                false
+            }
+        }
         return try {
             withHostIdentity(host) {
                 if (requestCode >= 0) {
@@ -514,6 +534,12 @@ class ContainerSession private constructor(
             Log.w(TAG, "start external activity failed: ${intent.component}", t)
             false
         }
+    }
+
+    private fun isExternalWebIntent(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_VIEW) return false
+        val uri: Uri = intent.data ?: return false
+        return uri.scheme.equals("http", true) || uri.scheme.equals("https", true)
     }
 
     /**

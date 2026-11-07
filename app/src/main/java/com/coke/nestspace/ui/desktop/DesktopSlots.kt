@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -76,6 +77,7 @@ internal fun DesktopSlotCell(
     dropTarget: Boolean,
     folderTarget: Boolean,
     onWallpaper: Boolean,
+    tabletLayout: Boolean = false,
     onLaunch: () -> Unit,
     onDragStart: (Int, Rect) -> Unit,
     onDrag: (Int, Offset) -> Unit,
@@ -144,7 +146,7 @@ internal fun DesktopSlotCell(
         ) {
             when (slot) {
                 is DesktopSlot.App -> {
-                    Box(Modifier.size(56.dp)) {
+                    Box(Modifier.size(if (tabletLayout) 64.dp else 56.dp)) {
                         AppGlyph(
                             entry = slot.entry,
                             modifier = Modifier.matchParentSize()
@@ -153,7 +155,11 @@ internal fun DesktopSlotCell(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         slot.entry.label,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = if (tabletLayout) {
+                            MaterialTheme.typography.bodyMedium
+                        } else {
+                            MaterialTheme.typography.bodySmall
+                        },
                         color = labelColor(onWallpaper),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -165,12 +171,16 @@ internal fun DesktopSlotCell(
                     FolderGlyph(
                         folder = slot,
                         onWallpaper = onWallpaper,
-                        modifier = Modifier.size(56.dp)
+                        modifier = Modifier.size(if (tabletLayout) 64.dp else 56.dp)
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
                         slot.name,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = if (tabletLayout) {
+                            MaterialTheme.typography.bodyMedium
+                        } else {
+                            MaterialTheme.typography.bodySmall
+                        },
                         color = labelColor(onWallpaper),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -225,15 +235,19 @@ internal fun LauncherDock(
     if (entries.isEmpty()) return
     Row(
         modifier = modifier
+            .widthIn(max = 390.dp)
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+        horizontalArrangement = Arrangement.spacedBy(
+            space = 8.dp,
+            alignment = Alignment.CenterHorizontally
+        ),
         verticalAlignment = Alignment.Top
     ) {
         entries.forEach { entry ->
             Column(
                 modifier = Modifier
-                    .weight(1f)
+                    .width(82.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .clickable { onLaunch(entry) }
                     .padding(vertical = 2.dp, horizontal = 2.dp),
