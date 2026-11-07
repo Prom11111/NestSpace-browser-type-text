@@ -41,14 +41,24 @@ git diff --stat <上一个标签>..HEAD
 
 5. 检查相对链接、版本号、APK 名称和本地图片路径。
 
-6. 用户明确要求发布后，提交更新日志并创建、推送标签：
+6. 用户明确要求发布或“执行发布文档”后，必须完成 GitHub 远端发布，
+   不能只停留在本地文件或本地提交：
 
 ```bash
-git tag v1.0.6
-git push origin main --tags
+git add docs/releases/v1.0.6.md
+git commit -m "Release v1.0.6"
+git push origin main
+
+git tag -a v1.0.6 -m "NestSpace v1.0.6"
+git push origin v1.0.6
 ```
 
-GitHub Actions 会构建 APK，并把对应 Markdown 文件完整显示在 Release 页面。
+7. 等待 `Build APK` 的标签构建成功。
+8. 验证 GitHub Release 已生成，正文来自
+   `docs/releases/v1.0.6.md`，并且包含 arm64、x86_64 和 universal APK。
+
+只有 GitHub 上的标签和 Release 都已生成并验证通过，发布任务才算完成。
+本地 Markdown、本地提交或本地标签都不算已发布。
 
 如果用户只是要求生成或修改更新日志，AI 只修改 Markdown 文件，不提交、
 不打标签，也不推送。

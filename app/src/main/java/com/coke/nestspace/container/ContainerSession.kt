@@ -687,12 +687,25 @@ class ContainerSession private constructor(
                 .joinToString(File.pathSeparator)
             val nativeAbis = NativeLibs.abisOf(apkPaths)
             val nativeAbi = NativeLibs.supportedAbi(nativeAbis)
-            val nativeLibs = NativeLibs.extractIfNeeded(
+            val nativeCacheRoot = File(
+                host.applicationContext.filesDir,
+                "vspace/native-cache"
+            )
+            val legacyNativeLibs = File(dataRoot, "native-libs")
+            val sharedNativeLibs = NativeLibs.extractIfNeeded(
                 apkPaths,
                 nativeAbis,
-                File(dataRoot, "native-libs"),
+                nativeCacheRoot,
                 ContainerCompat.excludedNativeLibs(spec.packageName)
             )
+            val nativeLibs = sharedNativeLibs ?: legacyNativeLibs.takeIf { dir ->
+                dir.listFiles()?.any { it.isFile && it.name.endsWith(".so") } == true
+            }
+            if (sharedNativeLibs != null) {
+                // The current session has not loaded a library yet, so the old
+                // per-instance copy can be reclaimed safely.
+                runCatching { legacyNativeLibs.deleteRecursively() }
+            }
             Log.d(TAG, "native libs: ${nativeLibs?.absolutePath} abi=$nativeAbi")
 
             val loader = ContainerClassLoader(

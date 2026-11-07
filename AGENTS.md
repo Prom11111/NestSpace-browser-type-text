@@ -4,7 +4,8 @@
 
 Do not write release notes for ordinary feature or fix requests.
 
-When the user explicitly asks to prepare or publish a release:
+When the user explicitly asks to publish a release, run the release workflow or
+execute this release document:
 
 1. Read `docs/releases/README.md` and `docs/releases/TEMPLATE.md`.
 2. Find the previous release tag with `git describe --tags --abbrev=0`.
@@ -19,8 +20,22 @@ When the user explicitly asks to prepare or publish a release:
 7. Verify version names, APK asset names, image paths and the GitHub compare
    link.
 8. Run the relevant tests/build before creating the tag.
-9. Commit the release notes, create `vX.Y.Z`, and push the branch and tag only
-   when the user asked to publish. Do not create a branch unless requested.
+9. Commit all release-related changes and push `main` to GitHub.
+10. Create an annotated tag `vX.Y.Z` on the pushed release commit and push that
+    exact tag to GitHub.
+11. Wait for the `Build APK` GitHub Actions tag run to finish successfully.
+12. Verify the GitHub Release exists, its Markdown body matches
+    `docs/releases/<tag>.md`, and it contains arm64, x86_64 and universal APKs.
+
+Use `gh run list --workflow "Build APK" --limit 10` to find the tag run,
+`gh run watch <run-id> --exit-status` to wait for it, and
+`gh release view vX.Y.Z --json tagName,body,assets,url` to verify the published
+Release and assets.
+
+When the user says to publish a release or execute this document, the task is
+not complete after creating files locally. A local Markdown file, local commit
+or local tag is not a release. Completion means the tag and Release exist on
+GitHub and the Release is verified there.
 
 If the user only asks to generate or update the note, create/edit the Markdown
 file but do not commit, tag or push until explicitly asked.
