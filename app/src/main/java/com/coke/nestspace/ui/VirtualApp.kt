@@ -98,6 +98,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.Lifecycle
@@ -198,7 +199,6 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     val llmConfig by viewModel.llmConfig.collectAsState()
     val llmConfigs by viewModel.llmConfigs.collectAsState()
     val activeLlmId by viewModel.activeLlmId.collectAsState()
-    val llmStatus by viewModel.llmStatus.collectAsState()
     val llmTesting by viewModel.llmTesting.collectAsState()
     val agentBusy by viewModel.agentBusy.collectAsState()
     val mcpStatus by viewModel.mcpStatus.collectAsState()
@@ -236,6 +236,11 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
             viewModel.startMcp()
         }
     val context = LocalContext.current
+    LaunchedEffect(viewModel, context) {
+        viewModel.llmToast.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
     val uiScope = rememberCoroutineScope()
     val modelOnboardingStore = remember(context) { ModelOnboardingStore(context) }
     var modelOnboardingCompleted by remember(context) {
@@ -686,7 +691,6 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                     SpacesPage.MODEL -> ModelDetailScreen(
                         configs = llmConfigs,
                         activeId = activeLlmId,
-                        llmStatus = llmStatus,
                         onAddLlm = {
                             editingLlm = LlmConfig.defaultsFor(LlmProtocol.ANTHROPIC)
                             spacesPage = SpacesPage.MODEL_EDIT
@@ -705,7 +709,6 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                             LlmConfigEditor(
                                 config = config,
                                 testing = llmTesting,
-                                status = llmStatus,
                                 onSave = {
                                     viewModel.saveLlmConfig(it)
                                     editingLlm = null

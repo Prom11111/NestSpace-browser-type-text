@@ -34,8 +34,11 @@ import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.llm.LlmProbe
 import com.coke.nestspace.service.McpForegroundService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -53,7 +56,8 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
     val llmConfigs = MutableStateFlow(initialLlmState.configs)
     val activeLlmId = MutableStateFlow(initialLlmState.activeId)
     val llmConfig = MutableStateFlow(activeConfig(initialLlmState))
-    val llmStatus = MutableStateFlow("")
+    private val _llmToast = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val llmToast: SharedFlow<String> = _llmToast.asSharedFlow()
     val llmTesting = MutableStateFlow(false)
     val agentBusy: StateFlow<Boolean> = AssistantConversation.busy
 
@@ -400,7 +404,7 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
         llmConfigs.value = next
         activeLlmId.value = normalized.id
         persistLlm(next, normalized.id)
-        llmStatus.value = AppLanguage.tr("配置已保存", "Configuration saved")
+        _llmToast.tryEmit(AppLanguage.tr("配置已保存", "Configuration saved"))
         addAgent(
             AppLanguage.tr(
                 "模型配置已保存：${normalized.name}（" +
@@ -421,14 +425,15 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
         }
         activeLlmId.value = activeId
         persistLlm(next, activeId)
-        llmStatus.value = AppLanguage.tr("已删除模型配置", "Model configuration deleted")
+        _llmToast.tryEmit(
+            AppLanguage.tr("已删除模型配置", "Model configuration deleted")
+        )
     }
 
     fun selectLlmConfig(id: String) {
         val config = llmConfigs.value.firstOrNull { it.id == id } ?: return
         activeLlmId.value = id
         persistLlm(llmConfigs.value, id)
-        llmStatus.value = ""
         Toast.makeText(
             getApplication(),
             AppLanguage.tr("已切换到 ${config.name}", "Switched to ${config.name}"),
@@ -465,20 +470,23 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             llmTesting.value = true
             val tested = config.withNormalizedEndpoint()
-            llmStatus.value = AppLanguage.tr(
-                "正在连接 ${tested.endpoint()}…",
-                "Connecting to ${tested.endpoint()}…"
-            )
             runCatching { LlmProbe.test(tested, getApplication()) }
-                .onSuccess { llmStatus.value = AppLanguage.tr(
-                    "连接成功：${it.take(160)}",
-                    "Connected: ${it.take(160)}"
-                ) }
+                .onSuccess {
+                    _llmToast.tryEmit(
+                        AppLanguage.tr(
+                            "连接成功：${it.take(160)}",
+                            "Connected: ${it.take(160)}"
+                        )
+                    )
+                }
                 .onFailure {
-                    llmStatus.value = AppLanguage.tr(
-                    "连接失败：${it.message ?: it.javaClass.simpleName}",
-                    "Connection failed: ${it.message ?: it.javaClass.simpleName}"
-                )
+                    val detail = it.message ?: it.javaClass.simpleName
+                    _llmToast.tryEmit(
+                        AppLanguage.tr(
+                            "连接失败：${detail.take(160)}",
+                            "Connection failed: ${detail.take(160)}"
+                        )
+                    )
                 }
             llmTesting.value = false
         }

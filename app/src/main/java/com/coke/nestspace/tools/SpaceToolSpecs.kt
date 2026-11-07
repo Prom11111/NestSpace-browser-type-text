@@ -115,7 +115,9 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                 "perform an action such as searching, tapping, following or posting, pass " +
                 "headless=false and operate it full-screen. For information-only work such as " +
                 "reading, checking, collecting or summarizing content, omit headless (or pass " +
-                "true) to use the assistant's headless square mirror. Do not inspect or " +
+                "true) to use the assistant's headless square mirror. If a sentence starts with " +
+                "'open the app' but asks to send titles, results, or a summary, the information " +
+                "goal wins and the whole sentence is one headless task. Do not inspect or " +
                 "summarize after a plain open request.",
             inputSchema = schema(
                 "space_id" to "string",

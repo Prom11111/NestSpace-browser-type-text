@@ -38,7 +38,6 @@ import androidx.compose.runtime.setValue
 internal fun ModelDetailScreen(
     configs: List<LlmConfig>,
     activeId: String,
-    llmStatus: String,
     onAddLlm: () -> Unit,
     onEditLlm: (LlmConfig) -> Unit,
     onDeleteLlm: (String) -> Unit,
@@ -91,15 +90,6 @@ internal fun ModelDetailScreen(
                     TextButton(onClick = { actionMode = !actionMode }) {
                         Text(if (actionMode) AppLanguage.tr("完成", "Done") else AppLanguage.tr("操作", "Manage"))
                     }
-                }
-            }
-            if (llmStatus.isNotBlank()) {
-                item {
-                    Text(
-                        llmStatus,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
             items(configs, key = { it.id }) { config ->

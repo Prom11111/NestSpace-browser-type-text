@@ -54,7 +54,6 @@ import com.coke.nestspace.data.ReasoningEffort
 fun LlmConfigEditor(
     config: LlmConfig,
     testing: Boolean,
-    status: String,
     onSave: (LlmConfig) -> Unit,
     onTest: (LlmConfig) -> Unit
 ) {
@@ -126,13 +125,6 @@ fun LlmConfigEditor(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        if (status.isNotBlank()) {
-            Text(
-                status,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
         if (testing) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
         }

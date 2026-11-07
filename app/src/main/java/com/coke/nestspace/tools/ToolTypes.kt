@@ -27,9 +27,11 @@ internal fun assistantPresentation(userUtterances: List<String>): AssistantPrese
         .any(text::contains)
     val information = listOf(
         "获取", "查看", "读取", "整理", "总结", "汇总", "列出", "告诉我",
+        "发我", "给我", "标题", "结果", "列表", "提取", "找出", "返回",
         "有哪些", "是什么", "多少", "热门", "推荐", "热榜", "排名", "资讯",
         "内容", "查一下", "看看",
-        "read", "get", "check", "collect", "summarize", "tell me", "what",
+        "read", "get", "check", "collect", "summarize", "tell me", "send me",
+        "title", "titles", "result", "results", "list", "extract", "what",
         "trending", "ranking"
     ).any(text::contains)
     return if (open && !information) {

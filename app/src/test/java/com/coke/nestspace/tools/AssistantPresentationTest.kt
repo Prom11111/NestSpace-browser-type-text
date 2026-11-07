@@ -36,4 +36,28 @@ class AssistantPresentationTest {
             assistantPresentation(listOf("打开抖音看看首页有哪些内容"))
         )
     }
+
+    @Test
+    fun openAndSendTitlesUsesHeadlessMirror() {
+        assertEquals(
+            AssistantPresentation.HEADLESS,
+            assistantPresentation(listOf("打开抖音把末日题材的标题发我"))
+        )
+    }
+
+    @Test
+    fun policyAppliesToOtherApps() {
+        assertEquals(
+            AssistantPresentation.HEADLESS,
+            assistantPresentation(listOf("打开微信把群聊标题发我"))
+        )
+        assertEquals(
+            AssistantPresentation.VISIBLE,
+            assistantPresentation(listOf("打开淘宝搜索保温杯"))
+        )
+        assertEquals(
+            AssistantPresentation.HEADLESS,
+            assistantPresentation(listOf("打开知乎看看热榜有哪些内容"))
+        )
+    }
 }

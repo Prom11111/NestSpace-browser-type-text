@@ -526,9 +526,13 @@ class LlmAgentRuntime(
             "当前本地时间：$now。\n" +
                 "当前虚拟空间 ID：$VIRTUAL_SPACE。\n" +
                 "先判断用户要打开/操作 App，还是只要从 App 获取信息。" +
-                "如果用户说“打开抖音”，直接调用 space_launch 并传 headless=false，全屏打开后停止，" +
-                "不要读取或总结页面。如果用户说“打开抖音搜索某某”“在抖音里点击/关注/发布/下单”等，" +
+                "这条规则适用于所有虚拟 App，不只是抖音。" +
+                "如果用户只说“打开某个 App”，直接调用 space_launch 并传 headless=false，全屏打开后停止，" +
+                "不要读取或总结页面。如果用户说“打开某个 App 搜索某某”或要求在 App 里点击、关注、发布、下单等，" +
                 "调用 space_launch 并传 headless=false，然后直接用 ui_* 完成操作。" +
+                "如果用户说“打开某个 App，把某类标题/结果/列表发我”或要求整理、读取、总结等，" +
+                "核心目标是获取信息；即使句首有“打开”，也要把整句当成一个任务，使用无头方形小窗，" +
+                "不要先全屏打开再切换，也不要拆成两个任务。" +
                 "如果用户只是要查内容、看热榜、读取页面、收集资料或总结信息，" +
                 "调用 space_launch 时不传 headless，使用无头方形小窗模式。" +
                 "需要用户接管登录、验证码或支付时，用 hand_to_user 切换前台。\n" +
@@ -557,10 +561,15 @@ class LlmAgentRuntime(
             "Current local time: $now.\n" +
                 "Current virtual space ID: $VIRTUAL_SPACE.\n" +
                 "First decide whether the user wants to open/operate the app or only retrieve " +
-                "information. For 'open Douyin', call space_launch with headless=false, leave " +
-                "it full-screen, and do not inspect or summarize the page. For 'open Douyin " +
-                "and search for X' or another requested action (tap, follow, post, order), " +
+                "information. This applies to every virtual app, not only Douyin. For 'open " +
+                "an app', call space_launch with headless=false, leave it full-screen, and do " +
+                "not inspect or summarize the page. For 'open an app and search for X' or " +
+                "another requested action (tap, follow, post, order), " +
                 "also pass headless=false and perform it with ui_* in the visible app. For " +
+                "requests such as 'open an app and send me titles/results' or 'open an app and " +
+                "summarize/read the content', the information goal wins: treat the whole sentence " +
+                "as one headless-mirror task even though it starts with 'open'. Do not open it " +
+                "full-screen first and do not split it into two tasks. For " +
                 "information-only requests (read, check, collect, summarize, rankings), omit " +
                 "headless so the app runs in the assistant's headless square mirror. Use " +
                 "hand_to_user when the user must take over login, verification, or payment. " +
