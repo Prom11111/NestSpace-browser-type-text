@@ -1,6 +1,7 @@
 package com.coke.nestspace.assistant
 
 import com.coke.nestspace.i18n.AppLanguage
+import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -23,6 +24,7 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.core.graphics.ColorUtils
 import com.coke.nestspace.container.identity.HostIdentity
+import java.io.File
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -55,7 +57,11 @@ object FloatingDotOverlay {
     private var pendingHostMode: Runnable? = null
     private var modeReceiver: BroadcastReceiver? = null
 
+    @Synchronized
     fun ensure(context: Context) {
+        // Container slots run as :c1... virtual hosts and may be renamed to
+        // the target package. They must never create another system overlay.
+        if (!isHostProcess()) return
         val app = context.applicationContext
         appContext = app
         val config = FloatingDotSettings.load(app)
@@ -340,6 +346,7 @@ object FloatingDotOverlay {
         layoutParams.y = layoutParams.y.coerceIn(minY, maxY)
     }
 
+    @Synchronized
     private fun removeView() {
         appContext?.let { unregisterModeReceiver(it) }
         val view = dotView ?: return
@@ -355,6 +362,22 @@ object FloatingDotOverlay {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { app.startActivity(intent) }
             .onFailure { Log.w(TAG, "open assistant failed", it) }
+    }
+
+    private fun isHostProcess(): Boolean {
+        val frameworkName = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                Application.getProcessName()
+            } else {
+                null
+            }
+        }.getOrNull()
+        if (frameworkName != null && frameworkName != HostIdentity.packageName) return false
+        val cmdline = runCatching {
+            File("/proc/self/cmdline").readText().trim('\u0000')
+        }.getOrNull().orEmpty()
+        if (cmdline.isNotBlank()) return cmdline == HostIdentity.packageName
+        return frameworkName == HostIdentity.packageName
     }
 
     private const val HOST_MODE_DELAY_MS = 350L
