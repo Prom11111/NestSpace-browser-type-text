@@ -171,9 +171,19 @@ jobs:
           cp dist/NestSpace-arm64.apk "NestSpace-${GITHUB_REF_NAME}-arm64.apk"
           cp dist/NestSpace-x86_64.apk "NestSpace-${GITHUB_REF_NAME}-x86_64.apk"
 
+      - name: Prepare release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          NOTES="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "::error::Missing release notes: $NOTES"
+            exit 1
+          fi
+          echo "RELEASE_NOTES=$NOTES" >> "$GITHUB_ENV"
+
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: NestSpace-*.apk
-          generate_release_notes: true
+          body_path: ${{ env.RELEASE_NOTES }}

@@ -4,7 +4,7 @@
 >
 > 项目：`NestSpace`（`com.coke.nestspace`，Jetpack Compose，minSdk 24 / targetSdk 37）
 > 日期：2026-11-03
-> 约束：普通 APK、不能控制 ROM；**自研容器引擎，不复用 VirtualApp 商业版**；本地 Agent 与远程 MCP 双通道都要支持。
+> 约束：普通 APK、不能控制 ROM；**使用自研容器引擎**；本地 Agent 与远程 MCP 双通道都要支持。
 > 状态：Stage A/B + Stage C-lite + Stage C-D（独立进程/崩溃隔离、Job/通知虚拟化、宿主/系统广播桥接、Binder/UID 权限模型、完整 VPMS、跨虚拟应用查询、权限授予、多实例 .so 进程隔离）已实现并在 Android 7.1.1 / Android 16 / Android 17（API 37 模拟器）/ MuMu(Android 15, ARM bridge) 验证；本地 LLM Agent（Claude/OpenAI 兼容，共用 chat 协议）已实现并用 mock 与第三方 Anthropic 兼容端点实网验通；完整后台 Job/Alarm 唤醒与系统侧真实 UID 欺骗仍属于后续增强
 
 ---
@@ -33,7 +33,7 @@
 - **单进程 MVP → 多进程产品**：先在一个进程里跑一个简单 APK；稳定后再做宿主声明的 `:pN` 进程池。
 - **双通道 Agent/MCP**：本地 Agent（App 内循环）+ 远程 Agent（MCP），共用同一套 `ToolRegistry`、权限、租约、审计。
 - **AppFunctions 快路径（可选）**：宿主 App 可导出 AppFunctions；容器内 APK 的 AppFunctions 走本地桥接；不可用时回退 UI 自动化。
-- **不做 VirtualApp 商业授权**。VirtualApp 只作为架构参考，**clean-room 实现，不复制其 GPL 代码**。
+- **容器引擎采用 clean-room 自研实现**，不复制外部项目代码。
 
 ### 0.2 三层架构
 
@@ -95,9 +95,9 @@
 
 ### 0.5 自研 ≠ 无约束
 
-自己写不需要 VirtualApp 授权，但以下约束仍然存在：
+自研实现仍需要遵守以下约束：
 
-- **Clean-room / GPL**：不要复制 VirtualApp 的 GPL 代码；参考 AOSP（Apache-2.0）和公开文档实现。如果团队看过 GPL 代码，最好做代码隔离/法务评估。
+- **Clean-room**：参考 AOSP（Apache-2.0）和公开文档实现，不复制外部容器项目代码。
 - **Google Play 容器政策**：容器 App 允许，但必须检查目标 App 的 `REQUIRE_SECURE_ENV`，不得代理容器外 App 的 API。
 - **目标 App 的 ToS**：自动化操作、重打包、绕过校验可能违反第三方 App 条款。
 - **Native hook 库许可证**：ShadowHook/ByteHook/Dobby/xDL 等要逐个核对许可证和商用条款。
@@ -118,7 +118,7 @@
 ### 1.2 约束
 
 - 普通 APK，不能控制 ROM/系统签名。
-- 自研容器引擎；不依赖 VirtualApp 商业版。
+- 自研容器引擎。
 - Android 12–17，arm64，尽量不 root。
 - 本地 Agent 模型可以是端侧（Gemini Nano 4/Gemma 4）或云（Claude API）。
 
@@ -143,14 +143,6 @@
 - 安装/启动失败有结构化错误
 - MCP 默认只绑 loopback，LAN 需显式开启
 - 本地 Agent 与远程 Agent 的工具行为一致
-
-### 1.5 不做（当前版本）
-
-- 金融/银行/GMS/Play Integrity 类 App
-- 不可信 APK 的强隔离
-- 系统级空间/多用户/工作资料
-- 云端手机/远程真机
-- "所有 App 兼容"的承诺
 
 ---
 
@@ -224,7 +216,7 @@
 
 | 路线 | 做法 | 优点 | 缺点 |
 |---|---|---|---|
-| **Java 层虚拟化**（VirtualApp 风格） | Hook `Instrumentation`、`ActivityThread.mH`、`ApplicationPackageManager`、`ContextImpl`、`Binder` Java 方法；动态代理/反射 | 不需要 native hook；调试相对容易；能覆盖大部分 Java 调用 | Hidden API 限制；Binder/UID/native 层骗不过；每个 Android 版本都要适配 |
+| **Java 层虚拟化**（应用级容器） | Hook `Instrumentation`、`ActivityThread.mH`、`ApplicationPackageManager`、`ContextImpl`、`Binder` Java 方法；动态代理/反射 | 不需要 native hook；调试相对容易；能覆盖大部分 Java 调用 | Hidden API 限制；Binder/UID/native 层骗不过；每个 Android 版本都要适配 |
 | **Native hook / ART** | Hook `Binder.execTransact`、`Process.myUid`、`open`、`dlopen`、ART 方法 | 更强；能处理 native 代码和系统调用 | 极复杂；ABI/版本/ROM 差异；稳定性/安全风险高 |
 
 **推荐：Java-first，native 只打关键点。**
@@ -778,7 +770,7 @@ claude mcp add --transport http space http://127.0.0.1:8765/mcp \
 - `LlmAgentRuntime` 复用 `ToolRegistry`，`ToolContext(sessionId, LOCAL_AGENT, "virtual-1")`，排除 session/approval 工具，最多 16 轮工具调用，单次工具结果截断 12k 字符。
 - 未配置时回退到规则 `LocalAgentRuntime`；规则 Agent 仍保留系统空间能力，大模型 Agent 只控制 virtual-1。
 - `AssistantConversation` 统一维护助手页与悬浮球语音助手共用的消息流和最近 24 条文本轮次；`LlmAgentRuntime.run(history = ...)` 在每次请求前回放历史，实现多轮追问。语音入口默认隐藏文字输入，最终识别结果自动提交，回复后自动恢复聆听。
-- 语音识别使用内置 Vosk 离线模型（`com.alphacephei:vosk-android`），不经过云端 STT。模型在首次使用时下载，也可在悬浮球设置中管理；下载前并行访问 HF 国内镜像、Hugging Face 和 Vosk 官网首页测速，选择响应最快的线路，失败自动切换。中文/English 小模型分别缓存，模型就绪后 `SpeechService` 持续提供 partial/final 结果。
+- 语音识别使用内置 Vosk 离线模型（`com.alphacephei:vosk-android`），不经过云端 STT。模型在首次使用时下载，也可在悬浮球设置中管理并切换下载路径；下载前会探测 HF 国内镜像、Hugging Face 和 Vosk 官网等线路，每条线路测试 3 次并取最大值，选择最优线路，失败自动切换。中文/English 小模型分别缓存，语音结果会整理中文逐字空格，模型就绪后 `SpeechService` 持续提供 partial/final 结果。
 - `LocalSpeechEngine` 在进程内缓存已加载的 `Model`；下载完成立即后台加载，App 启动时若模型已缓存也会预加载，语音页只创建 `Recognizer`/`SpeechService`，打开即可聆听。切换语言时先加载新模型；旧模型保留到进程退出，避免暂停中的语音页仍持有旧 Recognizer 时被提前释放。
 - 已用本地 mock 分别验通两种协议的核心转换与工具调用往返；用户配置的 Anthropic 兼容端点在模拟器实网验通 `space_list` + `space_list_apps` 多轮工具调用。
 - 单元测试：`app/src/test/java/com/coke/nestspace/llm/AnthropicChatServiceTest.kt`、`OpenAiChatServiceTest.kt`。
@@ -1193,7 +1185,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 - ✅ 卸载清理 APK、实例数据、state；目录为空。
 - ✅ 启动第二个实例时，第一个实例在单进程模型下切换到后台/被替换；数据不丢。
 - ✅ 目标 Context 的 `getPackageName`、`getFilesDir`、`getSharedPreferences`、`getApplicationInfo` 已重定向。
-- ✅ 纯净桌面：默认仅显示虚拟应用 + “空间管理”；系统应用需在空间管理里勾选后才上桌面；支持设置/清除壁纸，重启后保留。
+- ✅ 纯净桌面：默认仅显示虚拟应用和固定入口；宿主应用通过“导入应用”安装成独立虚拟副本，不再创建系统应用快捷方式；支持设置/清除壁纸，重启后保留。
 - ✅ Android 16（API 36）复测：桌面、容器、多开、实例数据隔离正常。
 - ✅ Android 14+ 可写 dex 限制：安装后的 APK 设为只读后，`DexClassLoader` 正常加载。
 - ✅ Android 9+ hidden API：接入 HiddenApiBypass 6.2，`Activity.attach` 等反射可用；未豁免时 `Activity.attach not found`。
@@ -1202,7 +1194,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 - ⏳ 单进程、仅入口 Activity；`startActivity`、Provider、Binder/UID、native 仍待 Stage C/D。
 - ✅ 引擎内的虚拟应用列表/启动（非系统 PMS/AMS hook）和桌面式入口已接入；目标 `PackageManager` 查询仍是宿主 PM。
 
-实现位置：`engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/MiniContainer.kt`、`ui/VirtualApp.kt`。
+实现位置：`engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/MiniContainer.kt`、`ui/DesktopScreen.kt`。
 
 ### 7.3 Stage C 的关键验收
 
@@ -1299,7 +1291,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 | 性能/电量 | 体验差 | 前台服务优化；截图降频；按需唤醒 |
 | MCP 暴露 | 局域网被控 | 默认 loopback；token；TLS；关闭 LAN 开关 |
 | 隐私 | 屏幕内容含敏感信息 | 脱敏；不落盘；审计；用户可关闭截图 |
-| 法律/合规 | GPL/Play/第三方 ToS | clean-room；法务评估；遵守 REQUIRE_SECURE_ENV |
+| 法律/合规 | 平台政策与目标 App ToS | 遵守 `REQUIRE_SECURE_ENV`；只安装可信 APK；危险操作确认 |
 
 ---
 
@@ -1324,11 +1316,6 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 - 官方示例：https://github.com/android/appfunctions
 - 社区示例（发现/调用）：https://github.com/FilipFan/AppFunctionsPilot
 
-### 参考实现（仅架构参考，GPL，勿复制）
-
-- VirtualApp（asLody）：https://github.com/asLody/VirtualApp
-- BlackBox / NewBlackbox：https://github.com/ALEX5402/NewBlackbox
-
 ### Hook / Native
 
 - ShadowHook：https://github.com/bytedance/android-inline-hook
@@ -1338,7 +1325,6 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 
 ### 控制 / Agent
 
-- Shizuku：https://github.com/RikkaApps/Shizuku
 - MCP Kotlin SDK：https://github.com/modelcontextprotocol/kotlin-sdk
 - MCP Inspector：https://github.com/modelcontextprotocol/inspector
 
@@ -1391,12 +1377,12 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 ## 附录 C：Clean-room 清单
 
 ```text
-[ ] 不复制 VirtualApp/BlackBox 的 GPL 代码
+[ ] 不复制未授权的外部项目代码
 [ ] 参考 AOSP（Apache-2.0）和公开文档
 [ ] 记录每个 hook 点的来源（AOSP 类/方法/版本）
 [ ] native hook 库逐个核对许可证
-[ ] 法务评估：GPL、Play 容器政策、第三方 App ToS
-[ ] 代码隔离：看过 GPL 代码的人不参与 clean-room 实现（可选但更稳）
+[ ] 核对依赖许可证、Google Play 容器政策和目标 App ToS
+[ ] 外部参考资料与实际实现保持代码隔离
 [ ] 不在产品中声明"安全隔离"
 [ ] 遵守 REQUIRE_SECURE_ENV
 ```

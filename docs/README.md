@@ -29,7 +29,7 @@
 | [桌面与外观](desktop.md) | 桌面图标、文件夹、排序、壁纸、运行管理 |
 | [设置详解](settings.md) | 空间设置里的每个入口和选项 |
 | [AI 助手](assistant.md) | 模型配置、流式对话、语音助手、自动记忆/技能起草、定时任务 |
-| [内置浏览器](browser.md) | 标签页、无头模式、下载上传、代理、转人工 |
+| [内置浏览器](browser.md) | 标签页、无头模式、下载进度与删除、上传、代理、转人工 |
 | [MCP 控制服务](mcp.md) | 电脑连接、Token、局域网、CLI、外部 MCP |
 | [常见问题](troubleshooting.md) | 安装失败、黑屏、后台被回收、连接失败等 |
 
@@ -41,14 +41,16 @@
 | [MCP 工具参考](mcp-tools.md) | 全部 MCP 工具和参数 |
 | [App / 网站知识包](knowledge-packs.md) | 知识包的格式、匹配和新增方法 |
 | [从源码构建](building.md) | 环境要求、构建命令和 CI |
+| [发布更新日志](releases/README.md) | Release 文件格式、发布前检查和自动发布流程 |
 | [nestspace-mcp CLI](cli.md) | 命令行客户端的安装和使用 |
 | [技术设计](android-virtual-space-agent-mcp.md) | 早期的完整技术方案（开发参考） |
-| [历史方案归档](https://github.com/chuccp/NestSpace/tree/main/docs/archive) | 已被取代的设计稿 |
 
 ## 约定
 
 - 文档中的「空间设置」指桌面上的「空间设置」图标。
-- 「应用管理」「模型设置」等都是空间设置里的二级页面。
+- 空间设置首页保留常用入口，下方按「应用与容器」「AI 助手」「系统与网络」分类；较少使用的功能放在分类的第三层。
+- 「导入应用」会把宿主已安装的 APK 安装到虚拟空间，不再创建系统应用快捷方式。
+- AI 助手的全屏与无头小窗、模型配置和浏览器行为以当前应用界面为准。
 - NestSpace 是实验性项目，应用兼容性和同时运行数量都有边界，详见[架构与限制](architecture.md)。
 
 ## License

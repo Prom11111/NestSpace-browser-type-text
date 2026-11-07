@@ -5,7 +5,7 @@ NestSpace 自带一个基于 WebView 的多标签浏览器，桌面有「浏览�
 ## 打开浏览器
 
 - 桌面「浏览器」。
-- AI 助手调用 `browser_open` 打开可见浏览器（`headless=false`）。
+- AI 助手调用 `browser_open` 并传 `headless=false` 时打开可见浏览器。
 - 助手默认打开的是**无头标签页**，可以在可见浏览器的标签栏里看到并接管。
 
 ## 标签页
@@ -34,8 +34,11 @@ NestSpace 自带一个基于 WebView 的多标签浏览器，桌面有「浏览�
 
 - 页面触发的下载会写入系统 **Download** 目录。
 - Android 10+ 通过 MediaStore 保存，返回文件名、路径、大小和 `content://` URI。
+- AI 对话会显示下载进度，下载完成后可从对话或浏览器下载菜单查看。
+- 浏览器下载菜单支持删除文件。
 - 下载好的 APK 可以直接在「应用管理 → 导入 APK」里选择，或交给 `space_install_apk`。
 - 助手可以调用 `browser_download` 直接下载 URL，或等待页面触发的下载完成。
+- HTML、XHTML 和 SVG 下载文件会继续在自带浏览器中打开，不交给系统浏览器。
 
 ## 上传
 
@@ -58,7 +61,7 @@ NestSpace 自带一个基于 WebView 的多标签浏览器，桌面有「浏览�
 入口：
 
 - 浏览器右上角齿轮。
-- 「空间设置 → 浏览器代理」。
+- 「空间设置 → 系统与网络 → 浏览器代理」。
 
 配置项：
 
@@ -82,6 +85,7 @@ NestSpace 自带一个基于 WebView 的多标签浏览器，桌面有「浏览�
 - 登录状态取决于 WebView 的 Cookie，清除 NestSpace 数据会一并清除。
 - 反爬、验证码和登录必须由用户处理，助手只负责转交。
 - 代理是明文转发，不负责 TLS 终止。
+- 页面弹窗、`target=_blank`、`window.open`、`intent://` 网页回退地址和普通 HTTP/HTTPS 外链都被限制在自带浏览器内。
 
 ## 相关文档
 

@@ -88,12 +88,16 @@ tools/nestspace-mcp shell
 
 ## 外部 MCP 工具（方向相反）
 
-「空间设置 → MCP 工具」配置的是**外部** MCP Server，供 NestSpace 自己的 AI 助手使用；它们和 NestSpace 对外提供的控制服务是两套独立功能：
+「空间设置 → AI 助手 → 高级助手工具 → MCP 工具」配置的是**外部**
+MCP Server，供 NestSpace 自己的 AI 助手使用；它们和 NestSpace 对外提供的控制服务是两套独立功能：
 
 - 支持多个 Streamable HTTP 端点；
 - 使用 Bearer Token；
 - 工具名以 `mcp_<服务短 ID>_` 前缀提供给本地助手；
 - 不注册进 NestSpace 的 `ToolRegistry`，远程客户端看不到。
+
+本地助手在 App 内操作虚拟应用时，默认按用户意图选择全屏或无头方形小窗。
+远程 MCP 调用 `space_launch` 时仍需显式传 `headless=false` 才会显示普通窗口。
 
 ## 会话与限制
 
