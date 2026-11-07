@@ -656,11 +656,12 @@ class AssistantVoiceActivity : ComponentActivity() {
 
     private fun hypothesisText(hypothesis: String?, field: String): String {
         if (hypothesis.isNullOrBlank()) return ""
-        return runCatching {
+        val raw = runCatching {
             JSONObject(hypothesis).optString(field).trim()
         }.getOrElse {
             hypothesis.trim().takeIf { !it.startsWith("{") }.orEmpty()
         }
+        return normalizeSpeechText(raw)
     }
 
     private companion object {

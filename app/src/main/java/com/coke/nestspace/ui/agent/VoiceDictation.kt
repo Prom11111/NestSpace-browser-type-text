@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.mutableStateOf
 import com.coke.nestspace.assistant.FloatingDotSettings
 import com.coke.nestspace.assistant.LocalSpeechEngine
+import com.coke.nestspace.assistant.normalizeSpeechText
 import com.coke.nestspace.i18n.AppLanguage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -160,11 +161,12 @@ internal class VoiceDictation(private val context: Context) {
 
     private fun hypothesisText(hypothesis: String?, field: String): String {
         if (hypothesis.isNullOrBlank()) return ""
-        return runCatching {
+        val raw = runCatching {
             JSONObject(hypothesis).optString(field).trim()
         }.getOrElse {
             hypothesis.trim().takeIf { !it.startsWith("{") }.orEmpty()
         }
+        return normalizeSpeechText(raw)
     }
 
     private companion object {
