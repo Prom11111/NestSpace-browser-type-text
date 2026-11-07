@@ -537,6 +537,8 @@ class LlmAgentRuntime(
                 "无头任务在多次读取之间保持 App 运行，只有整个任务结束或用户要求时才 space_stop。" +
                 "browser_open 默认新建标签页；可以用 browser_tabs 查看所有标签，" +
                 "并给 browser_navigate/browser_click/browser_read_text 等工具传 tab_id 同时操作多个网页。" +
+                "所有网页任务只能使用 browser_* 工具，禁止用 host_launch 启动 Chrome 或系统浏览器，" +
+                "也不要通过外部 Intent 打开网页。" +
                 "下载文件用 browser_download；需要设备信息时用 system_status。\n" +
                 "遇到登录、验证码、支付、权限授权，或只有用户能做的选择时，调用 hand_to_user " +
                 "把 App 切到前台交给用户处理；不要猜密码、绕过验证或替用户支付。\n" +
@@ -569,7 +571,9 @@ class LlmAgentRuntime(
                 "related reads and call space_stop only when the whole task is finished or " +
                 "the user asks to close it. browser_open creates a new tab by default; use " +
                 "browser_tabs to list tabs and pass tab_id to browser_navigate/browser_click/" +
-                "browser_read_text to work with several pages. Use browser_download " +
+                "browser_read_text to work with several pages. All web tasks must use " +
+                "browser_* tools. Never launch Chrome or another system browser with " +
+                "host_launch, and never hand a web URL to an external Intent. Use browser_download " +
                 "to download files and system_status for device information.\n" +
                 "If a screen needs login, captcha, payment, permission, or a choice " +
                 "only the user can make, call hand_to_user with the reason; it brings the " +

@@ -1,5 +1,8 @@
 package com.coke.nestspace.tools
 
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.agent.ToolConfirmationCategory
 import com.coke.nestspace.agent.UserGateManager
@@ -137,7 +140,8 @@ internal fun ToolRegistry.hostToolSpecs(): List<ToolSpec> = listOf(
         ToolSpec(
             name = "host_launch",
             description = "Launch an installed app on the real device by package name. " +
-                "Requires Host control (root).",
+                "Requires Host control (root). Browser packages must be opened with " +
+                "browser_open instead.",
             inputSchema = schema(
                 "package" to "string"
             ),
@@ -145,6 +149,13 @@ internal fun ToolRegistry.hostToolSpecs(): List<ToolSpec> = listOf(
         ) { args, _ ->
             hostGuard()?.let { return@ToolSpec it }
             val packageName = args.optString("package").trim()
+            if (isHostBrowserPackage(packageName)) {
+                return@ToolSpec ToolResult(
+                    false,
+                    "Use browser_open for web pages; launching the system browser is disabled.",
+                    errorCode = "USE_BUILT_IN_BROWSER"
+                )
+            }
             val result = HostUiController.launch(packageName)
             ToolResult(
                 result.ok,
@@ -170,22 +181,32 @@ internal fun ToolRegistry.hostToolSpecs(): List<ToolSpec> = listOf(
                 )
             ToolResult(true, json)
         },
-        ToolSpec(
-            name = "host_open_url",
-            description = "Open an http/https URL on the real device. Requires Host control " +
-                "(root).",
-            inputSchema = schema(
-                "url" to "string"
-            ),
-            mutating = true
-        ) { args, _ ->
-            hostGuard()?.let { return@ToolSpec it }
-            val result = HostUiController.openUrl(args.optString("url"))
-            ToolResult(
-                result.ok,
-                if (result.ok) "opened URL on the real device" else
-                    (result.error ?: result.output.ifBlank { "open URL failed" }).take(500),
-                errorCode = if (result.ok) null else "HOST_OPEN_URL_FAILED"
-            )
-        },
     )
+
+private fun ToolRegistry.isHostBrowserPackage(packageName: String): Boolean {
+    if (packageName.isBlank()) return false
+    if (packageName in HOST_BROWSER_PACKAGES) return true
+    val intent = Intent(
+        Intent.ACTION_VIEW,
+        Uri.parse("https://example.com")
+    ).addCategory(Intent.CATEGORY_BROWSABLE)
+    val resolved = context.packageManager.resolveActivity(
+        intent,
+        PackageManager.MATCH_DEFAULT_ONLY
+    )?.activityInfo?.packageName
+    return resolved == packageName
+}
+
+private val HOST_BROWSER_PACKAGES = setOf(
+    "com.android.chrome",
+    "com.chrome.beta",
+    "com.chrome.dev",
+    "com.android.browser",
+    "com.sec.android.app.sbrowser",
+    "org.mozilla.firefox",
+    "com.brave.browser",
+    "com.microsoft.emmx",
+    "com.opera.browser",
+    "com.UCMobile",
+    "com.quark.browser"
+)
