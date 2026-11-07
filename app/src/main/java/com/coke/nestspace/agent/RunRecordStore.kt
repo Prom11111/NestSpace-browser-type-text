@@ -282,6 +282,12 @@ object RunRecordStore {
     fun events(context: Context, id: String): List<RunEvent> =
         events(context.filesDir, id)
 
+    fun delete(context: Context, id: String): Boolean {
+        if (!id.matches(Regex("[A-Za-z0-9._-]+"))) return false
+        val folder = File(File(context.filesDir, RUNS_DIR), id)
+        return folder.isDirectory && folder.deleteRecursively()
+    }
+
     fun events(root: File, id: String): List<RunEvent> {
         if (!id.matches(Regex("[A-Za-z0-9._-]+"))) return emptyList()
         val file = File(File(File(root, RUNS_DIR), id), EVENTS_FILE)

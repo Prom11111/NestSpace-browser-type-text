@@ -85,6 +85,7 @@ internal fun AgentScreen(
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onClear: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenModelSettings: () -> Unit,
     permissionLevel: ToolPermissionLevel,
@@ -95,7 +96,6 @@ internal fun AgentScreen(
     onReasoningEffortChange: (ReasoningEffort) -> Unit
 ) {
     var input by remember { mutableStateOf(AssistantBridge.currentInput.value) }
-    var showHistory by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
     val injectedText by AssistantBridge.pendingText.collectAsState()
@@ -241,7 +241,7 @@ internal fun AgentScreen(
             llmConfig = llmConfig,
             busy = busy,
             onClear = clearConversation,
-            onOpenHistory = { showHistory = true },
+            onOpenHistory = onOpenHistory,
             onOpenSettings = onOpenSettings
         )
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
@@ -364,7 +364,7 @@ internal fun AgentScreen(
         if (!busy && lastRun != null) {
             LastRunCard(
                 run = lastRun!!,
-                onOpenHistory = { showHistory = true },
+                onOpenHistory = onOpenHistory,
                 onDismiss = { AssistantConversation.dismissLastRun() }
             )
         }
@@ -401,10 +401,4 @@ internal fun AgentScreen(
         )
     }
 
-    if (showHistory) {
-        RunHistoryDialog(
-            context = context,
-            onDismiss = { showHistory = false }
-        )
-    }
 }

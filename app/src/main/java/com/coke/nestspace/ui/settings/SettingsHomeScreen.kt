@@ -155,6 +155,16 @@ internal fun SettingsHomeScreen(
                         )
                         HorizontalDivider(Modifier.padding(start = 68.dp))
                         SettingsMenuRow(
+                            icon = Icons.Default.Adjust,
+                            title = AppLanguage.tr("悬浮球", "Floating dot"),
+                            summary = AppLanguage.tr(
+                                "语音助手快捷入口 · 颜色与开关",
+                                "Voice assistant shortcut · color & visibility"
+                            ),
+                            onClick = onOpenFloatingDot
+                        )
+                        HorizontalDivider(Modifier.padding(start = 68.dp))
+                        SettingsMenuRow(
                             icon = Icons.Default.Image,
                             title = AppLanguage.tr("外观", "Appearance"),
                             summary = if (hasWallpaper) {

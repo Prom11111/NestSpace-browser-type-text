@@ -3,8 +3,10 @@ package com.coke.nestspace.ui.agent
 import com.coke.nestspace.i18n.AppLanguage
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,19 +34,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.runtime.rememberCoroutineScope
 import com.coke.nestspace.agent.RunEvent
 import com.coke.nestspace.agent.RunRecordStore
-import com.coke.nestspace.data.AgentMessage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -112,52 +114,42 @@ internal fun LastRunCard(
 }
 
 @Composable
-internal fun RunHistoryDialog(context: Context, onDismiss: () -> Unit) {
+internal fun RunHistoryScreen(
+    context: Context,
+    busy: Boolean,
+    onRestore: (RunSummary, List<RunEvent>) -> Unit
+) {
     var runs by remember { mutableStateOf<List<RunSummary>>(emptyList()) }
-    var selected by remember { mutableStateOf<RunSummary?>(null) }
-    var events by remember { mutableStateOf<List<RunEvent>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var refreshKey by remember { mutableIntStateOf(0) }
+    var pendingDelete by remember { mutableStateOf<RunSummary?>(null) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        runs = withContext(Dispatchers.IO) { RunRecordStore.recent(context, 20) }
+    LaunchedEffect(refreshKey) {
+        loading = true
+        runs = withContext(Dispatchers.IO) { RunRecordStore.recent(context, 30) }
         loading = false
     }
-    LaunchedEffect(selected) {
-        val id = selected?.id
-        events = if (id == null) {
-            emptyList()
-        } else {
-            withContext(Dispatchers.IO) { RunRecordStore.events(context, id) }
-        }
-    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (selected != null) {
-                    IconButton(onClick = { selected = null }) {
-                        Icon(
-                            Icons.Rounded.ArrowBack,
-                            contentDescription = AppLanguage.tr("返回", "Back")
-                        )
-                    }
-                }
-                Text(
-                    if (selected == null) {
-                        AppLanguage.tr("运行记录", "Run history")
-                    } else {
-                        AppLanguage.tr("运行详情", "Run details")
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        },
-        text = {
-            val run = selected
-            when {
-                loading -> Box(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text(
+                AppLanguage.tr(
+                    "选择一条记录，可以恢复到当前对话或删除。",
+                    "Choose a run to restore it into the current conversation or delete it."
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        when {
+            loading -> item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(
@@ -165,89 +157,92 @@ internal fun RunHistoryDialog(context: Context, onDismiss: () -> Unit) {
                         strokeWidth = 2.dp
                     )
                 }
-
-                run == null && runs.isEmpty() -> Text(
-                    AppLanguage.tr("还没有运行记录。", "No runs yet.")
-                )
-
-                run == null -> LazyColumn(
-                    modifier = Modifier.heightIn(max = 420.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(runs, key = { it.id }) { item ->
-                        RunSummaryRow(item) { selected = item }
-                    }
-                }
-
-                else -> LazyColumn(
-                    modifier = Modifier.heightIn(max = 420.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item {
-                        Text(
-                            run.command,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            "${runStatusLabel(run.status)} · " +
-                                "${formatRunTime(run.startedAt)} · " +
-                                formatRunDuration(run.durationMs) + " · " +
-                                AppLanguage.tr(
-                                    "${run.eventCount} 条记录",
-                                    "${run.eventCount} events"
-                                ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (run.hasMetrics) {
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                runMetricsLine(run),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    if (events.isEmpty()) {
-                        item {
-                            Text(
-                                AppLanguage.tr("没有详细记录。", "No detailed events."),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        items(events) { event -> RunEventRow(event) }
-                    }
-                }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(AppLanguage.tr("关闭", "Close"))
+            runs.isEmpty() -> item {
+                Text(
+                    AppLanguage.tr("还没有运行记录。", "No runs yet."),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            else -> items(runs, key = { it.id }) { run ->
+                HistoryRunCard(
+                    run = run,
+                    restoreEnabled = !busy,
+                    onRestore = {
+                        scope.launch {
+                            val events = withContext(Dispatchers.IO) {
+                                RunRecordStore.events(context, run.id)
+                            }
+                            onRestore(run, events)
+                        }
+                    },
+                    onDelete = { pendingDelete = run }
+                )
             }
         }
-    )
+    }
+
+    pendingDelete?.let { run ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(AppLanguage.tr("删除这条历史？", "Delete this run?")) },
+            text = {
+                Text(
+                    AppLanguage.tr(
+                        "将永久删除“${run.command.take(80)}”及其运行详情。",
+                        "This permanently deletes \"${run.command.take(80)}\" and its run details."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                RunRecordStore.delete(context, run.id)
+                            }
+                            refreshKey++
+                        }
+                    }
+                ) {
+                    Text(
+                        AppLanguage.tr("删除", "Delete"),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(AppLanguage.tr("取消", "Cancel"))
+                }
+            }
+        )
+    }
 }
 
 @Composable
-private fun RunSummaryRow(run: RunSummary, onClick: () -> Unit) {
+private fun HistoryRunCard(
+    run: RunSummary,
+    restoreEnabled: Boolean,
+    onRestore: () -> Unit,
+    onDelete: () -> Unit
+) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
     ) {
-        Column(Modifier.padding(10.dp)) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     run.command,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -259,7 +254,6 @@ private fun RunSummaryRow(run: RunSummary, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-            Spacer(Modifier.height(4.dp))
             Text(
                 "${formatRunTime(run.startedAt)} · " +
                     formatRunDuration(run.durationMs) + " · " +
@@ -267,18 +261,7 @@ private fun RunSummaryRow(run: RunSummary, onClick: () -> Unit) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (run.hasMetrics) {
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    runMetricsLine(run),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
             if (run.summary.isNotBlank()) {
-                Spacer(Modifier.height(5.dp))
                 Text(
                     run.summary,
                     style = MaterialTheme.typography.bodySmall,
@@ -287,40 +270,29 @@ private fun RunSummaryRow(run: RunSummary, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun RunEventRow(event: RunEvent) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surface
-    ) {
-        Column(Modifier.padding(9.dp)) {
-            Text(
-                eventRoleLabel(event.role),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = when (event.role) {
-                    AgentMessage.Role.ERROR.name -> MaterialTheme.colorScheme.error
-                    AgentMessage.Role.TOOL.name -> MaterialTheme.colorScheme.primary
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onDelete) {
+                    Text(
+                        AppLanguage.tr("删除", "Delete"),
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
-            )
-            Spacer(Modifier.height(4.dp))
-            SelectionContainer {
+                Spacer(Modifier.width(4.dp))
+                Button(onClick = onRestore, enabled = restoreEnabled) {
+                    Text(AppLanguage.tr("恢复", "Restore"))
+                }
+            }
+            if (!restoreEnabled) {
                 Text(
-                    event.text.take(2_000),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = if (event.role == AgentMessage.Role.TOOL.name) {
-                        FontFamily.Monospace
-                    } else {
-                        FontFamily.Default
-                    },
-                    maxLines = 16,
-                    overflow = TextOverflow.Ellipsis,
+                    AppLanguage.tr(
+                        "当前任务结束后才能恢复历史。",
+                        "Finish the current task before restoring a run."
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -335,14 +307,6 @@ private fun runStatusLabel(status: String): String = when (status) {
     RunRecordStore.STATUS_INTERRUPTED -> AppLanguage.tr("中断", "Interrupted")
     RunRecordStore.STATUS_RUNNING -> AppLanguage.tr("进行中", "Running")
     else -> status
-}
-
-private fun eventRoleLabel(role: String): String = when (role) {
-    AgentMessage.Role.USER.name -> AppLanguage.tr("你", "You")
-    AgentMessage.Role.AGENT.name -> AppLanguage.tr("助手", "Assistant")
-    AgentMessage.Role.TOOL.name -> AppLanguage.tr("工具", "Tool")
-    AgentMessage.Role.ERROR.name -> AppLanguage.tr("错误", "Error")
-    else -> role
 }
 
 private fun formatRunTime(at: Long): String =

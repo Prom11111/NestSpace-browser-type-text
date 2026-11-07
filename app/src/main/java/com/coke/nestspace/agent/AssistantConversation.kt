@@ -629,6 +629,38 @@ object AssistantConversation {
         append(AgentMessage(AgentMessage.Role.AGENT, text))
     }
 
+    /** Restore one persisted run into the current conversation. */
+    fun restoreRun(run: RunSummary, events: List<RunEvent>): Boolean {
+        val restored = events.mapNotNull { event ->
+            val role = AgentMessage.Role.entries.firstOrNull { it.name == event.role }
+                ?: return@mapNotNull null
+            AgentMessage(role, event.text)
+        }.ifEmpty {
+            run.summary.takeIf { it.isNotBlank() }
+                ?.let { listOf(AgentMessage(AgentMessage.Role.AGENT, it)) }
+                .orEmpty()
+        }
+        synchronized(stateLock) {
+            if (_busy.value) return false
+            history.clear()
+            steeringQueue.clear()
+            restored.forEach { message ->
+                val role = when (message.role) {
+                    AgentMessage.Role.USER -> ChatRole.USER
+                    AgentMessage.Role.AGENT -> ChatRole.ASSISTANT
+                    else -> null
+                } ?: return@forEach
+                history += ChatMessage(role, listOf(ChatBlock.Text(message.text)))
+            }
+            while (history.size > MAX_HISTORY_MESSAGES) history.removeAt(0)
+            _queuedSteering.value = 0
+            _messages.value = restored.ifEmpty { listOf(welcome()) }
+        }
+        LivePreview.clear()
+        _lastRun.value = null
+        return true
+    }
+
     fun clear() {
         synchronized(stateLock) {
             history.clear()

@@ -43,8 +43,8 @@ internal fun AgentHeader(
 ) {
     val status = when {
         !llmConfig.isConfigured -> AppLanguage.tr("欢迎使用", "Welcome")
-        busy -> AppLanguage.tr("正在处理任务…", "Working on it…")
-        else -> AppLanguage.tr("在线 · 可操作容器与浏览器", "Online · can operate containers and the browser")
+        busy -> AppLanguage.tr("正在处理，请稍候…", "Working on it…")
+        else -> AppLanguage.tr("在线 · 随时可以开始", "Online · ready to help")
     }
     val dotColor = when {
         !llmConfig.isConfigured -> Color(0xFFFF9F0A)
@@ -61,7 +61,7 @@ internal fun AgentHeader(
         Box(Modifier.size(40.dp)) {
             Image(
                 painter = painterResource(R.drawable.ai_assistant),
-                contentDescription = "NestSpace Agent",
+                contentDescription = AppLanguage.tr("NestSpace 助手", "NestSpace Assistant"),
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(CircleShape)
@@ -78,7 +78,7 @@ internal fun AgentHeader(
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                "NestSpace Agent",
+                AppLanguage.tr("NestSpace 助手", "NestSpace Assistant"),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )
@@ -111,7 +111,7 @@ internal fun AgentHeader(
         IconButton(onClick = onOpenSettings) {
             Icon(
                 Icons.Rounded.Settings,
-                contentDescription = AppLanguage.tr("空间设置", "Space settings"),
+                contentDescription = AppLanguage.tr("AI 助手设置", "AI assistant settings"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

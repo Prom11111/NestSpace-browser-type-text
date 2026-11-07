@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -168,7 +169,6 @@ class AssistantVoiceActivity : ComponentActivity() {
                     onStop = { AssistantConversation.cancel() },
                     onToggleListening = { toggleListening() },
                     onToggleInput = { toggleInput() },
-                    onNewConversation = { newConversation() },
                     onBack = { backOrClose() },
                     onClose = { finish() }
                 )
@@ -626,6 +626,250 @@ class AssistantVoiceActivity : ComponentActivity() {
 
 @Composable
 private fun AssistantVoiceScreen(
+    messages: List<AgentMessage>,
+    busy: Boolean,
+    preparing: Boolean,
+    downloadPercent: Int?,
+    listening: Boolean,
+    available: Boolean,
+    status: String,
+    transcript: String,
+    input: String,
+    level: Float,
+    showInput: Boolean,
+    onInputChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+    onToggleListening: () -> Unit,
+    onToggleInput: () -> Unit,
+    onBack: () -> Unit,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    val accent = remember { Color(FloatingDotSettings.load(context).hostColor) }
+    val focusRequester = remember { FocusRequester() }
+    val latestReply = remember(messages) {
+        messages.lastOrNull {
+            it.role == AgentMessage.Role.AGENT && !it.welcome
+        }?.text?.trim().orEmpty()
+    }
+    BackHandler(onBack = onBack)
+    LaunchedEffect(showInput) {
+        if (showInput) runCatching { focusRequester.requestFocus() }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()
+            .background(Color.Black.copy(alpha = 0.24f)),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 560.dp)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(30.dp),
+            color = Color(0xF21A1B22),
+            shadowElevation = 18.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 36.dp, height = 4.dp)
+                        .background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(50))
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.SmartToy,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        AppLanguage.tr("NestSpace 助手", "NestSpace Assistant"),
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onClose, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = AppLanguage.tr("关闭", "Close"),
+                            tint = Color.White.copy(alpha = 0.72f)
+                        )
+                    }
+                }
+
+                if (preparing) {
+                    Text(
+                        status,
+                        color = Color.White.copy(alpha = 0.72f),
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    LinearProgressIndicator(
+                        progress = {
+                            downloadPercent?.takeIf { it in 0..100 }?.div(100f) ?: 0f
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = accent
+                    )
+                } else {
+                    Text(
+                        transcript.ifBlank { status },
+                        color = Color.White.copy(alpha = if (transcript.isBlank()) 0.62f else 0.90f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    if (!busy && latestReply.isNotBlank()) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            color = Color.White.copy(alpha = 0.08f)
+                        ) {
+                            Text(
+                                latestReply,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                color = Color.White.copy(alpha = 0.92f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 6,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    if (!showInput) {
+                        if (busy) {
+                            Surface(
+                                modifier = Modifier.clickable(onClick = onStop),
+                                shape = RoundedCornerShape(50),
+                                color = accent.copy(alpha = 0.16f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    FrameSpinner(
+                                        modifier = Modifier.size(18.dp),
+                                        color = accent,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.width(9.dp))
+                                    Text(
+                                        AppLanguage.tr("正在处理 · 点击停止", "Working · tap to stop"),
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                }
+                            }
+                        } else {
+                            VoiceOrb(
+                                listening = listening,
+                                level = level,
+                                accent = accent,
+                                onClick = onToggleListening
+                            )
+                        }
+                    }
+                }
+
+                if (showInput) {
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = onInputChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester),
+                        placeholder = {
+                            Text(AppLanguage.tr("说点什么…", "Ask me anything…"))
+                        },
+                        minLines = 1,
+                        maxLines = 3,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(
+                            onSend = { if (busy) onStop() else onSend() }
+                        ),
+                        trailingIcon = {
+                            IconButton(onClick = { if (busy) onStop() else onSend() }) {
+                                Icon(
+                                    if (busy) Icons.Default.Stop else Icons.Default.Send,
+                                    contentDescription = if (busy) {
+                                        AppLanguage.tr("停止", "Stop")
+                                    } else {
+                                        AppLanguage.tr("发送", "Send")
+                                    },
+                                    tint = accent
+                                )
+                            }
+                        },
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = accent,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.24f),
+                            cursorColor = accent,
+                            focusedContainerColor = Color.White.copy(alpha = 0.06f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.06f),
+                            focusedPlaceholderColor = Color.White.copy(alpha = 0.42f),
+                            unfocusedPlaceholderColor = Color.White.copy(alpha = 0.42f)
+                        )
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onToggleInput) {
+                        Icon(
+                            if (showInput) Icons.Default.Mic else Icons.Default.Keyboard,
+                            contentDescription = if (showInput) {
+                                AppLanguage.tr("切换到语音", "Switch to voice")
+                            } else {
+                                AppLanguage.tr("切换到键盘", "Switch to keyboard")
+                            },
+                            tint = Color.White.copy(alpha = 0.72f)
+                        )
+                    }
+                    Text(
+                        when {
+                            busy -> AppLanguage.tr("正在处理", "Working")
+                            preparing -> AppLanguage.tr("正在准备语音", "Preparing voice")
+                            listening -> AppLanguage.tr("正在聆听", "Listening")
+                            available -> AppLanguage.tr("点按圆点开始", "Tap the dot to start")
+                            else -> AppLanguage.tr("语音不可用", "Voice unavailable")
+                        },
+                        modifier = Modifier.weight(1f),
+                        color = Color.White.copy(alpha = 0.48f),
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.size(48.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegacyAssistantVoiceScreen(
     messages: List<AgentMessage>,
     busy: Boolean,
     preparing: Boolean,
@@ -1115,19 +1359,19 @@ private fun VoiceOrb(
     )
     Box(
         modifier = Modifier
-            .size(148.dp)
+            .size(112.dp)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .size(140.dp)
+                .size(106.dp)
                 .scale(pulse)
                 .background(accent.copy(alpha = 0.12f), CircleShape)
         )
         Box(
             modifier = Modifier
-                .size(112.dp)
+                .size(86.dp)
                 .scale(pulse)
                 .background(
                     Brush.radialGradient(
@@ -1141,7 +1385,7 @@ private fun VoiceOrb(
         )
         Box(
             modifier = Modifier
-                .size(100.dp)
+                .size(76.dp)
                 .border(
                     width = 2.dp,
                     color = Color.White.copy(alpha = if (listening) 0.60f else 0.28f),
@@ -1152,7 +1396,7 @@ private fun VoiceOrb(
             Icons.Default.Mic,
             contentDescription = AppLanguage.tr("语音输入", "Voice input"),
             tint = Color.White,
-            modifier = Modifier.size(36.dp)
+            modifier = Modifier.size(28.dp)
         )
     }
 }

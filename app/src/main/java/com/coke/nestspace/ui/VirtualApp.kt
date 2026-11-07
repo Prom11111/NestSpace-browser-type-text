@@ -121,6 +121,7 @@ import androidx.core.view.WindowCompat
 import com.coke.nestspace.vm.VirtualViewModel
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.ui.agent.AgentScreen
+import com.coke.nestspace.ui.agent.RunHistoryScreen
 import com.coke.nestspace.ui.agent.UserGateHost
 import com.coke.nestspace.ui.apps.AppManagerScreen
 import com.coke.nestspace.browser.BrowserActivity
@@ -174,6 +175,7 @@ private enum class SpacesPage {
     MEMORY,
     SCHEDULE,
     EVAL,
+    RUN_HISTORY,
     CHILD_RUNS,
     TOKEN_USAGE,
     PERMISSIONS,
@@ -202,7 +204,9 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     var tab by remember { mutableIntStateOf(0) }
     var spacesPage by remember { mutableStateOf(SpacesPage.ROOT) }
     var childRunsFromAssistant by remember { mutableStateOf(false) }
+    var historyFromAssistant by remember { mutableStateOf(false) }
     var modelSettingsFromAssistant by remember { mutableStateOf(false) }
+    var assistantSettingsFromAssistant by remember { mutableStateOf(false) }
     var permissionsFromAssistant by remember { mutableStateOf(false) }
     var editingLlm by remember { mutableStateOf<LlmConfig?>(null) }
     var showBrowserProxyDialog by remember { mutableStateOf(false) }
@@ -308,7 +312,9 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
             spacesPage = SpacesPage.ROOT
             editingLlm = null
             childRunsFromAssistant = false
+            historyFromAssistant = false
             modelSettingsFromAssistant = false
+            assistantSettingsFromAssistant = false
             permissionsFromAssistant = false
         }
     }
@@ -369,6 +375,11 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                 spacesPage = SpacesPage.ROOT
                 tab = 2
             }
+            spacesPage == SpacesPage.RUN_HISTORY && historyFromAssistant -> {
+                historyFromAssistant = false
+                spacesPage = SpacesPage.ROOT
+                tab = 2
+            }
             spacesPage == SpacesPage.MODEL_EDIT -> {
                 editingLlm = null
                 spacesPage = SpacesPage.MODEL
@@ -380,6 +391,12 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
             }
             spacesPage == SpacesPage.PERMISSIONS && permissionsFromAssistant -> {
                 permissionsFromAssistant = false
+                spacesPage = SpacesPage.ROOT
+                tab = 2
+            }
+            spacesPage == SpacesPage.SETTINGS_ASSISTANT &&
+                assistantSettingsFromAssistant -> {
+                assistantSettingsFromAssistant = false
                 spacesPage = SpacesPage.ROOT
                 tab = 2
             }
@@ -453,6 +470,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
             SpacesPage.MEMORY -> AppLanguage.tr("记忆与技能", "Memory & skills")
             SpacesPage.SCHEDULE -> AppLanguage.tr("定时任务", "Scheduled tasks")
             SpacesPage.EVAL -> AppLanguage.tr("评测与回放", "Evaluation & replay")
+            SpacesPage.RUN_HISTORY -> AppLanguage.tr("运行历史", "Run history")
             SpacesPage.CHILD_RUNS -> AppLanguage.tr("子任务记录", "Child runs")
             SpacesPage.TOKEN_USAGE -> AppLanguage.tr("Token 统计", "Token usage")
             SpacesPage.PERMISSIONS -> AppLanguage.tr("权限级别", "Permissions")
@@ -687,6 +705,18 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
 
                     SpacesPage.EVAL -> EvaluationReplayScreen()
 
+                    SpacesPage.RUN_HISTORY -> RunHistoryScreen(
+                        context = context,
+                        busy = agentBusy,
+                        onRestore = { run, events ->
+                            if (AssistantConversation.restoreRun(run, events)) {
+                                historyFromAssistant = false
+                                spacesPage = SpacesPage.ROOT
+                                tab = 2
+                            }
+                        }
+                    )
+
                     SpacesPage.CHILD_RUNS -> ChildRunsScreen()
 
                     SpacesPage.TOKEN_USAGE -> TokenUsageScreen()
@@ -734,7 +764,16 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                     onSend = viewModel::runAgent,
                     onStop = viewModel::stopAgent,
                     onClear = viewModel::clearMessages,
-                    onOpenSettings = { spacesPage = SpacesPage.ROOT; tab = 1 },
+                    onOpenHistory = {
+                        historyFromAssistant = true
+                        spacesPage = SpacesPage.RUN_HISTORY
+                        tab = 1
+                    },
+                    onOpenSettings = {
+                        assistantSettingsFromAssistant = true
+                        spacesPage = SpacesPage.SETTINGS_ASSISTANT
+                        tab = 1
+                    },
                     onOpenModelSettings = {
                         modelSettingsFromAssistant = true
                         spacesPage = SpacesPage.MODEL

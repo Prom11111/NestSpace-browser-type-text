@@ -23,10 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,41 +51,41 @@ private data class Suggestion(
     val prompt: String
 )
 
-private val suggestions = listOf(
+private fun suggestions(): List<Suggestion> = listOf(
     Suggestion(
-        Icons.Rounded.Download,
-        AppLanguage.tr("下载应用", "Download apps"),
-        AppLanguage.tr("搜索并下载网易云音乐 APK", "Search for and download the NetEase Cloud Music APK"),
+        Icons.Rounded.Search,
+        AppLanguage.tr("查最新资讯", "Latest updates"),
+        AppLanguage.tr("搜索并整理近期科技新闻", "Search and summarize recent tech news"),
         AppLanguage.tr(
-            "帮我下载网易音乐 app 到系统下载目录",
-            "Download the NetEase Cloud Music app to the system Downloads folder"
-        )
-    ),
-    Suggestion(
-        Icons.Rounded.Apps,
-        AppLanguage.tr("控制容器应用", "Control a container app"),
-        AppLanguage.tr("无头启动 testapp，点击按钮并截图", "Launch testapp headlessly, tap the button and screenshot"),
-        AppLanguage.tr(
-            "以 headless 模式打开 virtual-1 的 Stage B Test，点击按钮并截图",
-            "Open Stage B Test in virtual-1 in headless mode, tap the button and screenshot"
+            "帮我搜索最近的科技新闻，并按重要程度整理成几点。",
+            "Search for recent technology news and summarize the most important points."
         )
     ),
     Suggestion(
         Icons.Rounded.Public,
-        AppLanguage.tr("浏览网页", "Browse the web"),
-        AppLanguage.tr("用无头浏览器打开并总结网页", "Open and summarize a page in the headless browser"),
+        AppLanguage.tr("整理网页", "Summarize a page"),
+        AppLanguage.tr("打开网页，提取关键信息", "Open a page and pull out the key points"),
         AppLanguage.tr(
-            "用无头浏览器打开 https://www.bing.com 并告诉我页面内容",
-            "Open https://www.bing.com in the headless browser and tell me what is on the page"
+            "打开 https://www.zhihu.com，并总结页面中的主要内容。",
+            "Open https://www.zhihu.com and summarize the main content."
+        )
+    ),
+    Suggestion(
+        Icons.Rounded.Apps,
+        AppLanguage.tr("操作应用", "Use an app"),
+        AppLanguage.tr("打开应用并读取当前页面", "Open an app and inspect the current screen"),
+        AppLanguage.tr(
+            "在 virtual-1 中打开一个已安装应用，读取当前页面并告诉我主要内容。",
+            "Open an installed app in virtual-1, inspect the current screen and tell me the main content."
         )
     ),
     Suggestion(
         Icons.Rounded.Info,
-        AppLanguage.tr("检查系统", "Check the system"),
-        AppLanguage.tr("查看设备、网络和浏览器状态", "Inspect device, network and browser status"),
+        AppLanguage.tr("了解设备状态", "Check device status"),
+        AppLanguage.tr("检查网络、存储和运行环境", "Check network, storage and runtime status"),
         AppLanguage.tr(
-            "检查当前系统状态，并告诉我浏览器运行模式",
-            "Check the current system status and tell me the browser run mode"
+            "检查当前设备状态，并告诉我需要关注的问题。",
+            "Check the current device status and tell me if anything needs attention."
         )
     )
 )
@@ -138,7 +137,7 @@ internal fun WelcomeState(
         }
         Spacer(Modifier.height(18.dp))
         Text(
-            AppLanguage.tr("欢迎使用 NestSpace Agent", "Welcome to NestSpace Agent"),
+            AppLanguage.tr("你好，我是你的 AI 助手", "Hi, I'm your AI assistant"),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
@@ -146,9 +145,8 @@ internal fun WelcomeState(
         Spacer(Modifier.height(7.dp))
         Text(
             AppLanguage.tr(
-                "我可以浏览网页、下载文件，也可以控制 virtual-1 里的应用完成多步任务。",
-                "I can browse the web, download files and control apps inside " +
-                    "virtual-1 to complete multi-step tasks."
+                "查资料、整理内容、操作应用，或把多步任务交给我。",
+                "I can research, organize information, use apps and handle multi-step tasks."
             ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -157,27 +155,27 @@ internal fun WelcomeState(
         )
         Spacer(Modifier.height(13.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            FeaturePill(AppLanguage.tr("无头浏览器", "Headless browser"))
-            FeaturePill(AppLanguage.tr("容器控制", "Container control"))
-            FeaturePill(AppLanguage.tr("系统诊断", "System diagnostics"))
+            FeaturePill(AppLanguage.tr("查资料", "Research"))
+            FeaturePill(AppLanguage.tr("操作应用", "Use apps"))
+            FeaturePill(AppLanguage.tr("自动化", "Automation"))
         }
 
         Spacer(Modifier.height(24.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                AppLanguage.tr("试试这样问", "Try asking"),
+                AppLanguage.tr("你可以试试", "Try one"),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.weight(1f))
             Text(
-                AppLanguage.tr("点击填入", "Tap to fill"),
+                AppLanguage.tr("点一下即可填入", "Tap to fill"),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline
             )
         }
         Spacer(Modifier.height(10.dp))
-        suggestions.chunked(2).forEachIndexed { index, rowItems ->
+        suggestions().chunked(2).forEachIndexed { index, rowItems ->
             if (index > 0) Spacer(Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),

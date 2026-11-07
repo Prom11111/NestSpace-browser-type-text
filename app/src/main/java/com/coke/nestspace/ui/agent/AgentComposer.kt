@@ -232,8 +232,8 @@ internal fun Composer(
                         ControlChip(
                             icon = Icons.Rounded.Security,
                             label = AppLanguage.tr(
-                                "权限 · ${permissionLevel.label}",
-                                "Access · ${permissionLevel.label}"
+                                "确认 · ${permissionLevel.label}",
+                                "Confirm · ${permissionLevel.label}"
                             ),
                             onClick = { permissionMenu = true }
                         )
@@ -316,8 +316,8 @@ internal fun Composer(
                                     if (input.isBlank()) {
                                         Text(
                                             AppLanguage.tr(
-                                                "给 AI 助手发送消息…",
-                                                "Message the AI assistant…"
+                                                "输入任务，或描述你想完成的事情…",
+                                                "Describe what you'd like me to do…"
                                             ),
                                             style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
