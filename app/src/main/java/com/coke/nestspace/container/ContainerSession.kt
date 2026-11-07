@@ -457,6 +457,7 @@ class ContainerSession private constructor(
             .apply {
                 putExtra(StageAActivity.EXTRA_SESSION_ID, targetSessionId)
                 putExtra(StageAActivity.EXTRA_TARGET_PROCESS, targetProcess)
+                putExtra(StageAActivity.EXTRA_APP_LABEL, spec.label)
                 if (targetProcess != spec.targetProcessName) {
                     // The target slot process may not have created this
                     // subprocess session yet; let it build one from the

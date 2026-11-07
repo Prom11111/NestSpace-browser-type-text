@@ -23,6 +23,7 @@ import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.lang.reflect.Proxy
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Minimal AMS/PackageManager identity virtualization for a container process.
@@ -53,6 +54,12 @@ object SystemServiceIdentity {
     @Volatile private var registry: VirtualPackageRegistry? = null
     @Volatile private var virtualPermissions: ContainerPermissions? = null
     @Volatile private var hostContext: Context? = null
+    private data class RootExitHook(
+        val interceptFinish: Boolean,
+        val interceptTaskExit: Boolean,
+        val callback: () -> Unit
+    )
+    private val rootExitHook = AtomicReference<RootExitHook?>(null)
 
     @Volatile private var ipmProxy: Any? = null
     @Volatile private var legacyPackageManager: PackageManager? = null
@@ -63,6 +70,29 @@ object SystemServiceIdentity {
     private var ipmInstalled = false
     private var notificationInstalled = false
     private var alarmInstalled = false
+
+    /**
+     * Arms a one-shot hook for the root target page. It is set only while the
+     * host is forwarding a back press, so an internal Activity finish cannot be
+     * mistaken for leaving the container.
+     */
+    fun armRootExitHook(
+        interceptFinish: Boolean,
+        interceptTaskExit: Boolean,
+        callback: () -> Unit
+    ) {
+        rootExitHook.set(
+            RootExitHook(
+                interceptFinish = interceptFinish,
+                interceptTaskExit = interceptTaskExit,
+                callback = callback
+            )
+        )
+    }
+
+    fun clearRootFinishInterceptor() {
+        rootExitHook.set(null)
+    }
 
     fun install(
         spec: ContainerLaunchSpec,
@@ -349,6 +379,48 @@ object SystemServiceIdentity {
      */
     private class AmRewriteHandler(private val delegate: Any) : InvocationHandler {
         override fun invoke(proxy: Any, method: Method, args: Array<Any?>?): Any? {
+            val isFinish = method.name.startsWith("finishActivity")
+            val isMinimize = method.name.startsWith("moveTaskToBack")
+            val activeHook = rootExitHook.get()
+            if (activeHook != null) {
+                if (method.name.startsWith("startActivity")) {
+                    val intent = args.orEmpty().filterIsInstance<Intent>().firstOrNull()
+                    val isHomeExit = intent?.action == Intent.ACTION_MAIN &&
+                        intent.component == null &&
+                        intent.data == null
+                    if (isHomeExit &&
+                        activeHook.interceptTaskExit &&
+                        rootExitHook.compareAndSet(activeHook, null)
+                    ) {
+                        Log.d(TAG, "intercepted container home jump via startActivity")
+                        activeHook.callback()
+                        return when (method.returnType) {
+                            Boolean::class.javaPrimitiveType -> true
+                            Int::class.javaPrimitiveType -> 0
+                            else -> null
+                        }
+                    }
+                } else if (listOf("finish", "task", "back", "root", "minimize")
+                        .any { method.name.contains(it, ignoreCase = true) }
+                ) {
+                    Log.d(TAG, "AMS while exit hook armed: ${method.name}")
+                }
+            }
+            if (isFinish || isMinimize) {
+                val hook = activeHook
+                val shouldIntercept = hook != null &&
+                    ((isFinish && hook.interceptFinish) ||
+                        (isMinimize && hook.interceptTaskExit))
+                if (shouldIntercept && rootExitHook.compareAndSet(hook, null)) {
+                    Log.d(TAG, "intercepted root container exit via ${method.name}")
+                    hook.callback()
+                    return when (method.returnType) {
+                        Boolean::class.javaPrimitiveType -> true
+                        Int::class.javaPrimitiveType -> 0
+                        else -> null
+                    }
+                }
+            }
             val target = targetPackage
             val host = hostPackage
             val rewrite = args != null && target.isNotEmpty() && target != host

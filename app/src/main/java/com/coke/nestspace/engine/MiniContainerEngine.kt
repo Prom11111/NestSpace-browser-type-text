@@ -636,6 +636,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         }
         val intent = Intent(context, hostClass)
             .putExtra(StageAActivity.EXTRA_LAUNCH_PACKAGE, app.packageName)
+            .putExtra(StageAActivity.EXTRA_APP_LABEL, app.label)
             .putExtra(StageAActivity.EXTRA_LAUNCH_INSTANCE, instance.id)
             .putExtra(StageAActivity.EXTRA_SESSION_ID, sessionId)
             .putExtra(StageAActivity.EXTRA_TARGET_PROCESS, app.packageName)

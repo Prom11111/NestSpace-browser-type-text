@@ -28,6 +28,9 @@ import com.coke.nestspace.data.SpaceType
 import com.coke.nestspace.data.VirtualApp
 import com.coke.nestspace.data.WallpaperStore
 import com.coke.nestspace.engine.EngineResult
+import com.coke.nestspace.container.ContainerProcessPool
+import com.coke.nestspace.container.HeadlessMirrorWindow
+import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.llm.LlmProbe
 import com.coke.nestspace.service.McpForegroundService
 import kotlinx.coroutines.Dispatchers
@@ -276,6 +279,35 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
 
     fun launchVirtual(packageName: String, instanceId: String? = null) {
         viewModelScope.launch {
+            val running = ContainerProcessPool.runningSlots(getApplication())
+                .lastOrNull {
+                    it.packageName == packageName &&
+                        it.processName == packageName &&
+                        (instanceId == null || it.instanceId == instanceId)
+                }
+            if (running != null) {
+                val mirrored = ContainerUiClient.isMirrorMode(
+                    getApplication(),
+                    running.slot
+                ) ?: (HeadlessMirrorWindow.activeSlot() == running.slot)
+                if (!mirrored && ContainerProcessPool.bringToFront(
+                        getApplication(),
+                        running.slot,
+                        packageName,
+                        running.instanceId
+                    )
+                ) {
+                    notice.value = AppLanguage.tr(
+                        "已打开 ${packageName}",
+                        "Opened $packageName"
+                    )
+                    return@launch
+                }
+                if (mirrored) {
+                    ContainerProcessPool.closeSlot(getApplication(), running.slot)
+                    HeadlessMirrorWindow.hide()
+                }
+            }
             when (val result = engine.launch(SPACE_ID, packageName, instanceId)) {
                 is EngineResult.Error -> fail("${result.code}: ${result.message}")
                 is EngineResult.Ok -> {

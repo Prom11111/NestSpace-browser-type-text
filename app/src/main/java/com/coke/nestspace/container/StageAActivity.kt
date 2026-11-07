@@ -2,6 +2,8 @@ package com.coke.nestspace.container
 
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.container.identity.ProcessNameCompat
+import com.coke.nestspace.container.identity.HostIdentity
+import com.coke.nestspace.container.identity.SystemServiceIdentity
 import com.coke.nestspace.container.loader.withContainerClassLoader
 
 
@@ -51,6 +53,7 @@ open class StageAActivity : Activity() {
         const val EXTRA_TOKEN = "container_token"
         const val EXTRA_SESSION_ID = "container_session_id"
         const val EXTRA_LAUNCH_PACKAGE = "container_launch_package"
+        const val EXTRA_APP_LABEL = "container_app_label"
         const val EXTRA_LAUNCH_INSTANCE = "container_launch_instance"
         const val EXTRA_ACTIVITY_CLASS = "container_activity_class"
         const val EXTRA_TARGET_INTENT = "container_target_intent"
@@ -105,6 +108,7 @@ open class StageAActivity : Activity() {
     private var targetAttached = false
     private var targetResumed = false
     private var targetStopped = false
+    private var returningToDesktop = false
     private var hostResumed = false
     private var headless = false
     private var headlessBackDone = false
@@ -710,12 +714,7 @@ open class StageAActivity : Activity() {
             frame.alpha = 0f
             // The host can be visible for a frame before it is sent to the
             // back. Draw a loading surface so that frame is not blank.
-            val loading = TextView(this).apply {
-                text = AppLanguage.tr("正在无头启动…", "Starting headless…")
-                gravity = Gravity.CENTER
-                setTextColor(Color.rgb(24, 25, 31))
-                textSize = 16f
-            }
+            val loading = LaunchLoadingView(this, launchLabel())
             frame.addView(
                 loading,
                 FrameLayout.LayoutParams(
@@ -890,20 +889,17 @@ open class StageAActivity : Activity() {
                 android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         )
         frame.setBackgroundColor(Color.WHITE)
-        val label = TextView(this).apply {
-            text = AppLanguage.tr("正在启动…", "Starting…")
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(24, 25, 31))
-            textSize = 16f
-        }
         frame.addView(
-            label,
+            LaunchLoadingView(this, launchLabel()),
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
     }
+
+    private fun launchLabel(): String? =
+        intent.getStringExtra(EXTRA_APP_LABEL)?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun restoreLoadingWindowFocus() {
         window.clearFlags(
@@ -1095,6 +1091,10 @@ open class StageAActivity : Activity() {
     }
 
     override fun onPause() {
+        if (!returningToDesktop && current?.isFinishing != true) {
+            SystemServiceIdentity.clearRootFinishInterceptor()
+        }
+        returnToDesktopIfRootTargetFinished()
         // In mirror mode the host Activity is paused by moveTaskToBack but the
         // target is still the app the assistant is controlling. Keep its slot
         // marked active so the process pool does not evict and kill it while
@@ -1128,6 +1128,8 @@ open class StageAActivity : Activity() {
     }
 
     override fun onStop() {
+        SystemServiceIdentity.clearRootFinishInterceptor()
+        returnToDesktopIfRootTargetFinished()
         Log.d(TAG, "host onStop target=${current?.javaClass?.name}")
         // The headless window is no longer visible; restore drawing so
         // ui_observe/ui_screenshot still see the target hierarchy.
@@ -1401,6 +1403,7 @@ open class StageAActivity : Activity() {
             if (mirrorMode && mirrorBackStack.isNotEmpty()) popMirrorTarget() else finish()
             return
         }
+        val finishHookArmed = armRootFinishInterceptor()
         Log.d(TAG, "back target=${target.javaClass.name} finishing=${target.isFinishing}")
         var failed = false
         withTargetLoader {
@@ -1411,6 +1414,7 @@ open class StageAActivity : Activity() {
                 }
         }
         if (failed) {
+            if (finishHookArmed) SystemServiceIdentity.clearRootFinishInterceptor()
             finish()
             return
         }
@@ -1444,6 +1448,20 @@ open class StageAActivity : Activity() {
                 }
             }
         }, 250)
+        if (finishHookArmed) {
+            root?.postDelayed({
+                SystemServiceIdentity.clearRootFinishInterceptor()
+            }, 800)
+        }
+    }
+
+    private fun armRootFinishInterceptor(): Boolean {
+        if (mirrorMode || headless) return false
+        SystemServiceIdentity.armRootExitHook(
+            interceptFinish = isTaskRoot,
+            interceptTaskExit = true
+        ) { returnToDesktop() }
+        return true
     }
 
     private fun hasEnabledBackCallbacks(target: Activity): Boolean = runCatching {
@@ -1476,6 +1494,8 @@ open class StageAActivity : Activity() {
 
     override fun onDestroy() {
         Log.d(TAG, "host onDestroy target=${current?.javaClass?.name}")
+        SystemServiceIdentity.clearRootFinishInterceptor()
+        returnToDesktopIfRootTargetFinished()
         root?.removeCallbacks(mirrorFinishPoller)
         mirrorPresentation?.let { runCatching { it.dismiss() } }
         mirrorPresentation = null
@@ -1497,6 +1517,20 @@ open class StageAActivity : Activity() {
         releaseSession()
         if (active === this) active = null
         super.onDestroy()
+    }
+
+    private fun returnToDesktopIfRootTargetFinished() {
+        if (returningToDesktop ||
+            mirrorMode ||
+            headless ||
+            isChangingConfigurations ||
+            !isTaskRoot
+        ) {
+            return
+        }
+        if (isFinishing || current?.isFinishing == true) {
+            openContainerDesktop()
+        }
     }
 
     private fun handleIntent(intent: Intent, savedState: Bundle?) {
@@ -1722,12 +1756,19 @@ open class StageAActivity : Activity() {
         intent.getParcelableExtra(EXTRA_TARGET_INTENT)
 
     private fun returnToDesktop() {
+        if (returningToDesktop) return
+        openContainerDesktop()
+        finish()
+    }
+
+    private fun openContainerDesktop() {
+        returningToDesktop = true
         DesktopNavigation.requestDesktop()
         runCatching {
-            startActivity(
+            applicationContext.startActivity(
                 Intent()
                     .setClassName(
-                        MainActivity::class.java.packageName,
+                        HostIdentity.packageName,
                         MainActivity::class.java.name
                     )
                     .addFlags(
@@ -1737,7 +1778,6 @@ open class StageAActivity : Activity() {
                     )
             )
         }
-        finish()
     }
 
     private fun closeCurrent() {
