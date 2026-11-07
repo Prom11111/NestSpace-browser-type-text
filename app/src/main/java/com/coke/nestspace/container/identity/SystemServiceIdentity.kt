@@ -456,7 +456,51 @@ object SystemServiceIdentity {
             } else {
                 args
             }
-            return invokeDelegate(delegate, method, callArgs)
+            val result = invokeDelegate(delegate, method, callArgs)
+            rewriteProcessIdentity(method.name, callArgs, result)
+            return result
+        }
+    }
+
+    /**
+     * ActivityManager reports the real manifest process
+     * (`com.coke.nestspace:cN`) even after argv0 and ActivityThread are
+     * virtualized. Target SDKs commonly cache this result at startup to decide
+     * whether they are the application's main process. That decision gates
+     * AppLog, device registration and request common parameters, so expose the
+     * target process identity in framework process snapshots as well.
+     */
+    private fun rewriteProcessIdentity(
+        methodName: String,
+        args: Array<Any?>?,
+        result: Any?
+    ) {
+        val target = targetPackage
+        val host = hostPackage
+        if (target.isEmpty() || target == host) return
+        val myPid = Process.myPid()
+        val processInfoClass = android.app.ActivityManager.RunningAppProcessInfo::class.java
+
+        fun rewrite(info: Any?) {
+            if (!processInfoClass.isInstance(info)) return
+            val running = info as android.app.ActivityManager.RunningAppProcessInfo
+            val belongsToHost = running.pid == myPid ||
+                running.processName == host ||
+                running.processName?.startsWith("$host:") == true ||
+                running.pkgList?.contains(host) == true
+            if (belongsToHost) {
+                running.processName = target
+                running.pkgList = arrayOf(target)
+            }
+        }
+
+        when {
+            methodName == "getRunningAppProcesses" &&
+                result is Iterable<*> -> result.forEach(::rewrite)
+            methodName in setOf(
+                "getMyMemoryState",
+                "getRunningAppProcessInfo"
+            ) -> args.orEmpty().forEach(::rewrite)
         }
     }
 

@@ -53,6 +53,7 @@ object ContainerSessions {
 
         val existing = entries[spec.sessionId]
         if (existing != null) {
+            existing.session.activateProcessIdentity()
             retainLocked(spec.sessionId)
             return existing.session
         }
@@ -64,6 +65,7 @@ object ContainerSessions {
     @Synchronized
     fun retain(sessionId: String): ContainerSession? {
         val entry = entries[sessionId] ?: return null
+        entry.session.activateProcessIdentity()
         retainLocked(sessionId)
         return entry.session
     }
@@ -76,5 +78,31 @@ object ContainerSessions {
     fun release(sessionId: String) {
         val entry = entries[sessionId] ?: return
         entry.refs = (entry.refs - 1).coerceAtLeast(0)
+        if (entry.refs == 0) {
+            entry.session.suspendProcessIdentity()
+        }
+    }
+
+    /**
+     * Runs host Activity framework initialization under NestSpace's process
+     * identity. The session is reactivated explicitly only when target startup
+     * begins, so the framework can finish constructing host lifecycle
+     * resources without seeing the target application icon/package.
+     */
+    fun <T> withHostProcessIdentity(block: () -> T): T {
+        val session = synchronized(this) {
+            processOwnerSession?.let { entries[it]?.session }
+        }
+        return session?.withHostProcessIdentity(block) ?: block()
+    }
+
+    fun restoreHostFrameworkState(
+        activity: android.app.Activity,
+        restoreTheme: Boolean
+    ) {
+        val session = synchronized(this) {
+            processOwnerSession?.let { entries[it]?.session }
+        }
+        session?.attachHostFrameworkState(activity, restoreTheme)
     }
 }

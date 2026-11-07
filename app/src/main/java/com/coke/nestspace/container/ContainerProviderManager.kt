@@ -104,16 +104,22 @@ class ContainerProviderManager(
             return
         }
 
-        session.spec.providers.forEach { info ->
-            val authorities = authoritiesOf(info)
-            if (authorities.isEmpty()) return@forEach
-            // initOrder is the manifest's dependency signal. Providers with no
-            // explicit order resolve on first authority access, after the
-            // target Application has had a chance to initialize.
-            if (info.initOrder <= 0) {
-                synchronized(lock) { authorities.forEach { pending[it] = info } }
-                return@forEach
+        session.spec.providers
+            .asSequence()
+            .filter { it.enabled }
+            .filter { info ->
+                ContainerProcessRouter.normalize(
+                    session.spec.packageName,
+                    info.processName
+                ) == session.spec.targetProcessName
             }
+            .sortedByDescending { it.initOrder }
+            .forEach { info ->
+            val authorities = authoritiesOf(info)
+            // Android installs every provider in the process before
+            // Application.onCreate. initOrder controls only their relative
+            // order; it does not make zero-order providers lazy.
+            synchronized(lock) { authorities.forEach { pending[it] = info } }
 
             val provider = try {
                 instances[info.name] ?: createProvider(info).also {
@@ -126,8 +132,15 @@ class ContainerProviderManager(
 
             synchronized(lock) { authorities.forEach { providers[it] = provider } }
             try {
-                provider.attachInfo(session.context, info)
+                val attachingSet = attaching.get()
+                authorities.forEach { attachingSet.add(it) }
+                try {
+                    provider.attachInfo(session.context, info)
+                } finally {
+                    authorities.forEach { attachingSet.remove(it) }
+                }
                 Log.d(TAG, "provider attached: ${info.name} ${authorities.joinToString(",")}")
+                synchronized(lock) { authorities.forEach { pending.remove(it) } }
             } catch (t: Throwable) {
                 Log.w(TAG, "attach provider failed: ${info.name}", t)
                 // Keep UnavailableProvider in place; falling back to the host
@@ -144,16 +157,16 @@ class ContainerProviderManager(
             .orEmpty()
 
     private fun providerFor(authority: String): ContentProvider? = synchronized(lock) {
-        val current = providers[authority]
-        if (current != null && current !is UnavailableProvider) return current
         val attachingSet = attaching.get()
         if (authority in attachingSet) {
             // A provider is being attached and is already touching its own
             // authority. Return the safe placeholder for the duration instead
             // of re-entering attachInfo or falling through to the host
             // resolver (which is this same dispatcher).
-            return current ?: UnavailableProvider()
+            return providers[authority] ?: UnavailableProvider()
         }
+        val current = providers[authority]
+        if (current != null && current !is UnavailableProvider) return current
         val info = pending[authority] ?: return current
         instances[info.name]?.let { existing ->
             providers[authority] = existing

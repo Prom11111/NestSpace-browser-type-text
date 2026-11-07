@@ -36,6 +36,217 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
+ * ActivityThread is process-global, but a slot process alternates between
+ * NestSpace's host Activities and one virtual app. Keep the host fields so
+ * they can be restored before the framework creates another host Activity.
+ */
+private class HostProcessState(
+    private val bound: Any?,
+    private val boundAppInfo: ApplicationInfo?,
+    private val loadedApk: Any?,
+    private val loadedApkAppInfo: ApplicationInfo?,
+    private val loadedApkPackageName: String?,
+    private val loadedApkDataDir: String?,
+    private val hostResources: Resources?,
+    private val loadedApkResources: Resources?,
+    private val loadedApkResDir: String?,
+    private val hostApplication: Application?,
+    private val initialApplication: Application?
+) {
+    fun attachHostFrameworkState(activity: Activity, restoreTheme: Boolean) {
+        val resources = HostIdentity.resources ?: hostResources ?: loadedApkResources
+        if (resources != null) {
+            setField(activity, "mResources", resources)
+            var context: Context? = activity.baseContext
+            while (context != null) {
+                setField(context, "mResources", resources)
+                context = (context as? ContextWrapper)?.baseContext
+            }
+        }
+        hostApplication?.let { setField(activity, "mApplication", it) }
+        if (restoreTheme && resources != null) {
+            val activityInfo = runCatching {
+                var type: Class<*>? = activity.javaClass
+                while (type != null) {
+                    val field = runCatching {
+                        type!!.getDeclaredField("mActivityInfo")
+                    }.getOrNull()
+                    if (field != null) {
+                        field.isAccessible = true
+                        return@runCatching field.get(activity) as? ActivityInfo
+                    }
+                    type = type.superclass
+                }
+                null
+            }.getOrNull()
+            val configuredTheme = activityInfo?.theme ?: 0
+            val themeResource = configuredTheme.takeIf {
+                it != 0 && runCatching { resources.getResourceName(it) }.isSuccess
+            } ?: com.coke.nestspace.R.style.Theme_Virtual_Container
+            activity.setTheme(themeResource)
+            val activeResources = runCatching { activity.resources }.getOrNull()
+            Log.d(
+                "ContainerSession",
+                "restored host Activity state theme=$themeResource " +
+                    "package=${runCatching { resources.getResourcePackageName(themeResource) }
+                        .getOrDefault("?")} " +
+                    "hostSnapshot=${resources === HostIdentity.resources} " +
+                    "activityPackage=${activeResources?.let {
+                        runCatching { it.getResourcePackageName(themeResource) }
+                            .getOrDefault("?")
+                    } ?: "missing"}"
+            )
+        }
+    }
+
+    private fun setField(target: Any, name: String, value: Any) {
+        runCatching {
+            var type: Class<*>? = target.javaClass
+            while (type != null) {
+                val field = runCatching { type!!.getDeclaredField(name) }.getOrNull()
+                if (field != null) {
+                    field.isAccessible = true
+                    field.set(target, value)
+                    return
+                }
+                type = type.superclass
+            }
+        }.onFailure {
+            Log.w("ContainerSession", "restore host Activity field $name failed", it)
+        }
+    }
+
+    fun restore() {
+        val threadClass = Class.forName("android.app.ActivityThread")
+        val thread = threadClass.getMethod("currentActivityThread").invoke(null)
+        val bindData = bound
+        if (bindData != null) {
+            boundAppInfo?.let { value ->
+                runCatching {
+                    bindData.javaClass.getDeclaredField("appInfo")
+                        .apply { isAccessible = true }
+                        .set(bindData, value)
+                }
+            }
+        }
+        val apk = loadedApk
+        if (apk != null) {
+            loadedApkAppInfo?.let { value ->
+                runCatching {
+                    apk.javaClass.getDeclaredField("mApplicationInfo")
+                        .apply { isAccessible = true }
+                        .set(apk, value)
+                }
+            }
+            loadedApkPackageName?.let { value ->
+                runCatching {
+                    apk.javaClass.getDeclaredField("mPackageName")
+                        .apply { isAccessible = true }
+                        .set(apk, value)
+                }
+            }
+            loadedApkDataDir?.let { value ->
+                runCatching {
+                    apk.javaClass.getDeclaredField("mDataDir")
+                        .apply { isAccessible = true }
+                        .set(apk, value)
+                }
+            }
+            loadedApkResources?.let { value ->
+                runCatching {
+                    apk.javaClass.getDeclaredField("mResources")
+                        .apply { isAccessible = true }
+                        .set(apk, value)
+                }
+            }
+            loadedApkResDir?.let { value ->
+                runCatching {
+                    apk.javaClass.getDeclaredField("mResDir")
+                        .apply { isAccessible = true }
+                        .set(apk, value)
+                }
+            }
+        }
+        initialApplication?.let { value ->
+            runCatching {
+                threadClass.getDeclaredField("mInitialApplication")
+                    .apply { isAccessible = true }
+                    .set(thread, value)
+            }
+        }
+    }
+
+    companion object {
+        fun capture(
+            hostResources: Resources?,
+            hostApplication: Application?
+        ): HostProcessState {
+            val threadClass = Class.forName("android.app.ActivityThread")
+            val thread = threadClass.getMethod("currentActivityThread").invoke(null)
+            val bound = runCatching {
+                threadClass.getDeclaredField("mBoundApplication")
+                    .apply { isAccessible = true }
+                    .get(thread)
+            }.getOrNull()
+            val boundAppInfo = runCatching {
+                bound?.javaClass?.getDeclaredField("appInfo")
+                    ?.apply { isAccessible = true }
+                    ?.get(bound) as? ApplicationInfo
+            }.getOrNull()
+            val loadedApk = runCatching {
+                bound?.javaClass?.getDeclaredField("info")
+                    ?.apply { isAccessible = true }
+                    ?.get(bound)
+            }.getOrNull()
+            val loadedApkAppInfo = runCatching {
+                loadedApk?.javaClass?.getDeclaredField("mApplicationInfo")
+                    ?.apply { isAccessible = true }
+                    ?.get(loadedApk) as? ApplicationInfo
+            }.getOrNull()
+            val loadedApkPackageName = runCatching {
+                loadedApk?.javaClass?.getDeclaredField("mPackageName")
+                    ?.apply { isAccessible = true }
+                    ?.get(loadedApk) as? String
+            }.getOrNull()
+            val loadedApkDataDir = runCatching {
+                loadedApk?.javaClass?.getDeclaredField("mDataDir")
+                    ?.apply { isAccessible = true }
+                    ?.get(loadedApk) as? String
+            }.getOrNull()
+            val loadedApkResources = runCatching {
+                loadedApk?.javaClass?.getDeclaredField("mResources")
+                    ?.apply { isAccessible = true }
+                    ?.get(loadedApk) as? Resources
+            }.getOrNull() ?: hostResources
+            val loadedApkResDir = runCatching {
+                loadedApk?.javaClass?.getDeclaredField("mResDir")
+                    ?.apply { isAccessible = true }
+                    ?.get(loadedApk) as? String
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+                ?: hostApplication?.applicationInfo?.sourceDir
+            val initialApplication = runCatching {
+                threadClass.getDeclaredField("mInitialApplication")
+                    .apply { isAccessible = true }
+                    .get(thread) as? Application
+            }.getOrNull() ?: hostApplication
+            return HostProcessState(
+                bound = bound,
+                boundAppInfo = boundAppInfo,
+                loadedApk = loadedApk,
+                loadedApkAppInfo = loadedApkAppInfo,
+                loadedApkPackageName = loadedApkPackageName,
+                loadedApkDataDir = loadedApkDataDir,
+                hostResources = hostResources,
+                loadedApkResources = loadedApkResources,
+                loadedApkResDir = loadedApkResDir,
+                hostApplication = hostApplication,
+                initialApplication = initialApplication
+            )
+        }
+    }
+}
+
+/**
  * One live virtual-app session: target Application + ClassLoader + Resources.
  *
  * Activity hosting is one real StageAActivity per target Activity. This keeps
@@ -52,6 +263,7 @@ class ContainerSession private constructor(
     val application: Application,
     val hostContext: Context,
     private val activityThread: Any,
+    private val hostProcessState: HostProcessState,
     val intents: ContainerIntentResolver,
     val packageManager: android.content.pm.PackageManager,
     /** Package-level view of every app installed in this space. */
@@ -92,6 +304,9 @@ class ContainerSession private constructor(
     }
 
     private val targetHosts = ConcurrentHashMap<Activity, StageAActivity>()
+    private val identityLock = Any()
+    private var hostIdentityDepth = 0
+    private var hostIdentitySuspended = false
 
     @Volatile
     var navigator: StageAActivity? = null
@@ -128,7 +343,10 @@ class ContainerSession private constructor(
         }
         TargetCrashGuard.noteSession(spec.packageName, spec.instanceId, hostContext)
         publishAsProcessApplication()
-        restoreHostLoadedApkPackageName()
+        // Keep the complete process identity on the target while its
+        // Application and providers initialize, matching a normal Android
+        // process. StageAActivity temporarily restores the host identity only
+        // while the framework creates host components.
         providerManager.install()
         application.onCreate()
         broadcastManager.startHostBridge()
@@ -231,11 +449,66 @@ class ContainerSession private constructor(
     }
 
     fun destroy() {
+        suspendProcessIdentity()
         broadcastManager.destroy()
         providerManager.destroy()
         serviceManager.destroyAll()
         jobScheduler.shutdown()
         ProcessNameCompat.restorePersistent()
+    }
+
+    /**
+     * Host Activities must be created with NestSpace's ActivityInfo. Otherwise
+     * the framework reads the virtual app's icon/resource IDs while building
+     * the host decor and crashes on the second launch in the same slot.
+     */
+    fun <T> withHostProcessIdentity(block: () -> T): T {
+        synchronized(identityLock) {
+            if (hostIdentityDepth++ == 0) {
+                suspendProcessIdentityLocked()
+            }
+        }
+        return try {
+            block()
+        } finally {
+            synchronized(identityLock) {
+                hostIdentityDepth--
+            }
+        }
+    }
+
+    fun suspendProcessIdentity() {
+        synchronized(identityLock) {
+            suspendProcessIdentityLocked()
+        }
+    }
+
+    fun activateProcessIdentity() {
+        synchronized(identityLock) {
+            activateProcessIdentityLocked()
+        }
+    }
+
+    fun attachHostFrameworkState(activity: Activity, restoreTheme: Boolean) {
+        hostProcessState.attachHostFrameworkState(activity, restoreTheme)
+    }
+
+    private fun suspendProcessIdentityLocked() {
+        if (hostIdentitySuspended) return
+        hostProcessState.restore()
+        ProcessNameCompat.restorePersistent()
+        hostIdentitySuspended = true
+        Log.d(TAG, "restored host process identity")
+    }
+
+    private fun activateProcessIdentityLocked() {
+        if (!hostIdentitySuspended) return
+        ProcessNameCompat.setPersistent(spec.targetProcessName)
+        publishVirtualIdentity(activityThread, context)
+        publishAsProcessApplication()
+        restoreHostLoadedApkPackageName()
+        hostIdentitySuspended = false
+        Log.d(TAG, "activated target process identity")
     }
 
     fun createActivity(
@@ -253,7 +526,8 @@ class ContainerSession private constructor(
         host: StageAActivity,
         className: String?,
         sourceIntent: Intent?,
-        savedState: Bundle?
+        savedState: Bundle?,
+        fallbackActivityClass: String? = null
     ): Activity {
         val info = resolveActivity(className)
             ?: throw IllegalArgumentException(
@@ -262,7 +536,13 @@ class ContainerSession private constructor(
                     "Activity not found: ${className ?: spec.launcherActivity}"
                 )
             )
-        val activityClass = (info.targetActivity?.takeIf { it.isNotBlank() } ?: info.name)
+        Log.d(
+            TAG,
+            "resolve activity requested=$className info=${info.name} " +
+                "target=${info.targetActivity}"
+        )
+        val activityClass = fallbackActivityClass
+            ?: (info.targetActivity?.takeIf { it.isNotBlank() } ?: info.name)
         val targetClass = loader.loadClass(activityClass).asSubclass(Activity::class.java)
         val target = targetClass.getDeclaredConstructor().newInstance()
 
@@ -336,6 +616,29 @@ class ContainerSession private constructor(
             targetHosts.remove(target)
             runCatching { instrumentation.callActivityOnDestroy(target) }
                 .onFailure { Log.w(TAG, "cleanup failed target destroy", it) }
+            if (fallbackActivityClass == null && info.targetActivity != null) {
+                val concreteAliasClass = runCatching {
+                    loader.loadClass(info.name)
+                        .takeIf { Activity::class.java.isAssignableFrom(it) }
+                }.getOrNull()
+                if (concreteAliasClass != null &&
+                    concreteAliasClass.name != info.targetActivity
+                ) {
+                    Log.w(
+                        TAG,
+                        "alias target ${info.targetActivity} failed; " +
+                            "retrying concrete alias class ${concreteAliasClass.name}",
+                        t
+                    )
+                    return createActivityLocked(
+                        host,
+                        info.name,
+                        sourceIntent,
+                        savedState,
+                        concreteAliasClass.name
+                    )
+                }
+            }
             throw t
         }
         Log.d(
@@ -866,6 +1169,12 @@ class ContainerSession private constructor(
             val activityThread = Class.forName("android.app.ActivityThread")
                 .getMethod("currentActivityThread")
                 .invoke(null)
+            val hostProcessState = HostProcessState.capture(
+                hostResources = HostIdentity.resources
+                    ?: runCatching { host.resources }.getOrNull(),
+                hostApplication = HostIdentity.application
+                    ?: host.applicationContext as? Application
+            )
 
             // Native packers (SecNeo/Bangcle) run package checks in JNI_OnLoad
             // while the target Application class is being loaded. Publish the
@@ -890,6 +1199,7 @@ class ContainerSession private constructor(
                         application = application,
                         hostContext = host.applicationContext,
                         activityThread = activityThread,
+                        hostProcessState = hostProcessState,
                         intents = intents,
                         packageManager = packageManager,
                         virtualPackages = virtualPackages
@@ -1002,6 +1312,15 @@ class ContainerSession private constructor(
                     attachRegularApplication(spec, loader, context)
                 }
             }
+            if (ContainerCompat.isTinkerManaged(spec, loader)) {
+                return runCatching {
+                    attachTinkerApplication(spec, loader, context)
+                }.onFailure {
+                    Log.w(TAG, "Tinker Application init failed", it)
+                }.getOrElse {
+                    attachRegularApplication(spec, loader, context)
+                }
+            }
             if (ContainerCompat.hasEmbeddedApplicationPair(loader)) {
                 return runCatching { attachEmbeddedApplication(loader, context) }
                     .onFailure { Log.w(TAG, "embedded Application attach failed", it) }
@@ -1010,6 +1329,49 @@ class ContainerSession private constructor(
                     }
             }
             return attachRegularApplication(spec, loader, context)
+        }
+
+        /**
+         * Android keeps the Manifest Application as the process application;
+         * MuteApplication forwards lifecycle callbacks to its delegate. Keep
+         * that proxy instead of replacing it with the delegate, otherwise the
+         * framework-only fields Android normally copies into the proxy (for
+         * example mLoadedApk) are never installed and target startup tasks can
+         * run in a partially initialized process.
+         */
+        private fun attachTinkerApplication(
+            spec: ContainerLaunchSpec,
+            loader: ClassLoader,
+            context: Context
+        ): Application {
+            val className = spec.applicationInfo.className
+                ?.takeIf { it.isNotBlank() }
+                ?: error("Tinker manifest Application is missing")
+            val wrapperClass = loader.loadClass(className)
+                .asSubclass(Application::class.java)
+            val wrapper = wrapperClass.getDeclaredConstructor().newInstance()
+            if (context is ContainerContext) {
+                context.targetApplication = wrapper
+            }
+            attachBaseContext(wrapper, context)
+
+            val delegateField = findField(wrapperClass, "mDelegateApp")
+                ?: error("Tinker delegate Application field not found")
+            val delegate = delegateField.get(wrapper) as? Application
+                ?: error("Tinker delegate Application was not created")
+            Log.d(TAG, "Tinker delegate attached: ${delegate.javaClass.name}")
+            return wrapper
+        }
+
+        private fun findField(type: Class<*>, name: String): java.lang.reflect.Field? {
+            var current: Class<*>? = type
+            while (current != null) {
+                runCatching {
+                    return current!!.getDeclaredField(name).apply { isAccessible = true }
+                }
+                current = current.superclass
+            }
+            return null
         }
 
         /**

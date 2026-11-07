@@ -21,6 +21,7 @@ internal object ContainerCompat {
         "com.netease.cloudmusic.core.patch.PatchApplicationLike"
     const val EMBEDDED_REAL_APPLICATION =
         "com.netease.cloudmusic.core.patch.RealApplication"
+    const val TINKER_MUTE_APPLICATION = "com.tencent.tinker.loader.MuteApplication"
 
     private val appLikes = java.util.WeakHashMap<Application, Any>()
 
@@ -92,6 +93,29 @@ internal object ContainerCompat {
         }
         Log.w(TAG, "no no-arg embedded Application for ${spec.packageName}")
         return null
+    }
+
+    /**
+     * Tinker's MuteApplication is a bootstrap shell whose onCreate only
+     * initializes the patch runtime. A freshly installed APK therefore boots
+     * the shell without running the app's real business Application. When the
+     * manifest Application extends MuteApplication, initialize the packaged
+     * MainApplication directly.
+     */
+    fun isTinkerManaged(
+        spec: ContainerLaunchSpec,
+        loader: ClassLoader
+    ): Boolean {
+        val manifestApplication = spec.applicationInfo.className
+            ?.takeIf { it.isNotBlank() }
+            ?: return false
+        val wrapper = runCatching {
+            loader.loadClass(manifestApplication)
+        }.getOrNull() ?: return false
+        val muteClass = runCatching {
+            loader.loadClass(TINKER_MUTE_APPLICATION)
+        }.getOrNull() ?: return false
+        return muteClass.isAssignableFrom(wrapper)
     }
 
     private fun classNames(apkPaths: List<String>): List<String> {

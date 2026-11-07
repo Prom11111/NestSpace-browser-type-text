@@ -21,6 +21,7 @@ object ManifestIntentFilters {
     data class Parsed(
         val packageName: String,
         val activities: Map<String, List<ContainerIntentFilter>>,
+        val activityAliases: Map<String, String>,
         val services: Map<String, List<ContainerIntentFilter>>,
         val receivers: Map<String, List<ContainerIntentFilter>>
     )
@@ -46,12 +47,14 @@ object ManifestIntentFilters {
         }
 
         val activities = linkedMapOf<String, MutableList<ContainerIntentFilter>>()
+        val activityAliases = linkedMapOf<String, String>()
         val services = linkedMapOf<String, MutableList<ContainerIntentFilter>>()
         val receivers = linkedMapOf<String, MutableList<ContainerIntentFilter>>()
         var packageName = ""
         var inApplication = false
         var componentName: String? = null
         var componentMap: MutableMap<String, MutableList<ContainerIntentFilter>>? = null
+        var activityAliasTarget: String? = null
         var current: ContainerIntentFilter? = null
 
         try {
@@ -67,6 +70,11 @@ object ManifestIntentFilters {
                             "activity", "activity-alias" -> if (inApplication) {
                                 componentMap = activities
                                 componentName = normalize(packageName, attr(xml, "name"))
+                                activityAliasTarget = if (xml.name == "activity-alias") {
+                                    normalize(packageName, attr(xml, "targetActivity"))
+                                } else {
+                                    null
+                                }
                             }
                             "service" -> if (inApplication) {
                                 componentMap = services
@@ -108,7 +116,17 @@ object ManifestIntentFilters {
                                 }
                                 current = null
                             }
-                            "activity", "activity-alias", "service", "receiver" -> {
+                            "activity-alias" -> {
+                                val alias = componentName
+                                val target = activityAliasTarget
+                                if (alias != null && target != null) {
+                                    activityAliases[alias] = target
+                                }
+                                componentName = null
+                                componentMap = null
+                                activityAliasTarget = null
+                            }
+                            "activity", "service", "receiver" -> {
                                 componentName = null
                                 componentMap = null
                             }
@@ -127,13 +145,15 @@ object ManifestIntentFilters {
         return Parsed(
             packageName = packageName,
             activities = activities,
+            activityAliases = activityAliases,
             services = services,
             receivers = receivers
         ).also {
             Log.d(
                 TAG,
                 "parse done: pkg=$packageName activities=${activities.size} " +
-                    "services=${services.size} receivers=${receivers.size}"
+                    "aliases=${activityAliases.size} services=${services.size} " +
+                    "receivers=${receivers.size}"
             )
         }
     }
@@ -229,6 +249,6 @@ object ManifestIntentFilters {
 
     private fun empty(apkPath: String): Parsed {
         Log.w(TAG, "no manifest filters available for $apkPath")
-        return Parsed("", emptyMap(), emptyMap(), emptyMap())
+        return Parsed("", emptyMap(), emptyMap(), emptyMap(), emptyMap())
     }
 }

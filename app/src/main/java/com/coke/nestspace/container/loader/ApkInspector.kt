@@ -93,13 +93,36 @@ object ApkInspector {
         val filters = ManifestIntentFilters.parse(apkPath)
         val activityInfos = info.activities
             ?.filter { !it.name.isNullOrBlank() }
-            .orEmpty()
+            ?.toMutableList()
+            ?: mutableListOf()
+        filters.activityAliases.forEach { (alias, target) ->
+            if (activityInfos.none { it.name == alias }) {
+                val targetInfo = activityInfos.firstOrNull { it.name == target }
+                if (targetInfo != null) {
+                    activityInfos += ActivityInfo(targetInfo).apply {
+                        name = alias
+                        targetActivity = target
+                    }
+                }
+            }
+        }
         val enabledActivities = activityInfos.filter { it.enabled }
-        val launcher = enabledActivities.firstOrNull { candidate ->
-            filters.activities[candidate.name]?.any { filter ->
+        val launcherName = filters.activities.entries.firstOrNull { (_, componentFilters) ->
+            componentFilters.any { filter ->
                 filter.hasAction(Intent.ACTION_MAIN) &&
                     filter.hasCategory(Intent.CATEGORY_LAUNCHER)
-            } == true
+            }
+        }?.key
+        val launcher = launcherName?.let { alias ->
+            enabledActivities.firstOrNull { it.name == alias }
+                ?: filters.activityAliases[alias]?.let { target ->
+                    enabledActivities.firstOrNull { it.name == target }?.let { targetInfo ->
+                        ActivityInfo(targetInfo).apply {
+                            name = alias
+                            targetActivity = target
+                        }
+                    }
+                }
         }
         val activity = launcher
             ?: enabledActivities.firstOrNull { it.exported }
@@ -123,7 +146,7 @@ object ApkInspector {
             apkPath = apkPath,
             packageName = info.packageName,
             label = label,
-            launcherActivity = activity?.name,
+            launcherActivity = launcherName ?: activity?.name,
             activityInfo = activity,
             activities = activityInfos,
             services = info.services?.filter { !it.name.isNullOrBlank() }.orEmpty(),

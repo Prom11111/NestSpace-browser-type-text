@@ -13,6 +13,7 @@ class NestSpaceApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.coke.nestspace.container.identity.HostIdentity.captureProcess(this)
         // Slot processes render container error screens too; every process
         // needs the persisted language.
         com.coke.nestspace.i18n.AppLanguage.init(this)

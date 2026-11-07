@@ -64,6 +64,7 @@ open class StageAActivity : Activity() {
         const val EXTRA_MIRROR_DISPLAY_ID = "container_mirror_display_id"
         const val EXTRA_TARGET_PROCESS = "container_target_process"
         private const val TAG = "StageAActivity"
+        private const val FIRST_ACTIVITY_SETTLE_MS = 2_500L
         private const val KEY_HOST_STATE_ID = "nestspace.host_state_id"
         private const val KEY_CONTAINER_ENTRY = "nestspace.container_entry"
 
@@ -643,6 +644,15 @@ open class StageAActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
+        ContainerSessions.withHostProcessIdentity {
+            onCreateHost(savedInstanceState)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun onCreateHost(savedInstanceState: Bundle?) {
+        requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        ContainerSessions.restoreHostFrameworkState(this, restoreTheme = true)
         headless = intent.getBooleanExtra(EXTRA_HEADLESS, false)
         // Child hosts (target startActivity) may be built before the mirror id
         // is propagated through the session. Join the live mirror instead of
@@ -662,6 +672,7 @@ open class StageAActivity : Activity() {
             setTheme(R.style.Theme_Virtual_Container_Mirror)
         }
         super.onCreate(savedInstanceState)
+        ContainerSessions.restoreHostFrameworkState(this, restoreTheme = false)
         hostStateId = TargetStateStore.nextHostId()
         active = this
         ContainerProcessPool.markCurrentSlot(slotIndexFor(javaClass))
@@ -1641,10 +1652,11 @@ open class StageAActivity : Activity() {
                 session = existing
                 sessionRetained = true
                 existing.navigator = this
+                val targetIntent = targetIntentFrom(intent)
                 openActivity(
                     existing,
-                    intent.getStringExtra(EXTRA_ACTIVITY_CLASS) ?: existing.spec.launcherActivity,
-                    targetIntentFrom(intent),
+                    launchActivityClass(existing, intent, targetIntent),
+                    targetIntent,
                     savedState
                 )
                 return
@@ -1661,13 +1673,15 @@ open class StageAActivity : Activity() {
                 session = created
                 sessionRetained = true
                 created.navigator = this
-                openActivity(
+                val targetIntent = targetIntentFrom(intent)
+                openFirstActivity(
                     created,
-                    intent.getStringExtra(EXTRA_ACTIVITY_CLASS) ?: spec.launcherActivity,
-                    targetIntentFrom(intent),
+                    launchActivityClass(created, intent, targetIntent),
+                    targetIntent,
                     savedState
                 )
             } catch (t: Throwable) {
+                Log.e(TAG, "container launch failed", t)
                 showError(
                     AppLanguage.tr(
                         "容器启动失败：${t.message ?: t.javaClass.name}\n\n" +
@@ -1695,9 +1709,9 @@ open class StageAActivity : Activity() {
             session = existing
             sessionRetained = true
             existing.navigator = this
-            val className = intent.getStringExtra(EXTRA_ACTIVITY_CLASS)
-                ?: existing.spec.launcherActivity
-            openActivity(existing, className, targetIntentFrom(intent), savedState)
+            val targetIntent = targetIntentFrom(intent)
+            val className = launchActivityClass(existing, intent, targetIntent)
+            openActivity(existing, className, targetIntent, savedState)
             return
         }
 
@@ -1726,8 +1740,9 @@ open class StageAActivity : Activity() {
             val launcherIntent = Intent(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_LAUNCHER)
                 .setClassName(spec.packageName, spec.launcherActivity)
-            openActivity(created, spec.launcherActivity, launcherIntent, savedState)
+            openFirstActivity(created, spec.launcherActivity, launcherIntent, savedState)
         } catch (t: Throwable) {
+            Log.e(TAG, "container first activity failed", t)
             showError(
                 AppLanguage.tr(
                     "容器启动失败：${t.message ?: t.javaClass.name}\n\n" +
@@ -1736,6 +1751,56 @@ open class StageAActivity : Activity() {
                         t.stackTrace.take(8).joinToString("\n")
                 )
             )
+        }
+    }
+
+    /**
+     * Android launches the declared Activity alias and lets the target
+     * Activity inspect the original component. Apps use that component name
+     * to enter their splash/privacy flow, so a normal launcher intent must not
+     * be rewritten to the alias target too early.
+     */
+    private fun launchActivityClass(
+        session: ContainerSession,
+        hostIntent: Intent,
+        targetIntent: Intent?
+    ): String {
+        val isLauncher = targetIntent?.action == Intent.ACTION_MAIN &&
+            targetIntent.categories?.contains(Intent.CATEGORY_LAUNCHER) == true
+        if (isLauncher) {
+            return session.intents.launcherIntent()?.component?.className
+                ?: session.spec.launcherActivity
+        }
+        return hostIntent.getStringExtra(EXTRA_ACTIVITY_CLASS)
+            ?: session.spec.launcherActivity
+    }
+
+    /**
+     * Manifest Application proxies such as Tinker/MuteApplication may return
+     * from onCreate before their queued startup services are ready. Keep the
+     * host placeholder on screen for one short, bounded settle window so those
+     * main-thread initializers can run before the launcher Activity starts.
+     */
+    private fun openFirstActivity(
+        session: ContainerSession,
+        className: String,
+        targetIntent: Intent?,
+        savedState: Bundle?
+    ) {
+        Log.d(
+            TAG,
+            "open first activity class=$className action=${targetIntent?.action} " +
+                "component=${targetIntent?.component}"
+        )
+        val open = {
+            if (!isFinishing && !isDestroyed) {
+                openActivity(session, className, targetIntent, savedState)
+            }
+        }
+        if (root?.postDelayed(open, FIRST_ACTIVITY_SETTLE_MS) == true) {
+            Log.d(TAG, "waiting ${FIRST_ACTIVITY_SETTLE_MS}ms for application startup")
+        } else {
+            open()
         }
     }
 
@@ -1833,6 +1898,7 @@ open class StageAActivity : Activity() {
             applyTargetActionBarInset(target)
             if (mirrorMode) giveTargetPrivateToken(target)
         } catch (t: Throwable) {
+            Log.e(TAG, "container target activity failed", t)
             showError(
                 AppLanguage.tr(
                     "容器启动失败：${t.message ?: t.javaClass.name}\n\n" +

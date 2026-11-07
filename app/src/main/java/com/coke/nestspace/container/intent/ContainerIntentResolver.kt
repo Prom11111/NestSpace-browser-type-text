@@ -213,13 +213,13 @@ class ContainerIntentResolver(
         findProvider(intent.data?.authority)
 
     fun launcherIntent(): Intent? {
-        val launcher = launcherActivity?.let { findActivity(it) }
-            ?: activitiesByName.values.firstOrNull { info ->
+        val launcher = activitiesByName.values.firstOrNull { info ->
                 activityFilters[normalize(info.name)]?.any { filter ->
                     filter.hasAction(Intent.ACTION_MAIN) &&
                         filter.hasCategory(Intent.CATEGORY_LAUNCHER)
                 } == true
             }
+            ?: launcherActivity?.let { findActivity(it) }
             ?: return null
         return Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)

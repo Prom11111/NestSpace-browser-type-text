@@ -45,6 +45,12 @@ internal object ContainerSpecFactory {
         val activity = descriptor.activityInfo
             ?: error(AppLanguage.tr("APK 没有入口 Activity", "APK has no launcher activity"))
 
+        android.util.Log.d(
+            "ContainerSpecFactory",
+            "launcher=${descriptor.launcherActivity} info=${activity.name} " +
+                "target=${activity.targetActivity}"
+        )
+
         val dataDir = File(File(root, "data"), sanitize(packageName))
             .resolve(sanitize(instanceId))
         dataDir.mkdirs()
