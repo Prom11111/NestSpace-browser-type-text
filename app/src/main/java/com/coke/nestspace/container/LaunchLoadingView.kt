@@ -1,18 +1,22 @@
 package com.coke.nestspace.container
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.RadialGradient
-import android.graphics.RectF
 import android.graphics.Shader
 import android.os.SystemClock
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.coke.nestspace.i18n.AppLanguage
+import com.coke.nestspace.R
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -46,12 +50,25 @@ internal class LaunchLoadingView(
         AppLanguage.tr("正在载入应用资源", "Loading app resources"),
         AppLanguage.tr("即将完成", "Almost ready")
     )
+    private val avatarBitmap: Bitmap? = runCatching {
+        BitmapFactory.decodeResource(resources, R.drawable.ai_assistant_cutout)
+    }.getOrNull()
 
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val orbitPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val avatarPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val avatarRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = Color.WHITE
+        strokeWidth = 4f * density
+    }
+    private val avatarShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(28, 49, 62, 135)
+    }
     private val markPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val markHighlightPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val avatarMatrix = Matrix()
+    private var avatarShader: BitmapShader? = null
     private val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(28, 30, 42)
         textAlign = Paint.Align.CENTER
@@ -76,10 +93,10 @@ internal class LaunchLoadingView(
             android.graphics.Typeface.NORMAL
         )
     }
-    private val letterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val badgeLetterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
-        textSize = 42f * density
+        textSize = 18f * density
         typeface = android.graphics.Typeface.create(
             "sans-serif",
             android.graphics.Typeface.BOLD
@@ -191,7 +208,7 @@ internal class LaunchLoadingView(
         val centerX = width / 2f
         val centerY = height * 0.43f
         val breathe = 1f + 0.045f * sin(phase * PI.toFloat() * 2f)
-        val markSize = 82f * density
+        val avatarRadius = 56f * density
 
         haloPaint.shader = RadialGradient(
             centerX,
@@ -232,36 +249,72 @@ internal class LaunchLoadingView(
             )
         }
 
-        val markRect = RectF(
-            centerX - markSize / 2f,
-            centerY - markSize / 2f,
-            centerX + markSize / 2f,
-            centerY + markSize / 2f
+        val avatarScale = 1f + 0.012f * sin(phase * PI.toFloat() * 2f)
+        canvas.save()
+        canvas.scale(avatarScale, avatarScale, centerX, centerY)
+        canvas.drawCircle(
+            centerX,
+            centerY + 3f * density,
+            avatarRadius + 11f * density,
+            avatarShadowPaint
         )
+        avatarRingPaint.strokeWidth = 4f * density
+        canvas.drawCircle(centerX, centerY, avatarRadius + 6f * density, avatarRingPaint)
+        val avatar = avatarBitmap
+        if (avatar != null) {
+            val shader = avatarShader ?: BitmapShader(
+                avatar,
+                Shader.TileMode.CLAMP,
+                Shader.TileMode.CLAMP
+            ).also { avatarShader = it }
+            val scale = (avatarRadius * 2f) / minOf(avatar.width, avatar.height)
+            avatarMatrix.reset()
+            avatarMatrix.setScale(scale, scale)
+            avatarMatrix.postTranslate(
+                centerX - avatar.width * scale / 2f,
+                centerY - avatar.height * scale / 2f
+            )
+            shader.setLocalMatrix(avatarMatrix)
+            avatarPaint.shader = shader
+            canvas.drawCircle(centerX, centerY, avatarRadius, avatarPaint)
+        } else {
+            markPaint.color = Color.rgb(88, 112, 220)
+            canvas.drawCircle(centerX, centerY, avatarRadius, markPaint)
+            badgeLetterPaint.textSize = 34f * density
+            canvas.drawText(
+                "N",
+                centerX,
+                centerY + badgeLetterPaint.textSize * 0.35f,
+                badgeLetterPaint
+            )
+            badgeLetterPaint.textSize = 18f * density
+        }
+
+        val badgeX = centerX + avatarRadius * 0.72f
+        val badgeY = centerY + avatarRadius * 0.72f
+        val badgeRadius = 16f * density
         markPaint.shader = LinearGradient(
-            markRect.left,
-            markRect.top,
-            markRect.right,
-            markRect.bottom,
+            badgeX - badgeRadius,
+            badgeY - badgeRadius,
+            badgeX + badgeRadius,
+            badgeY + badgeRadius,
             intArrayOf(Color.rgb(66, 91, 205), Color.rgb(123, 156, 255)),
             null,
             Shader.TileMode.CLAMP
         )
-        canvas.save()
-        canvas.rotate(sin(phase * PI.toFloat() * 2f) * 2.5f, centerX, centerY)
-        canvas.drawRoundRect(markRect, 24f * density, 24f * density, markPaint)
-        markHighlightPaint.color = Color.argb(42, 255, 255, 255)
+        avatarRingPaint.strokeWidth = 2.5f * density
+        canvas.drawCircle(badgeX, badgeY, badgeRadius + 2.5f * density, avatarRingPaint)
         canvas.drawCircle(
-            centerX - markSize * 0.18f,
-            centerY - markSize * 0.20f,
-            markSize * 0.22f,
-            markHighlightPaint
+            badgeX,
+            badgeY,
+            badgeRadius,
+            markPaint
         )
         canvas.drawText(
             "N",
-            centerX,
-            centerY + letterPaint.textSize * 0.35f,
-            letterPaint
+            badgeX,
+            badgeY + badgeLetterPaint.textSize * 0.35f,
+            badgeLetterPaint
         )
         canvas.restore()
 

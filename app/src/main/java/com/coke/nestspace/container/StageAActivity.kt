@@ -695,6 +695,11 @@ open class StageAActivity : Activity() {
                     .build()
             )
         } else if (headless) {
+            FloatingDotOverlay.setOverlayHidden(
+                this,
+                launchOverlayReason(),
+                true
+            )
             val metrics = DisplayMetrics()
             @Suppress("DEPRECATION")
             windowManager.defaultDisplay.getRealMetrics(metrics)
@@ -878,6 +883,11 @@ open class StageAActivity : Activity() {
     }
 
     private fun showLaunchPlaceholder(frame: FrameLayout) {
+        FloatingDotOverlay.setOverlayHidden(
+            this,
+            launchOverlayReason(),
+            true
+        )
         // Do not let the loading window receive focus. Target startup can hold
         // the main thread for several seconds (Bilibili opens 35 dex files and
         // runs Gripper before its Application.onCreate returns); if the window
@@ -900,6 +910,8 @@ open class StageAActivity : Activity() {
 
     private fun launchLabel(): String? =
         intent.getStringExtra(EXTRA_APP_LABEL)?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun launchOverlayReason(): String = "container-launch-$hostStateId"
 
     private fun restoreLoadingWindowFocus() {
         window.clearFlags(
@@ -1494,6 +1506,7 @@ open class StageAActivity : Activity() {
 
     override fun onDestroy() {
         Log.d(TAG, "host onDestroy target=${current?.javaClass?.name}")
+        FloatingDotOverlay.setOverlayHidden(this, launchOverlayReason(), false)
         SystemServiceIdentity.clearRootFinishInterceptor()
         returnToDesktopIfRootTargetFinished()
         root?.removeCallbacks(mirrorFinishPoller)
@@ -1698,6 +1711,7 @@ open class StageAActivity : Activity() {
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
             )
+            FloatingDotOverlay.setOverlayHidden(this, launchOverlayReason(), false)
             if (!mirrorMode) restoreLoadingWindowFocus()
             refreshEnvironmentLine(target)
             title = "${session.spec.label} · ${session.spec.instanceId}"
