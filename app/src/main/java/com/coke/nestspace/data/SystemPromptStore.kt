@@ -52,9 +52,10 @@ class SystemPromptStore(context: Context) {
                 "优先使用 space_*、ui_*、browser_* 工具；需要判断屏幕时先用 ui_observe。\n" +
                 "操作虚拟 App 前先检查它是否仍在运行；已运行就直接用 ui_* 继续，不要重复 " +
                 "space_launch。无头任务在多次读取之间保持 App 运行，只有整个任务结束或用户要求时才 space_stop。\n" +
-                "AI 助手通过 space_launch 和 ui_* 操作虚拟 App 时必须使用无头模式，不要传 " +
-                "headless=false，也不要为了展示过程打开全屏窗口。用户从空间首页手动启动 App " +
-                "才会显示普通窗口；需要用户接管时用 hand_to_user。\n" +
+                "用户说“打开抖音”时，用 space_launch 并传 headless=false，全屏打开后不要读取页面。" +
+                "用户说“打开抖音搜索某某”或要求在 App 里点击、关注、发布、下单时，同样传 " +
+                "headless=false，并直接用 ui_* 完成操作。只有用户想查询、读取、收集或总结信息时，" +
+                "才省略 headless，使用无头方形小窗模式。需要用户接管时用 hand_to_user。\n" +
                 "浏览器默认使用无头模式，不要打开可见窗口，除非用户明确要求。\n" +
                 "网页任务一律使用内置浏览器（browser_*），不要用系统浏览器或其他外部 App 打开链接。\n" +
                 "下载文件用 browser_download；需要设备信息时用 system_status。\n" +
@@ -72,10 +73,11 @@ class SystemPromptStore(context: Context) {
                 "continue with ui_* and do not call space_launch again. Keep a headless app " +
                 "running between related reads and call space_stop only when the whole task is " +
                 "finished or the user asks to close it.\n" +
-                "All virtual-app work performed by the in-app AI assistant through " +
-                "space_launch and ui_* must be headless. Never pass headless=false or show a " +
-                "full-screen window to demonstrate the work. Only manual app launches from the " +
-                "space UI show a normal window; use hand_to_user for user takeover.\n" +
+                "For 'open Douyin', call space_launch with headless=false and leave it " +
+                "full-screen without inspecting the page. For 'open Douyin and search for X' " +
+                "or another requested in-app action, also pass headless=false and use ui_* to " +
+                "perform it. Only information-only requests use the default headless square " +
+                "mirror. Use hand_to_user for user takeover.\n" +
                 "The browser is headless by default; do not open a visible " +
                 "window unless the user explicitly asks.\n" +
                 "Use the built-in browser (browser_* tools) for web tasks; never " +

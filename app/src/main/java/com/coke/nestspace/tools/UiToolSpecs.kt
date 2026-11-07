@@ -235,10 +235,16 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "text" to "string",
                 "timeout_ms" to "integer",
                 "package" to "string",
-                "instance_id" to "string"
+                "instance_id" to "string",
+                required = listOf("text")
             )
         ) { args, _ ->
-            val text = args.optString("text")
+            val text = args.optString("text").trim()
+            if (text.isEmpty()) return@ToolSpec ToolResult(
+                false,
+                "text is required",
+                errorCode = "INVALID_ARGUMENT"
+            )
             val timeout = args.optLong("timeout_ms", 5000L).coerceIn(500L, 60_000L)
             val slot = containerSlot(args)
             if (missingRequestedContainer(args, slot)) {

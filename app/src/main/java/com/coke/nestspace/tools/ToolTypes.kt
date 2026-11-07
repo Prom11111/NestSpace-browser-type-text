@@ -4,6 +4,41 @@ import org.json.JSONObject
 
 enum class Caller { LOCAL_AGENT, REMOTE_MCP, USER }
 
+internal enum class AssistantPresentation { VISIBLE, HEADLESS }
+
+/**
+ * Presentation policy for virtual apps driven by the in-app assistant.
+ *
+ * Explicit in-app actions win over information words: "open Douyin and search"
+ * is visible, while "open Douyin and check what is shown" remains headless.
+ */
+internal fun assistantPresentation(userUtterances: List<String>): AssistantPresentation {
+    val text = userUtterances.joinToString(" ").lowercase()
+    val operation = listOf(
+        "搜索", "搜一下", "搜一搜", "查找", "点击", "点一下", "点开",
+        "关注", "点赞", "收藏", "评论", "发布", "下单", "购买", "支付",
+        "预约", "转发", "分享", "播放",
+        "search", "tap", "click", "follow", "like", "comment", "post",
+        "order", "buy", "play", "share"
+    ).any(text::contains)
+    if (operation) return AssistantPresentation.VISIBLE
+
+    val open = listOf("打开", "启动", "进入", "open", "launch", "start")
+        .any(text::contains)
+    val information = listOf(
+        "获取", "查看", "读取", "整理", "总结", "汇总", "列出", "告诉我",
+        "有哪些", "是什么", "多少", "热门", "推荐", "热榜", "排名", "资讯",
+        "内容", "查一下", "看看",
+        "read", "get", "check", "collect", "summarize", "tell me", "what",
+        "trending", "ranking"
+    ).any(text::contains)
+    return if (open && !information) {
+        AssistantPresentation.VISIBLE
+    } else {
+        AssistantPresentation.HEADLESS
+    }
+}
+
 data class ToolContext(
     val sessionId: String,
     val caller: Caller,

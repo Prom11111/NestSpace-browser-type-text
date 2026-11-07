@@ -111,11 +111,12 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
             name = "space_launch",
             description = "Launch an app by package name in virtual-1 by default (pass space_id=system " +
                 "for a system app). instance_id is optional; omit it to use the most recently " +
-                "launched instance. Calls from the in-app AI assistant are always headless, " +
-                "including ui_* actions. This is enforced by the tool rather than inferred " +
-                "from the model. Remote MCP callers may pass headless=false to show a window. " +
-                "An existing visible app is demoted to a fresh headless instance before AI use. " +
-                "Manual app launches from the space UI are unaffected.",
+                "launched instance. For a direct request to open an app, or to open it and " +
+                "perform an action such as searching, tapping, following or posting, pass " +
+                "headless=false and operate it full-screen. For information-only work such as " +
+                "reading, checking, collecting or summarizing content, omit headless (or pass " +
+                "true) to use the assistant's headless square mirror. Do not inspect or " +
+                "summarize after a plain open request.",
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
@@ -131,11 +132,9 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
             )
             if (spaceId != "system") {
                 val instanceId = args.optString("instance_id").takeIf { it.isNotBlank() }
-                // The in-app assistant must never bring a target forward while
-                // using ui_* tools. Ignore headless=false from the model and
-                // reserve visible launches for explicit remote MCP calls.
-                val explicitVisible = ctx.caller != Caller.LOCAL_AGENT &&
-                    args.has("headless") &&
+                // Direct open/action requests use a normal window. Information
+                // gathering defaults to the assistant's square headless mirror.
+                val explicitVisible = args.has("headless") &&
                     !args.optBoolean("headless", true)
                 val headless = !explicitVisible
                 // Headless reads use the UI service directly; no mirror or
@@ -253,8 +252,8 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
         ToolSpec(
             name = "space_multi_open",
             description = "Create a new instance in a virtual space and launch it. Each instance has an isolated data directory. " +
-                "The in-app AI assistant always launches headless; only remote MCP callers " +
-                "may request a visible window.",
+                "Pass headless=false when the user asks to open or operate the app; omit it " +
+                "for information-only work so it runs in the headless square mirror.",
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
@@ -267,8 +266,7 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
             if (pkg.isBlank()) return@ToolSpec ToolResult(
                 false, "package is required", errorCode = "INVALID_ARGUMENT"
             )
-            val headless = ctx.caller == Caller.LOCAL_AGENT ||
-                args.optBoolean("headless", true)
+            val headless = args.optBoolean("headless", true)
             LivePreview.setSuppressed(headless)
             when (val result = engine.multiOpen(spaceId, pkg, headless)) {
                 is EngineResult.Error -> ToolResult(

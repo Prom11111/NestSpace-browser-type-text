@@ -10,6 +10,7 @@ import com.coke.nestspace.agent.UserGateManager
 import com.coke.nestspace.container.ContainerProcessPool
 import com.coke.nestspace.container.HeadlessMirrorWindow
 import com.coke.nestspace.control.ContainerUiClient
+import com.coke.nestspace.control.ContainerUiKeepAlive
 import com.coke.nestspace.control.LivePreview
 import com.coke.nestspace.data.AppRepository
 import com.coke.nestspace.data.VirtualApp
@@ -118,7 +119,10 @@ class ToolRegistry(
             )
         }
 
-        if (name.startsWith("ui_")) ensureMirrorPreview(args)
+        if (name.startsWith("ui_")) {
+            alignAssistantPresentation(args, ctx)
+            ensureMirrorPreview(args)
+        }
 
         val result = try {
             if (spec.mutating) {
@@ -243,6 +247,58 @@ class ToolRegistry(
             HeadlessMirrorWindow.setActiveSlot(slot)
         }
         Log.d("ToolRegistry", "mirror preview on display $displayId for slot $slot")
+    }
+
+    /**
+     * Models often skip space_launch when an app is already running. Enforce
+     * the current user's presentation intent at the ui_* boundary so an
+     * information request cannot silently continue in a visible app.
+     */
+    internal suspend fun alignAssistantPresentation(args: JSONObject, ctx: ToolContext) {
+        if (ctx.caller != Caller.LOCAL_AGENT) return
+        val requestedPackage = args.optString("package").takeIf { it.isNotBlank() }
+        val requestedInstance = args.optString("instance_id").takeIf { it.isNotBlank() }
+        val slot = containerSlot(args) ?: ContainerProcessPool.lastSlot() ?: return
+        val owner = ContainerProcessPool.ownerOfSlot(slot)
+        val packageName = requestedPackage ?: owner?.packageName ?: return
+        val instanceId = requestedInstance ?: owner?.instanceId ?: return
+        val mirrored = ContainerUiClient.isMirrorMode(context, slot)
+            ?: (HeadlessMirrorWindow.activeSlot() == slot)
+        val desired = assistantPresentation(ctx.userUtterances)
+        val wantsMirror = desired == AssistantPresentation.HEADLESS
+        if (mirrored == wantsMirror) {
+            if (wantsMirror) {
+                ContainerUiKeepAlive.bind(context, slot)
+                ensureMirrorPreview(args)
+            }
+            return
+        }
+
+        Log.d(
+            "ToolRegistry",
+            "switching $packageName slot=$slot from mirrored=$mirrored to mirror=$wantsMirror"
+        )
+        ContainerProcessPool.closeSlot(context, slot)
+        HeadlessMirrorWindow.hide()
+        LivePreview.setSuppressed(wantsMirror)
+        val launched = when (val result = engine.launch(
+            spaceId = args.optString("space_id", ctx.spaceId),
+            packageName = packageName,
+            instanceId = instanceId,
+            headless = wantsMirror
+        )) {
+            is EngineResult.Error -> return
+            is EngineResult.Ok -> result.value
+        }
+        val newSlot = ContainerProcessPool.slotFor(packageName, launched.instanceId) ?: return
+        awaitContainerReady(newSlot, 20_000L)
+        if (wantsMirror) {
+            ContainerUiKeepAlive.bind(context, newSlot)
+            ensureMirrorPreview(args.apply {
+                put("package", packageName)
+                put("instance_id", launched.instanceId)
+            })
+        }
     }
 
     /**

@@ -525,11 +525,14 @@ class LlmAgentRuntime(
         val hint = AppLanguage.tr(
             "当前本地时间：$now。\n" +
                 "当前虚拟空间 ID：$VIRTUAL_SPACE。\n" +
-                "AI 助手通过 space_launch 和 ui_* 操作虚拟 App 时必须使用无头模式，" +
-                "不要传 headless=false，也不要为了展示过程或执行搜索、点击等操作打开全屏窗口。" +
-                "用户从空间首页手动启动 App 才会显示普通窗口；需要用户接管登录、验证码或支付时，" +
-                "用 hand_to_user 切换前台。\n" +
-                "浏览器和虚拟 App 的 AI 任务都使用无头模式。操作虚拟 App 前先检查它是否仍在运行" +
+                "先判断用户要打开/操作 App，还是只要从 App 获取信息。" +
+                "如果用户说“打开抖音”，直接调用 space_launch 并传 headless=false，全屏打开后停止，" +
+                "不要读取或总结页面。如果用户说“打开抖音搜索某某”“在抖音里点击/关注/发布/下单”等，" +
+                "调用 space_launch 并传 headless=false，然后直接用 ui_* 完成操作。" +
+                "如果用户只是要查内容、看热榜、读取页面、收集资料或总结信息，" +
+                "调用 space_launch 时不传 headless，使用无头方形小窗模式。" +
+                "需要用户接管登录、验证码或支付时，用 hand_to_user 切换前台。\n" +
+                "操作虚拟 App 前先检查它是否仍在运行" +
                 "（space_running 或直接 ui_observe）；已运行就直接用 ui_*，不要重复 space_launch。" +
                 "无头任务在多次读取之间保持 App 运行，只有整个任务结束或用户要求时才 space_stop。" +
                 "browser_open 默认新建标签页；可以用 browser_tabs 查看所有标签，" +
@@ -553,10 +556,13 @@ class LlmAgentRuntime(
                 "需要看画面时用 ui_screenshot；支持视觉的模型会自动收到截图。",
             "Current local time: $now.\n" +
                 "Current virtual space ID: $VIRTUAL_SPACE.\n" +
-                "All virtual-app work performed by the in-app AI assistant through " +
-                "space_launch and ui_* must be headless. Never pass headless=false or show " +
-                "a full-screen window to demonstrate searching, tapping, or other work. " +
-                "Only manual app launches from the space UI show a normal window. Use " +
+                "First decide whether the user wants to open/operate the app or only retrieve " +
+                "information. For 'open Douyin', call space_launch with headless=false, leave " +
+                "it full-screen, and do not inspect or summarize the page. For 'open Douyin " +
+                "and search for X' or another requested action (tap, follow, post, order), " +
+                "also pass headless=false and perform it with ui_* in the visible app. For " +
+                "information-only requests (read, check, collect, summarize, rankings), omit " +
+                "headless so the app runs in the assistant's headless square mirror. Use " +
                 "hand_to_user when the user must take over login, verification, or payment. " +
                 "Before operating a virtual app, check whether it is " +
                 "already running (space_running or ui_observe); if it is, continue with ui_* " +
