@@ -421,6 +421,7 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
+                "instance_id" to "string",
                 "permission" to "string",
                 "action" to "string"
             ),
@@ -431,6 +432,8 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                 false, "package is required", errorCode = "INVALID_ARGUMENT"
             )
             val action = args.optString("action", "list").lowercase()
+            val instanceId = args.optString("instance_id", "instance-1")
+                .ifBlank { "instance-1" }
             val permission = args.optString("permission")
             when (action) {
                 "grant", "revoke" -> {
@@ -449,14 +452,15 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                     )
                     if (denied != null) return@ToolSpec denied
                     val state = if (action == "grant") {
-                        ContainerPermissionStore.grant(context, pkg, permission)
+                        ContainerPermissionStore.grant(context, pkg, permission, instanceId)
                     } else {
-                        ContainerPermissionStore.revoke(context, pkg, permission)
+                        ContainerPermissionStore.revoke(context, pkg, permission, instanceId)
                     }
                     ToolResult(
                         true,
                         JSONObject()
                             .put("package", pkg)
+                            .put("instance_id", instanceId)
                             .put("action", action)
                             .put("permission", permission)
                             .put("granted", JSONArray(state.granted.toList()))
@@ -465,11 +469,12 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                     )
                 }
                 else -> {
-                    val state = ContainerPermissionStore.load(context, pkg)
+                    val state = ContainerPermissionStore.load(context, pkg, instanceId)
                     ToolResult(
                         true,
                         JSONObject()
                             .put("package", pkg)
+                            .put("instance_id", instanceId)
                             .put("granted", JSONArray(state.granted.toList()))
                             .put("denied", JSONArray(state.denied.toList()))
                             .toString()

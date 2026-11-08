@@ -84,6 +84,7 @@ class ContainerContext(
     val permissions: ContainerPermissions = ContainerPermissions(
         hostContext = base.applicationContext,
         targetPackage = targetPackage,
+        targetInstanceId = instanceId,
         hostPackage = HostIdentity.packageName,
         targetRequestedPermissions = targetRequestedPermissions
     )

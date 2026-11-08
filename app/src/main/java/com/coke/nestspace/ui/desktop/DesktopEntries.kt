@@ -18,6 +18,7 @@ internal enum class LauncherKind { VIRTUAL, SYSTEM, BROWSER, AGENT, SPACES, RUNN
 internal data class LauncherEntry(
     val id: String,
     val packageName: String,
+    val instanceId: String? = null,
     val label: String,
     val icon: ImageBitmap?,
     val kind: LauncherKind,
@@ -44,15 +45,32 @@ internal fun buildEntries(
     systemApps: List<com.coke.nestspace.data.AppInfo>
 ): List<LauncherEntry> {
     val virtualPackages = virtualApps.map { it.packageName }.toSet()
-    return virtualApps.sortedBy { it.label.lowercase() }.map {
-        LauncherEntry(
-            id = "virtual:${it.packageName}",
-            packageName = it.packageName,
-            label = it.label,
-            icon = it.icon,
-            kind = LauncherKind.VIRTUAL
-        )
-    } + systemApps
+    return virtualApps
+        .sortedBy { it.label.lowercase() }
+        .flatMap { app ->
+            val instances = app.instances.sortedWith(
+                compareBy({ it.createdAt }, { it.id })
+            ).ifEmpty {
+                listOf(
+                    com.coke.nestspace.data.VirtualInstance(
+                        id = "default",
+                        createdAt = app.installedAt,
+                        lastLaunchedAt = 0L,
+                        dataDir = ""
+                    )
+                )
+            }
+            instances.mapIndexed { index, instance ->
+                LauncherEntry(
+                    id = "virtual:${app.packageName}:${instance.id}",
+                    packageName = app.packageName,
+                    instanceId = instance.id.takeUnless { it == "default" },
+                    label = if (index == 0) app.label else "${app.label} ${index + 1}",
+                    icon = app.icon,
+                    kind = LauncherKind.VIRTUAL
+                )
+            }
+        } + systemApps
         .filterNot { it.packageName in virtualPackages }
         .sortedBy { it.label.lowercase() }
         .map {

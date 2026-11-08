@@ -105,6 +105,7 @@ import com.coke.nestspace.data.LlmConfig
 import com.coke.nestspace.data.LlmProtocol
 import com.coke.nestspace.data.McpStatus
 import com.coke.nestspace.data.VirtualApp
+import com.coke.nestspace.data.VirtualInstance
 import androidx.core.view.WindowCompat
 import com.coke.nestspace.vm.VirtualViewModel
 import com.coke.nestspace.ui.settings.SettingsCard
@@ -126,7 +127,21 @@ internal fun AppManagerScreen(
 ) {
     var pendingUninstall by remember { mutableStateOf<VirtualApp?>(null) }
     var showSystemPicker by remember { mutableStateOf(false) }
-    val appCount = virtualApps.size
+    val instanceEntries = remember(virtualApps) {
+        virtualApps.flatMap { app ->
+            app.instances
+                .sortedWith(compareBy({ it.createdAt }, { it.id }))
+                .mapIndexed { index, instance ->
+                    ManagedInstance(
+                        app = app,
+                        instance = instance,
+                        number = index + 1,
+                        displayLabel = if (index == 0) app.label else "${app.label} ${index + 1}"
+                    )
+                }
+        }
+    }
+    val appCount = instanceEntries.size
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -189,10 +204,16 @@ internal fun AppManagerScreen(
                 )
             }
         }
-        if (virtualApps.isNotEmpty()) {
-            items(virtualApps, key = { it.packageName }) { app ->
+        if (instanceEntries.isNotEmpty()) {
+            items(
+                instanceEntries,
+                key = { "${it.app.packageName}:${it.instance.id}" }
+            ) { entry ->
                 VirtualAppRow(
-                    app = app,
+                    app = entry.app,
+                    instance = entry.instance,
+                    number = entry.number,
+                    displayLabel = entry.displayLabel,
                     onLaunch = onLaunchVirtual,
                     onMultiOpen = onMultiOpen,
                     onUninstall = { pendingUninstall = it }
@@ -246,6 +267,13 @@ internal fun AppManagerScreen(
     }
 
 }
+
+private data class ManagedInstance(
+    val app: VirtualApp,
+    val instance: VirtualInstance,
+    val number: Int,
+    val displayLabel: String
+)
 
 @Composable
 private fun DesktopAppIcon(app: AppInfo) {
@@ -384,6 +412,9 @@ private fun SystemAppPickerDialog(
 @Composable
 private fun VirtualAppRow(
     app: VirtualApp,
+    instance: VirtualInstance,
+    number: Int,
+    displayLabel: String,
     onLaunch: (String, String?) -> Unit,
     onMultiOpen: (String) -> Unit,
     onUninstall: (VirtualApp) -> Unit
@@ -419,14 +450,15 @@ private fun VirtualAppRow(
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    app.label,
+                    displayLabel,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "${app.packageName} · ${app.versionName ?: "v${app.versionCode}"}",
+                    "${app.packageName} · ${app.versionName ?: "v${app.versionCode}"} · " +
+                        AppLanguage.tr("实例 $number", "Instance $number"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -438,21 +470,13 @@ private fun VirtualAppRow(
             }
         }
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(app.instances) { instance ->
-                val index = app.instances.indexOf(instance) + 1
-                AssistChip(
-                    onClick = { onLaunch(app.packageName, instance.id) },
-                    label = { Text(AppLanguage.tr("实例 $index", "Instance $index")) }
-                )
-            }
-        }
-
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(onClick = { onLaunch(app.packageName, null) }) { Text(AppLanguage.tr("启动", "Launch")) }
+            Button(onClick = { onLaunch(app.packageName, instance.id) }) {
+                Text(AppLanguage.tr("启动", "Launch"))
+            }
             OutlinedButton(onClick = { onMultiOpen(app.packageName) }) { Text(AppLanguage.tr("多开", "Duplicate")) }
             TextButton(onClick = { onUninstall(app) }) {
                 Text(

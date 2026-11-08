@@ -3,8 +3,15 @@ package com.coke.nestspace.container
 import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.content.Context
+import android.content.IContentProvider
 import android.database.ContentObserver
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Proxy
+import java.security.MessageDigest
 
 /**
  * ContentResolver for a virtual package.
@@ -26,18 +33,23 @@ import android.net.Uri
 class VirtualContentResolver(
     context: Context,
     private val delegate: ContentResolver,
-    private val virtualAuthorities: Set<String>
+    private val virtualAuthorities: Set<String>,
+    packageName: String,
+    instanceId: String
 ) : VirtualContentResolverBase(context, delegate) {
+    private val overlay = ProviderOverlayResolver(
+        context,
+        delegate,
+        buildAndroidId(context, packageName, instanceId)
+    )
 
     init {
-        // ContentResolver is abstract at runtime (acquireProvider and friends
-        // are hidden API). Setting mWrapped makes every data operation delegate
-        // to the host resolver, so those abstract methods are never entered;
-        // only notifyChange needs a container-specific implementation.
+        // Route framework-final call()/query() methods through a resolver
+        // whose provider hook can supply virtual settings values.
         runCatching {
             val field = ContentResolver::class.java.getDeclaredField("mWrapped")
             field.isAccessible = true
-            field.set(this, delegate)
+            field.set(this, overlay)
         }.onFailure {
             android.util.Log.w("VirtualContentResolver", "mWrapped unavailable", it)
         }
@@ -45,6 +57,12 @@ class VirtualContentResolver(
 
     private fun isVirtual(uri: Uri): Boolean =
         uri.authority?.let { it in virtualAuthorities } == true
+
+    override fun acquireProvider(context: Context, name: String): IContentProvider? =
+        overlay.provider(context, name)
+
+    override fun acquireUnstableProvider(context: Context, name: String): IContentProvider? =
+        overlay.unstableProvider(context, name)
 
     override fun notifyChange(uri: Uri, observer: ContentObserver?) {
         if (isVirtual(uri)) {
@@ -88,4 +106,90 @@ class VirtualContentResolver(
         if (external.isEmpty()) return
         delegate.notifyChange(external, observer, flags)
     }
+
+    private class ProviderOverlayResolver(
+        context: Context,
+        delegate: ContentResolver,
+        private val androidId: String
+    ) : VirtualContentResolverBase(context, delegate) {
+        override fun acquireProvider(context: Context, name: String): IContentProvider? =
+            provider(context, name)
+
+        override fun acquireUnstableProvider(context: Context, name: String): IContentProvider? =
+            unstableProvider(context, name)
+
+        fun provider(context: Context, name: String): IContentProvider? =
+            wrap(super.acquireProvider(context, name), name)
+
+        fun unstableProvider(context: Context, name: String): IContentProvider? =
+            wrap(super.acquireUnstableProvider(context, name), name)
+
+        private fun wrap(provider: IContentProvider?, authority: String): IContentProvider? {
+            if (provider == null || authority != SETTINGS_AUTHORITY) return provider
+            return Proxy.newProxyInstance(
+                IContentProvider::class.java.classLoader,
+                arrayOf(IContentProvider::class.java)
+            ) { proxy, method, args ->
+                when (method.name) {
+                    "equals" -> proxy === args?.firstOrNull()
+                    "hashCode" -> System.identityHashCode(proxy)
+                    "toString" -> "ContainerSettingsProvider($provider)"
+                    "call" -> {
+                        val callMethod = args?.getOrNull(2) as? String
+                        val callArg = args?.getOrNull(3) as? String
+                        if (callMethod == "GET_secure" &&
+                            callArg == Settings.Secure.ANDROID_ID
+                        ) {
+                            Bundle().apply {
+                                putString("value", androidId)
+                            }
+                        } else {
+                            invokeDelegate(provider, method, args)
+                        }
+                    }
+                    else -> invokeDelegate(provider, method, args)
+                }
+            } as IContentProvider
+        }
+
+        private fun invokeDelegate(
+            provider: IContentProvider,
+            method: java.lang.reflect.Method,
+            args: Array<Any?>?
+        ): Any? = try {
+            method.invoke(provider, *(args ?: emptyArray()))
+        } catch (error: InvocationTargetException) {
+            throw error.targetException
+        }
+
+        private companion object {
+            const val SETTINGS_AUTHORITY = "settings"
+        }
+    }
+
+    private companion object {
+        fun buildAndroidId(
+            context: Context,
+            packageName: String,
+            instanceId: String
+        ): String {
+            val hostAndroidId = runCatching {
+                Settings.Secure.getString(
+                    context.contentResolver,
+                    Settings.Secure.ANDROID_ID
+                )
+            }.getOrNull().orEmpty()
+            val seed = listOf(
+                hostAndroidId,
+                Build.FINGERPRINT,
+                packageName,
+                instanceId
+            ).joinToString("|")
+            return MessageDigest.getInstance("SHA-256")
+                .digest(seed.toByteArray(Charsets.UTF_8))
+                .take(8)
+                .joinToString("") { "%02x".format(it) }
+        }
+    }
+
 }

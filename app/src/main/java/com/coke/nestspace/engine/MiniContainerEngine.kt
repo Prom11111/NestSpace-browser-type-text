@@ -135,6 +135,49 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         }
     }
 
+    override suspend fun createInstance(
+        spaceId: String,
+        packageName: String
+    ): EngineResult<VirtualInstance> = withContext(Dispatchers.IO) {
+        lock.withLock {
+            ensureLoadedLocked()
+            val app = apps[key(spaceId, packageName)]
+                ?: return@withLock EngineResult.Error(
+                    "APP_NOT_FOUND",
+                    AppLanguage.tr(
+                        "空间里没有 $packageName，请先导入 APK",
+                        "$packageName is not in the space; import its APK first"
+                    )
+                )
+            val now = System.currentTimeMillis()
+            val instance = StoredInstance(nextInstanceId(app), now, 0L)
+            val updated = app.copy(instances = app.instances + instance)
+            apps[key(updated)] = updated
+            ensureInstanceDirs(updated.packageName, instance.id)
+            val sourcePrivacyMarker = File(
+                dataDirFor(packageName, defaultInstance(app).id),
+                "files/privacy_confirmed"
+            )
+            if (sourcePrivacyMarker.isFile) {
+                File(
+                    dataDirFor(packageName, instance.id),
+                    "files/privacy_confirmed"
+                ).createNewFile()
+            }
+            runCatching { store.save(apps.values) }
+                .onFailure { Log.w(TAG, "save state failed", it) }
+            publish()
+            EngineResult.Ok(
+                VirtualInstance(
+                    id = instance.id,
+                    createdAt = instance.createdAt,
+                    lastLaunchedAt = instance.lastLaunchedAt,
+                    dataDir = dataDirFor(packageName, instance.id).absolutePath
+                )
+            )
+        }
+    }
+
     override suspend fun multiOpen(
         spaceId: String,
         packageName: String,
@@ -325,7 +368,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                 File(context.filesDir, "vspace/shortcuts"),
                 packageName
             )
-            ContainerPermissionStore.clear(context, packageName)
+            ContainerPermissionStore.clearPackage(context, packageName)
             app.instances.forEach { instance ->
                 ContainerContext.externalRootFor(context, packageName, instance.id)
                     ?.deleteRecursively()

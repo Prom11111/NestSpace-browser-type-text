@@ -19,14 +19,19 @@ import java.io.RandomAccessFile
 object ContainerPermissionStore {
 
     private const val TAG = "ContainerPermissionStore"
+    const val DEFAULT_INSTANCE_ID = "default"
 
     data class State(
         val granted: Set<String> = emptySet(),
         val denied: Set<String> = emptySet()
     )
 
-    fun load(context: Context, packageName: String): State {
-        val file = stateFile(context, packageName)
+    fun load(
+        context: Context,
+        packageName: String,
+        instanceId: String = DEFAULT_INSTANCE_ID
+    ): State {
+        val file = stateFile(context, packageName, instanceId)
         if (!file.isFile) return State()
         return runCatching {
             val json = JSONObject(file.readText())
@@ -40,13 +45,19 @@ object ContainerPermissionStore {
         }
     }
 
-    fun save(context: Context, packageName: String, state: State) {
+    fun save(
+        context: Context,
+        packageName: String,
+        instanceId: String = DEFAULT_INSTANCE_ID,
+        state: State
+    ) {
         runCatching {
-            val file = stateFile(context, packageName)
+            val file = stateFile(context, packageName, instanceId)
             file.parentFile?.mkdirs()
             val json = JSONObject()
                 .put("version", 1)
                 .put("package", packageName)
+                .put("instance", instanceId)
                 .put("granted", JSONArray(state.granted.toList()))
                 .put("denied", JSONArray(state.denied.toList()))
             // Write-then-rename so a reader in another process never sees a
@@ -61,8 +72,13 @@ object ContainerPermissionStore {
     }
 
     @Synchronized
-    fun grant(context: Context, packageName: String, permission: String): State =
-        mutate(context, packageName) { state ->
+    fun grant(
+        context: Context,
+        packageName: String,
+        permission: String,
+        instanceId: String = DEFAULT_INSTANCE_ID
+    ): State =
+        mutate(context, packageName, instanceId) { state ->
             State(
                 granted = state.granted + permission,
                 denied = state.denied - permission
@@ -70,8 +86,13 @@ object ContainerPermissionStore {
         }
 
     @Synchronized
-    fun revoke(context: Context, packageName: String, permission: String): State =
-        mutate(context, packageName) { state ->
+    fun revoke(
+        context: Context,
+        packageName: String,
+        permission: String,
+        instanceId: String = DEFAULT_INSTANCE_ID
+    ): State =
+        mutate(context, packageName, instanceId) { state ->
             State(
                 granted = state.granted - permission,
                 denied = state.denied + permission
@@ -83,9 +104,10 @@ object ContainerPermissionStore {
     fun update(
         context: Context,
         packageName: String,
+        instanceId: String = DEFAULT_INSTANCE_ID,
         granted: Set<String>,
         denied: Set<String>
-    ): State = mutate(context, packageName) { state ->
+    ): State = mutate(context, packageName, instanceId) { state ->
         State(
             granted = state.granted + granted - denied,
             denied = state.denied + denied - granted
@@ -101,37 +123,65 @@ object ContainerPermissionStore {
     private fun mutate(
         context: Context,
         packageName: String,
+        instanceId: String,
         transform: (State) -> State
     ): State {
         val folder = File(context.filesDir, "vspace/perms").apply { mkdirs() }
-        val lockFile = File(folder, "${sanitize(packageName)}.lock")
+        val lockFile = File(folder, "${scopeName(packageName, instanceId)}.lock")
         return runCatching {
             RandomAccessFile(lockFile, "rw").use { raf ->
                 val lock = raf.channel.lock()
                 try {
-                    val next = transform(load(context, packageName))
-                    save(context, packageName, next)
+                    val next = transform(load(context, packageName, instanceId))
+                    save(context, packageName, instanceId, next)
                     next
                 } finally {
                     lock.release()
                 }
             }
         }.onFailure {
-            Log.w(TAG, "update permission state failed: $packageName", it)
+            Log.w(TAG, "update permission state failed: $packageName@$instanceId", it)
         }.getOrElse {
-            load(context, packageName)
+            load(context, packageName, instanceId)
         }
     }
 
-    fun clear(context: Context, packageName: String) {
-        runCatching { stateFile(context, packageName).delete() }
+    fun clear(
+        context: Context,
+        packageName: String,
+        instanceId: String = DEFAULT_INSTANCE_ID
+    ) {
+        runCatching { stateFile(context, packageName, instanceId).delete() }
     }
 
-    private fun stateFile(context: Context, packageName: String): File =
-        File(
-            File(context.filesDir, "vspace/perms"),
-            "${sanitize(packageName)}.json"
-        )
+    /** Removes permission state for every instance of a package. */
+    fun clearPackage(context: Context, packageName: String) {
+        val folder = File(context.filesDir, "vspace/perms")
+        val prefix = "${sanitize(packageName)}@"
+        folder.listFiles()?.forEach { file ->
+            if (file.name == "${sanitize(packageName)}.json" ||
+                file.name.startsWith(prefix)
+            ) {
+                runCatching { file.delete() }
+            }
+        }
+    }
+
+    private fun stateFile(
+        context: Context,
+        packageName: String,
+        instanceId: String
+    ): File {
+        val folder = File(context.filesDir, "vspace/perms")
+        if (instanceId == DEFAULT_INSTANCE_ID) {
+            val legacy = File(folder, "${sanitize(packageName)}.json")
+            if (legacy.isFile) return legacy
+        }
+        return File(folder, "${scopeName(packageName, instanceId)}.json")
+    }
+
+    private fun scopeName(packageName: String, instanceId: String): String =
+        "${sanitize(packageName)}@${sanitize(instanceId)}"
 
     private fun JSONArray?.toStringSet(): Set<String> {
         if (this == null) return emptySet()

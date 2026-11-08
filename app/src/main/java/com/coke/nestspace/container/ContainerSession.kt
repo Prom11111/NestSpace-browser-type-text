@@ -349,12 +349,14 @@ class ContainerSession private constructor(
         // while the framework creates host components.
         providerManager.install()
         application.onCreate()
+        TargetServiceRegistryHook.install(loader, context, initializeDocker = true)
         broadcastManager.startHostBridge()
         if (compatAppLike != null) {
             runCatching {
                 compatAppLike.javaClass.getMethod("onCreate").invoke(compatAppLike)
             }.onFailure { Log.w(TAG, "embedded ApplicationLike onCreate failed", it) }
         }
+        TargetStartupHook.ensureRpc(loader, application)
         // Target Application.onCreate often registers its own uncaught
         // exception handler (crash reporting) that terminates the host process.
         // Re-install the guard so target-thread failures stay contained.
@@ -1016,13 +1018,23 @@ class ContainerSession private constructor(
                 "vspace/native-cache"
             )
             val legacyNativeLibs = File(dataRoot, "native-libs")
+            val installedNativeLibs = spec.installedNativeLibraryDir
+                ?.let(::File)
+                ?.takeIf { dir ->
+                    dir.isDirectory &&
+                        dir.listFiles()?.any {
+                            it.isFile && it.name.endsWith(".so") && it.canRead()
+                        } == true
+                }
             val sharedNativeLibs = NativeLibs.extractIfNeeded(
                 apkPaths,
                 nativeAbis,
                 nativeCacheRoot,
                 emptySet()
             )
-            val nativeLibs = sharedNativeLibs ?: legacyNativeLibs.takeIf { dir ->
+            val nativeLibs = installedNativeLibs
+                ?: sharedNativeLibs
+                ?: legacyNativeLibs.takeIf { dir ->
                 dir.listFiles()?.any { it.isFile && it.name.endsWith(".so") } == true
             }
             if (sharedNativeLibs != null) {
@@ -1130,6 +1142,7 @@ class ContainerSession private constructor(
             val virtualPackages = VirtualPackageRegistry(
                 context = host.applicationContext,
                 currentPackage = spec.packageName,
+                currentInstanceId = spec.instanceId,
                 spaceId = spec.spaceId,
                 contentResolver = {
                     context.targetContentResolver ?: host.applicationContext.contentResolver
@@ -1165,6 +1178,24 @@ class ContainerSession private constructor(
             // when the object is any other PackageManager implementation.
             val packageManager = host.applicationContext.packageManager
             context.targetPackageManager = packageManager
+            // Application.attachBaseContext may read Settings.Secure before
+            // providers are installed. Publish the virtual resolver first so
+            // device SDKs see this instance's Android ID on their first read.
+            context.targetContentResolver = VirtualContentResolver(
+                host.applicationContext,
+                host.applicationContext.contentResolver,
+                spec.providers
+                    .flatMap { provider ->
+                        provider.authority
+                            ?.split(';')
+                            .orEmpty()
+                            .filter(String::isNotBlank)
+                    }
+                    .toSet(),
+                spec.packageName,
+                spec.instanceId
+            )
+            VirtualSettingsCache.seedAndroidId(context)
 
             val activityThread = Class.forName("android.app.ActivityThread")
                 .getMethod("currentActivityThread")
@@ -1181,6 +1212,9 @@ class ContainerSession private constructor(
             // virtual identity first, otherwise those checks see the host
             // package and abort with NameNotFoundException.
             publishVirtualIdentity(activityThread, context)
+            TargetServiceRegistryHook.install(loader, context, initializeDocker = false)
+            TargetProcessIdentityHook.install(loader, spec.targetProcessName)
+            TargetWebViewIdentityHook.install(context)
 
             val application = ProcessNameCompat.withProcessName(spec.targetProcessName) {
                 withContainerClassLoader(loader) {

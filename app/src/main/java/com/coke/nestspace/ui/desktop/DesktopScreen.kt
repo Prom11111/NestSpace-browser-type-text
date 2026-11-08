@@ -104,7 +104,7 @@ internal fun DesktopScreen(
     virtualApps: List<VirtualApp>,
     systemApps: List<com.coke.nestspace.data.AppInfo>,
     wallpaper: ImageBitmap?,
-    onLaunchVirtual: (String) -> Unit,
+    onLaunchVirtual: (String, String?) -> Unit,
     onLaunchSystem: (String) -> Unit,
     onOpenBrowser: () -> Unit,
     onOpenAgent: () -> Unit,
@@ -153,7 +153,7 @@ internal fun DesktopScreen(
 
     fun launch(entry: LauncherEntry) {
         when (entry.kind) {
-            LauncherKind.VIRTUAL -> onLaunchVirtual(entry.packageName)
+            LauncherKind.VIRTUAL -> onLaunchVirtual(entry.packageName, entry.instanceId)
             LauncherKind.SYSTEM -> onLaunchSystem(entry.packageName)
             LauncherKind.BROWSER -> onOpenBrowser()
             LauncherKind.AGENT -> onOpenAgent()

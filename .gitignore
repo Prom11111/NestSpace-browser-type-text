@@ -32,3 +32,4 @@ desktop_*.png
 # GitHub Pages build output
 /docs-site/site*/
 /docs-site/_site/
+/.codex-*

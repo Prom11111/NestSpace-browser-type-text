@@ -47,6 +47,7 @@ import java.io.File
 class VirtualPackageRegistry(
     context: Context,
     private val currentPackage: String,
+    private val currentInstanceId: String,
     private val spaceId: String,
     private val contentResolver: () -> ContentResolver?
 ) {
@@ -59,7 +60,8 @@ class VirtualPackageRegistry(
         val launcherActivity: String,
         val versionName: String?,
         val versionCode: Long,
-        val signatureSha256: String?
+        val signatureSha256: String?,
+        val instanceId: String
     )
 
     private class Entry(
@@ -124,6 +126,14 @@ class VirtualPackageRegistry(
         } else {
             null
         }
+    }
+
+    /** Instance whose package metadata is exposed for a virtual package. */
+    @Synchronized
+    fun instanceIdFor(packageName: String?): String? {
+        if (packageName == null) return null
+        if (packageName == currentPackage) return currentInstanceId
+        return record(packageName)?.instanceId
     }
 
     @Synchronized
@@ -350,7 +360,7 @@ class VirtualPackageRegistry(
             uid = ContainerIdentity.virtualUidFor(record.packageName)
             sourceDir = record.baseApkPath
             publicSourceDir = record.baseApkPath
-            dataDir = dataDirFor(record.packageName)
+            dataDir = dataDirFor(record.packageName, record.instanceId)
             nonLocalizedLabel = record.label
             enabled = true
         }
@@ -366,9 +376,9 @@ class VirtualPackageRegistry(
             applicationInfo = toMinimalApplicationInfo(record)
         }
 
-    private fun dataDirFor(packageName: String): String =
+    private fun dataDirFor(packageName: String, instanceId: String): String =
         File(File(hostContext.filesDir, "vspace/data"), sanitize(packageName))
-            .resolve("shared")
+            .resolve(sanitize(instanceId))
             .absolutePath
 
     /**
@@ -413,7 +423,12 @@ class VirtualPackageRegistry(
                             launcherActivity = app.launcherActivity,
                             versionName = app.versionName,
                             versionCode = app.versionCode,
-                            signatureSha256 = app.signatureSha256
+                            signatureSha256 = app.signatureSha256,
+                            instanceId = app.instances
+                                .firstOrNull { it.id == DEFAULT_INSTANCE_ID }
+                                ?.id
+                                ?: app.instances.minByOrNull { it.createdAt }?.id
+                                ?: DEFAULT_INSTANCE_ID
                         )
                     }
                 }
@@ -433,7 +448,7 @@ class VirtualPackageRegistry(
         appInfo.uid = uid
         appInfo.sourceDir = record.baseApkPath
         appInfo.publicSourceDir = record.baseApkPath
-        appInfo.dataDir = dataDirFor(record.packageName)
+        appInfo.dataDir = dataDirFor(record.packageName, record.instanceId)
 
         val resources = createResources(
             listOf(record.baseApkPath) + record.splitApkPaths
@@ -479,6 +494,7 @@ class VirtualPackageRegistry(
 
     private companion object {
         const val TAG = "VirtualPackageRegistry"
+        const val DEFAULT_INSTANCE_ID = "default"
 
         fun sanitize(value: String): String =
             value.replace(Regex("[^A-Za-z0-9._-]"), "_")

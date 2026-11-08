@@ -5,6 +5,7 @@ import com.coke.nestspace.data.AppInfo
 import com.coke.nestspace.data.AppShortcut
 import com.coke.nestspace.data.LaunchInfo
 import com.coke.nestspace.data.VirtualApp
+import com.coke.nestspace.data.VirtualInstance
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -33,6 +34,12 @@ interface ContainerEngine {
         instanceId: String? = null,
         headless: Boolean = false
     ): EngineResult<LaunchInfo>
+
+    /** Creates an independent instance without opening it. */
+    suspend fun createInstance(
+        spaceId: String,
+        packageName: String
+    ): EngineResult<VirtualInstance>
 
     suspend fun multiOpen(
         spaceId: String,
@@ -90,6 +97,11 @@ class PlaceholderContainerEngine : ContainerEngine {
         instanceId: String?,
         headless: Boolean
     ): EngineResult<LaunchInfo> = notReady
+
+    override suspend fun createInstance(
+        spaceId: String,
+        packageName: String
+    ): EngineResult<VirtualInstance> = notReady
 
     override suspend fun multiOpen(
         spaceId: String,

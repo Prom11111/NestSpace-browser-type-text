@@ -97,7 +97,9 @@ class ContainerProviderManager(
             session.context.targetContentResolver = VirtualContentResolver(
                 session.hostContext,
                 session.hostContext.contentResolver,
-                authorities.toSet()
+                authorities.toSet(),
+                session.spec.packageName,
+                session.spec.instanceId
             )
         } catch (t: Throwable) {
             Log.w(TAG, "dispatcher provider failed", t)

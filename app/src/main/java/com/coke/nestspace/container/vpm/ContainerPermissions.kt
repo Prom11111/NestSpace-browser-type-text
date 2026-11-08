@@ -31,6 +31,7 @@ import com.coke.nestspace.container.identity.ContainerIdentity
 class ContainerPermissions(
     hostContext: Context,
     private val targetPackage: String,
+    private val targetInstanceId: String,
     private val hostPackage: String,
     private val targetRequestedPermissions: Array<String>?
 ) {
@@ -312,13 +313,15 @@ class ContainerPermissions(
      */
     private fun state(packageName: String): ContainerPermissionStore.State =
         synchronized(states) {
+            val instanceId = instanceIdFor(packageName)
+            val cacheKey = "$packageName@$instanceId"
             val now = SystemClock.elapsedRealtime()
-            val cached = states[packageName]
+            val cached = states[cacheKey]
             if (cached != null && now - cached.readAt < STATE_TTL_MS) {
                 return cached.state
             }
-            val loaded = ContainerPermissionStore.load(hostContext, packageName)
-            states[packageName] = CachedState(now, loaded)
+            val loaded = ContainerPermissionStore.load(hostContext, packageName, instanceId)
+            states[cacheKey] = CachedState(now, loaded)
             loaded
         }
 
@@ -328,15 +331,25 @@ class ContainerPermissions(
         denied: Set<String>
     ) {
         synchronized(states) {
+            val instanceId = instanceIdFor(packageName)
             val state = ContainerPermissionStore.update(
                 hostContext,
                 packageName,
+                instanceId,
                 granted,
                 denied
             )
-            states[packageName] = CachedState(SystemClock.elapsedRealtime(), state)
+            states["$packageName@$instanceId"] =
+                CachedState(SystemClock.elapsedRealtime(), state)
         }
     }
+
+    private fun instanceIdFor(packageName: String): String =
+        if (packageName == targetPackage) {
+            targetInstanceId
+        } else {
+            registry?.instanceIdFor(packageName) ?: ContainerPermissionStore.DEFAULT_INSTANCE_ID
+        }
 
     private companion object {
         const val TAG = "ContainerPermissions"

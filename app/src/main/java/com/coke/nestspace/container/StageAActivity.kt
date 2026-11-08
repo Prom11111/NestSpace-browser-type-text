@@ -125,6 +125,7 @@ open class StageAActivity : Activity() {
     private var mirrorPresentation: Presentation? = null
     private var mirrorRoot: FrameLayout? = null
     private var targetStartScheduled = false
+    private var targetRequestParameterHook: TargetRequestParameterHook? = null
     private var predictiveBackCallback: Any? = null
     private var containerEntry = false
     private var backCallbackRunning = false
@@ -1593,6 +1594,8 @@ open class StageAActivity : Activity() {
 
     override fun onDestroy() {
         Log.d(TAG, "host onDestroy target=${current?.javaClass?.name}")
+        targetRequestParameterHook?.close()
+        targetRequestParameterHook = null
         FloatingDotOverlay.setOverlayHidden(this, launchOverlayReason(), false)
         SystemServiceIdentity.clearRootFinishInterceptor()
         SystemServiceIdentity.setAiInfoCaptureActive(false)
@@ -1780,6 +1783,8 @@ open class StageAActivity : Activity() {
      * from onCreate before their queued startup services are ready. Keep the
      * host placeholder on screen for one short, bounded settle window so those
      * main-thread initializers can run before the launcher Activity starts.
+     * Target request-parameter hooks are installed before the Activity starts
+     * and handle asynchronous first-request data on the calling thread.
      */
     private fun openFirstActivity(
         session: ContainerSession,
@@ -1797,6 +1802,11 @@ open class StageAActivity : Activity() {
                 openActivity(session, className, targetIntent, savedState)
             }
         }
+        targetRequestParameterHook?.close()
+        targetRequestParameterHook = TargetRequestParameterHook.install(
+            session.loader,
+            session.context
+        )
         if (root?.postDelayed(open, FIRST_ACTIVITY_SETTLE_MS) == true) {
             Log.d(TAG, "waiting ${FIRST_ACTIVITY_SETTLE_MS}ms for application startup")
         } else {

@@ -5,6 +5,7 @@ import com.coke.nestspace.container.loader.ApkInspector
 
 
 import android.content.Context
+import android.content.pm.PackageManager
 import com.coke.nestspace.engine.SpaceStore
 import java.io.File
 
@@ -33,7 +34,24 @@ internal object ContainerSpecFactory {
             error(AppLanguage.tr("实例不存在：$instanceId", "Instance does not exist: $instanceId"))
         }
 
-        val descriptor = ApkInspector.inspect(context, app.baseApkPath, requireLauncher = true)
+        val importedDescriptor = ApkInspector.inspect(
+            context,
+            app.baseApkPath,
+            requireLauncher = true
+        )
+        val installed = installedPackage(context, packageName, importedDescriptor)
+        val descriptor = installed?.descriptor ?: importedDescriptor
+        val baseApkPath = installed?.baseApkPath ?: app.baseApkPath
+        val splitApkPaths = installed?.splitApkPaths ?: app.splitApkPaths
+        val packageFirstInstallTime =
+            installed?.firstInstallTime?.takeIf { it > 0L }
+                ?: app.installedAt.takeIf { it > 0L }
+                ?: File(baseApkPath).lastModified().takeIf { it > 0L }
+                ?: System.currentTimeMillis()
+        val packageLastUpdateTime =
+            installed?.lastUpdateTime?.takeIf { it > 0L }
+                ?: app.updatedAt.takeIf { it > 0L }
+                ?: packageFirstInstallTime
         if (descriptor.packageName != packageName) {
             error(
                 AppLanguage.tr(
@@ -64,8 +82,8 @@ internal object ContainerSpecFactory {
             instanceId = instanceId,
             targetProcessName = ContainerProcessRouter.normalize(packageName, targetProcessName),
             label = app.label,
-            baseApkPath = app.baseApkPath,
-            splitApkPaths = app.splitApkPaths,
+            baseApkPath = baseApkPath,
+            splitApkPaths = splitApkPaths,
             launcherActivity = activity.name ?: app.launcherActivity,
             activityInfo = activity,
             activities = descriptor.activities,
@@ -75,13 +93,76 @@ internal object ContainerSpecFactory {
             activityFilters = descriptor.activityFilters,
             serviceFilters = descriptor.serviceFilters,
             receiverFilters = descriptor.receiverFilters,
-            packageInfo = descriptor.packageInfo,
+            packageInfo = descriptor.packageInfo.apply {
+                firstInstallTime = packageFirstInstallTime
+                lastUpdateTime = packageLastUpdateTime
+            },
             applicationInfo = descriptor.applicationInfo,
             dataDir = dataDir.absolutePath,
             activityTheme = activity.theme,
-            applicationTheme = descriptor.applicationInfo.theme
+            applicationTheme = descriptor.applicationInfo.theme,
+            installedNativeLibraryDir = installed?.nativeLibraryDir
         )
     }
+
+    private data class InstalledPackage(
+        val descriptor: com.coke.nestspace.container.loader.ApkDescriptor,
+        val baseApkPath: String,
+        val splitApkPaths: List<String>,
+        val nativeLibraryDir: String?,
+        val firstInstallTime: Long,
+        val lastUpdateTime: Long
+    )
+
+    /**
+     * Prefer the platform-installed copy only when it is byte-identical in
+     * version and signer with the APK imported into this space. This keeps
+     * native SDK path checks on the normal Android package layout without
+     * silently switching to a different app build.
+     */
+    private fun installedPackage(
+        context: Context,
+        packageName: String,
+        imported: com.coke.nestspace.container.loader.ApkDescriptor
+    ): InstalledPackage? = runCatching {
+        val info = context.packageManager.getPackageInfo(
+            packageName,
+            PackageManager.GET_ACTIVITIES
+        )
+        val appInfo = info.applicationInfo ?: return@runCatching null
+        val baseApkPath = appInfo.sourceDir ?: return@runCatching null
+        if (!File(baseApkPath).canRead()) return@runCatching null
+
+        val descriptor = ApkInspector.inspect(context, baseApkPath, requireLauncher = true)
+        if (descriptor.packageName != packageName ||
+            descriptor.versionCode != imported.versionCode ||
+            descriptor.signatureSha256 == null ||
+            descriptor.signatureSha256 != imported.signatureSha256
+        ) {
+            return@runCatching null
+        }
+
+        val splitApkPaths = appInfo.splitSourceDirs
+            ?.filter { path -> path.isNotBlank() && File(path).isFile }
+            .orEmpty()
+        val nativeLibraryDir = appInfo.nativeLibraryDir
+            ?.takeIf { path -> path.isNotBlank() && File(path).isDirectory }
+        InstalledPackage(
+            descriptor = descriptor,
+            baseApkPath = baseApkPath,
+            splitApkPaths = splitApkPaths,
+            nativeLibraryDir = nativeLibraryDir,
+            firstInstallTime = info.firstInstallTime,
+            lastUpdateTime = info.lastUpdateTime
+        )
+            .also {
+                android.util.Log.d(
+                    "ContainerSpecFactory",
+                    "using installed package path=$baseApkPath " +
+                        "nativeLibs=${it.nativeLibraryDir}"
+                )
+            }
+    }.getOrNull()
 
     private fun sanitize(value: String): String =
         value.replace(Regex("[^A-Za-z0-9._-]"), "_")

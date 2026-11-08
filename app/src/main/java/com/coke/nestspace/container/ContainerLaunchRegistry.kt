@@ -38,7 +38,8 @@ data class ContainerLaunchSpec(
     val applicationInfo: ApplicationInfo,
     val dataDir: String,
     val activityTheme: Int,
-    val applicationTheme: Int
+    val applicationTheme: Int,
+    val installedNativeLibraryDir: String? = null
 )
 
 object ContainerLaunchRegistry {

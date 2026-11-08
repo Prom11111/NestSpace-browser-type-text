@@ -350,7 +350,7 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
 
     fun multiOpenVirtual(packageName: String) {
         viewModelScope.launch {
-            when (val result = engine.multiOpen(SPACE_ID, packageName)) {
+            when (val result = engine.createInstance(SPACE_ID, packageName)) {
                 is EngineResult.Error -> fail(
                         AppLanguage.tr(
                             "多开失败：${result.code}: ${result.message}",
@@ -359,8 +359,8 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 is EngineResult.Ok -> {
                     notice.value = AppLanguage.tr(
-                        "已创建并启动新实例：${result.value.instanceId}",
-                        "Created and launched a new instance: ${result.value.instanceId}"
+                        "已创建新实例，可从桌面图标进入：${result.value.id}",
+                        "Created an instance. Open it from its desktop icon: ${result.value.id}"
                     )
                 }
             }
@@ -539,7 +539,9 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun updateSpaces(list: List<VirtualApp>) {
-        val count = list.count { it.spaceId == SPACE_ID }
+        val count = list
+            .filter { it.spaceId == SPACE_ID }
+            .sumOf { it.instances.size }
         spaces.value = spaces.value.map {
             if (it.id == SPACE_ID) {
                 it.copy(

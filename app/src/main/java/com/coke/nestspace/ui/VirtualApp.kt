@@ -562,7 +562,9 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                     virtualApps = virtualApps.filter { it.spaceId == "virtual-1" },
                     systemApps = apps.filter { it.packageName in selectedSystemApps },
                     wallpaper = wallpaper,
-                    onLaunchVirtual = { viewModel.launchVirtual(it) },
+                    onLaunchVirtual = { packageName, instanceId ->
+                        viewModel.launchVirtual(packageName, instanceId)
+                    },
                     onLaunchSystem = viewModel::launchApp,
                     onOpenBrowser = {
                         context.startActivity(Intent(context, BrowserActivity::class.java))
