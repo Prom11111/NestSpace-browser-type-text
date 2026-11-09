@@ -1332,6 +1332,9 @@ Set<String> webSocketHosts = manifest.getWebSocketHosts();
 外部 `.nestplugin` 已可从文件安装。在线市场、自动更新、回滚、详情截图、评分和最近日志
 尚未实现。
 
+MCP 客户端可以使用 `plugin_list` 和 `plugin_manage` 完成相同的核心操作，包括从
+HTTP/content URI 安装、卸载外部插件、重命名、读写设置、启停内置插件以及调用插件命令。
+
 ### 10.4 贡献文件
 
 Manifest `contributes` 指向的文件已有解析器：

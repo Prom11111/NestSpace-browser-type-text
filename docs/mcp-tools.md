@@ -9,6 +9,23 @@ NestSpace 内置 Streamable HTTP MCP Server，向本地 AI 助手和远程 MCP �
 可见性取决于插件是否安装、是否声明 `agent_tools`、是否启用以及当前进程是否完成注册。
 插件工具与内置工具共用确认、超时和结果大小限制。
 
+## 插件管理
+
+除插件自己贡献的动态工具和命令外，MCP 还提供统一的插件管理入口：
+
+| 工具 | 说明 |
+| --- | --- |
+| `plugin_list` | 列出源码插件、外部安装包和内置插件，包含版本、来源、能力、页面和设置状态 |
+| `plugin_manage` | 统一管理插件：`install`、`uninstall`、`rename`、`settings_get`、`settings_set`、`settings_remove`、`set_enabled`、`commands`、`invoke_command` |
+
+`plugin_manage install` 的 `source` 支持 `https://`、`http://`、`content://`、`file://`
+和宿主可读的本地路径。安装包仍然执行现有路径、大小、Manifest、API 版本和 DEX 校验。
+安装和卸载使用“安装/卸载软件”确认项；修改设置和执行插件命令使用“插件工具”确认项。
+
+内置插件可以启用或停用。源码插件由 Debug 构建提供，不能通过 MCP 删除；外部插件
+可以卸载并清理私有数据、设置和密钥。插件 Provider 暴露的 Agent 工具和命令会继续以
+动态 MCP 工具出现，因此远程客户端可以直接调用，不需要再包一层 HTTP 转发。
+
 ## 空间与应用
 
 | 工具 | 说明 |

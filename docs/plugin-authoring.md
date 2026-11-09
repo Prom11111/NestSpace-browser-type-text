@@ -43,6 +43,10 @@ Java 接口为准。
 Capability、允许访问的网络 Host，以及图标、页面和贡献文件的位置。插件即使实现了某个
 接口，如果没有声明对应能力，运行到相关 Host API 时仍会被拒绝。
 
+插件注册后，`AgentToolProvider` 和 `PluginCommandProvider` 贡献的工具/命令会同时
+进入本地 Agent 与 MCP 的 `tools/list`。远程 MCP 还可以通过通用的 `plugin_list` 和
+`plugin_manage` 工具查看、安装、卸载、重命名、配置和执行插件命令。
+
 插件通常负责四类工作。
 
 第一类是扩展 Agent。插件可以提供提示词、在模型请求前做判断、增加工具、拦截工具调用，

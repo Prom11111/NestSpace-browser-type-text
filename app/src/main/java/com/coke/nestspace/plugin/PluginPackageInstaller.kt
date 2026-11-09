@@ -7,6 +7,7 @@ import java.io.File
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipFile
@@ -84,17 +85,22 @@ internal class PluginPackageInstaller private constructor(
 
     @Synchronized
     fun installFromUri(uri: Uri): PluginManifest {
+        val input = context.contentResolver.openInputStream(uri)
+            ?: error("Could not open plugin package")
+        return input.use(::installFromInput)
+    }
+
+    @Synchronized
+    fun installFromInput(input: InputStream): PluginManifest {
         val temporary = File.createTempFile(
             "nestspace-plugin-",
             ".nestplugin",
             context.cacheDir
         )
         return try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(temporary).use { output ->
-                    copyLimited(input, output, MAX_PACKAGE_BYTES)
-                }
-            } ?: error("Could not open plugin package")
+            FileOutputStream(temporary).use { output ->
+                copyLimited(input, output, MAX_PACKAGE_BYTES)
+            }
             installPackageFile(temporary)
         } finally {
             temporary.delete()

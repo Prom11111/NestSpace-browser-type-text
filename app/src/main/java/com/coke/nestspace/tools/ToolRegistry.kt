@@ -187,6 +187,7 @@ class ToolRegistry(
             replayToolSpecs() +
             memoryToolSpecs() +
             sessionToolSpecs() +
+            pluginToolSpecs() +
             BrowserTools.create(context)
 
 
