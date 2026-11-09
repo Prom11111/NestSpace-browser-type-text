@@ -1,5 +1,6 @@
 package com.coke.nestspace.ui.agent
 
+import android.widget.TextView
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.container.identity.HostIdentity
 import androidx.compose.animation.animateContentSize
@@ -36,12 +37,15 @@ import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,15 +56,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
+import com.coke.nestspace.plugin.AgentPluginSupport
+import com.coke.nestspace.plugin.AndroidPluginCommands
+import com.coke.nestspace.plugin.PluginUiBlock
+import com.coke.nestspace.plugin.PluginUiDocument
+import com.coke.nestspace.plugin.PluginUiDocumentParser
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun ToolActivityCard(text: String) {
     val tool = remember(text) { parseToolActivity(text) }
     val presentation = remember(tool) { presentTool(tool) }
     var expanded by remember(text) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var actionStatus by remember(text) { mutableStateOf("") }
     val accent = when {
         !presentation.ok -> MaterialTheme.colorScheme.error
         presentation.warning -> Color(0xFFFF9F0A)
@@ -149,16 +162,67 @@ internal fun ToolActivityCard(text: String) {
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.outline
                 )
-                if (presentation.detail.isNotBlank()) {
+                if (presentation.viewKey.isNotBlank()) {
                     Spacer(Modifier.height(5.dp))
-                    SelectionContainer {
-                        Text(
-                            presentation.detail,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            lineHeight = 18.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    AndroidView(
+                        factory = { viewContext ->
+                            AgentPluginSupport.createToolView(
+                                presentation.viewKey,
+                                viewContext
+                            ) ?: TextView(viewContext).apply {
+                                this.text = presentation.detail
+                                setTextIsSelectable(true)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else if (presentation.detail.isNotBlank()) {
+                    Spacer(Modifier.height(5.dp))
+                    val uiDocument = remember(presentation) {
+                        if (presentation.rendererId == "nestspace.ui.v1") {
+                            runCatching {
+                                PluginUiDocumentParser.parse(
+                                    presentation.detail
+                                )
+                            }.getOrNull()
+                        } else {
+                            null
+                        }
+                    }
+                    if (uiDocument != null) {
+                        PluginDocumentView(uiDocument) { action ->
+                            scope.launch {
+                                actionStatus = runCatching {
+                                    AndroidPluginCommands()
+                                        .invokeAsync(action, "{}")
+                                        .get()
+                                        .message
+                                }.getOrElse {
+                                    AppLanguage.tr(
+                                        "命令执行失败",
+                                        "Command failed"
+                                    )
+                                }
+                            }
+                        }
+                        if (actionStatus.isNotBlank()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                actionStatus,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        SelectionContainer {
+                            Text(
+                                presentation.detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 18.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -166,7 +230,21 @@ internal fun ToolActivityCard(text: String) {
     }
 }
 
-private data class ToolActivity(val name: String, val status: String, val body: String)
+private data class PluginToolDisplay(
+    val title: String,
+    val summary: String,
+    val detail: String,
+    val rendererId: String,
+    val viewKey: String,
+    val statusLabel: String
+)
+
+private data class ToolActivity(
+    val name: String,
+    val status: String,
+    val body: String,
+    val pluginDisplay: PluginToolDisplay?
+)
 
 private data class ToolPresentation(
     val toolName: String,
@@ -176,7 +254,9 @@ private data class ToolPresentation(
     val icon: ImageVector,
     val statusLabel: String,
     val ok: Boolean,
-    val warning: Boolean = false
+    val warning: Boolean = false,
+    val rendererId: String = "",
+    val viewKey: String = ""
 )
 
 private fun parseToolActivity(text: String): ToolActivity {
@@ -184,14 +264,38 @@ private fun parseToolActivity(text: String): ToolActivity {
     val separator = firstLine.indexOf(" -> ")
     val name = if (separator >= 0) firstLine.substring(0, separator) else firstLine
     val status = if (separator >= 0) firstLine.substring(separator + 4).trim() else "ok"
-    val body = text.substringAfter('\n', "").trim()
-    return ToolActivity(name.trim(), status, body)
+    val rawBody = text.substringAfter('\n', "").trim()
+    val firstBodyLine = rawBody.lineSequence().firstOrNull().orEmpty()
+    val marker = "${AgentPluginSupport.TOOL_DISPLAY_MARKER} "
+    val pluginDisplay = if (firstBodyLine.startsWith(marker)) {
+        val json = runCatching {
+            JSONObject(firstBodyLine.removePrefix(marker))
+        }.getOrNull()
+        json?.let {
+            PluginToolDisplay(
+                title = it.optString("title"),
+                summary = it.optString("summary"),
+                detail = it.optString("detail"),
+                rendererId = it.optString("renderer"),
+                viewKey = it.optString("view_key"),
+                statusLabel = it.optString("status")
+            )
+        }
+    } else {
+        null
+    }
+    val body = if (pluginDisplay == null) {
+        rawBody
+    } else {
+        rawBody.substringAfter('\n', "").trim()
+    }
+    return ToolActivity(name.trim(), status, body, pluginDisplay)
 }
 
 private fun presentTool(tool: ToolActivity): ToolPresentation {
     val ok = tool.status == "ok"
     val warning = tool.status == "TIMEOUT"
-    val statusLabel = when {
+    val defaultStatusLabel = when {
         ok -> AppLanguage.tr("完成", "Done")
         warning -> AppLanguage.tr("超时", "Timed out")
         tool.status == "USER_DENIED" -> AppLanguage.tr("已拒绝", "Denied")
@@ -200,15 +304,22 @@ private fun presentTool(tool: ToolActivity): ToolPresentation {
         else -> AppLanguage.tr("失败", "Failed")
     }
     val json = parseJsonObject(tool.body)
-    val title = toolTitle(tool.name)
-    val summary = toolSummary(tool, json)
+    val statusLabel = tool.pluginDisplay?.statusLabel
+        ?.takeIf { it.isNotBlank() }
+        ?: defaultStatusLabel
+    val title = tool.pluginDisplay?.title
+        ?.takeIf { it.isNotBlank() }
+        ?: toolTitle(tool.name)
+    val summary = tool.pluginDisplay?.summary ?: toolSummary(tool, json)
     val icon = toolIcon(tool.name)
-    val detail = toolDetail(tool, json)
+    val detail = tool.pluginDisplay?.detail ?: toolDetail(tool, json)
     return ToolPresentation(
         toolName = tool.name,
         title = title,
         summary = summary,
         detail = detail,
+        rendererId = tool.pluginDisplay?.rendererId.orEmpty(),
+        viewKey = tool.pluginDisplay?.viewKey.orEmpty(),
         icon = icon,
         statusLabel = statusLabel,
         ok = ok,
@@ -459,6 +570,77 @@ private fun prettyBody(text: String): String {
             else -> trimmed
         }
     }.getOrDefault(trimmed).take(6_000)
+}
+
+@Composable
+private fun PluginDocumentView(
+    document: PluginUiDocument,
+    onAction: (String) -> Unit
+) {
+    Column {
+        if (document.title.isNotBlank()) {
+            Text(
+                document.title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(5.dp))
+        }
+        document.blocks.forEach { block ->
+            when (block.type) {
+                "divider" -> HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 6.dp)
+                )
+                "button" -> Button(
+                    onClick = { onAction(block.action) },
+                    enabled = block.action.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(block.label.ifBlank { block.action })
+                }
+                "progress" -> {
+                    val value = block.dataJson.toDoubleOrNull()
+                        ?.div(100.0)
+                        ?.coerceIn(0.0, 1.0)
+                        ?.toFloat()
+                    if (value == null) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    } else {
+                        LinearProgressIndicator(
+                            progress = { value },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+                "key_value" -> Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp)
+                ) {
+                    Text(
+                        block.label,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        block.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                else -> Text(
+                    block.text.ifBlank {
+                        block.label.ifBlank {
+                            block.dataJson
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 18.sp
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+    }
 }
 
 @Composable

@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "provider_id": "com.example.runtime.demo",
+      "name": "Runtime Demo Provider",
+      "models": [
+        {
+          "id": "runtime-demo",
+          "name": "Runtime Demo",
+          "context_tokens": 32000,
+          "vision": false
+        }
+      ]
+    }
+  ]
+}

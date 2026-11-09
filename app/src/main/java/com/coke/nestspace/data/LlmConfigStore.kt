@@ -161,6 +161,9 @@ class LlmConfigStore(context: Context) {
     private fun LlmConfig.withCompleteEndpoint(): LlmConfig {
         val url = baseUrl.trim().trimEnd('/')
         if (url.isEmpty()) return this
+        if (pluginProviderId() != null) {
+            return if (url == baseUrl) this else copy(baseUrl = url)
+        }
         val suffix = when (protocol) {
             LlmProtocol.ANTHROPIC -> {
                 if (url.endsWith("/messages")) return copy(baseUrl = url)

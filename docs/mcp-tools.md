@@ -4,6 +4,11 @@ NestSpace 内置 Streamable HTTP MCP Server，向本地 AI 助手和远程 MCP �
 
 > 工具结果中的页面文本、子 Agent 输出和外部 MCP 返回都属于**不可信数据**，模型和调用方不应把它们当作指令执行。
 
+插件贡献的工具会进入同一套 `ToolRegistry`，因此本地 Agent 和 MCP 都可能看到
+`plugin_<plugin>_<tool>_<hash>` 形式的动态工具。它们不在下面静态列表中逐项展开，实际
+可见性取决于插件是否安装、是否声明 `agent_tools`、是否启用以及当前进程是否完成注册。
+插件工具与内置工具共用确认、超时和结果大小限制。
+
 ## 空间与应用
 
 | 工具 | 说明 |

@@ -13,7 +13,15 @@ import com.coke.nestspace.R
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.data.VirtualApp
 
-internal enum class LauncherKind { VIRTUAL, SYSTEM, BROWSER, AGENT, SPACES, RUNNING }
+internal enum class LauncherKind {
+    VIRTUAL,
+    SYSTEM,
+    BROWSER,
+    AGENT,
+    PLUGINS,
+    SPACES,
+    RUNNING
+}
 
 internal data class LauncherEntry(
     val id: String,
@@ -97,6 +105,14 @@ internal fun buildEntries(
             icon = null,
             kind = LauncherKind.AGENT,
             drawableRes = R.drawable.ai_assistant
+        ),
+        LauncherEntry(
+            id = "action:plugins",
+            packageName = "action:plugins",
+            label = AppLanguage.tr("插件中心", "Plugin center"),
+            icon = null,
+            kind = LauncherKind.PLUGINS,
+            drawableRes = R.drawable.ic_plugin_center
         ),
         LauncherEntry(
             id = "action:spaces",

@@ -25,6 +25,9 @@
 - **空间设置**：应用、模型和系统配置；
 - **运行管理**：查看和结束容器进程。
 
+底部 Dock 之外，桌面应用区域还有「插件中心」入口。它像独立应用一样打开，返回后直接
+回到桌面，用来管理源码插件和第三方 `.nestplugin`。
+
 ![NestSpace 桌面](screenshots/desktop.jpg)
 
 ## 3. 导入宿主已经安装的应用
@@ -124,4 +127,6 @@ AI 助手的应用显示规则：
 - [应用安装与管理](app-manager.md)：宿主应用导入、split 和数据隔离；
 - [设置详解](settings.md)：新的两级/三级分类和全部选项；
 - [AI 助手](assistant.md)：模型、无头小窗、浏览器和语音；
-- [MCP 控制服务](mcp.md)：从电脑控制 NestSpace。
+- [MCP 控制服务](mcp.md)：从电脑控制 NestSpace；
+- [插件平台与 Java SDK](plugin-center.md)：插件安装、设置、分享和运行时代理；
+- [插件编写指南](plugin-authoring.md)：从源码直接开发和调试插件。

@@ -17,8 +17,9 @@ import com.coke.nestspace.container.loader.PluginClassPathResolver
 import com.coke.nestspace.container.loader.SharedLibraries
 import com.coke.nestspace.container.loader.withContainerClassLoader
 import com.coke.nestspace.container.remote.ContainerProcessBrokerClient
-import com.coke.nestspace.container.compat.CompatibilityProfile
-import com.coke.nestspace.container.compat.CompatibilityProfiles
+import com.coke.nestspace.container.compat.toRuntimeCompatLaunchSpec
+import com.coke.nestspace.runtime.plugin.RuntimeCompatibilityProfile
+import com.coke.nestspace.runtime.plugin.RuntimeCompatibilityProfiles
 import com.coke.nestspace.container.account.VirtualAccountManager
 import com.coke.nestspace.container.runtime.NativeEnvironmentBridge
 import com.coke.nestspace.container.runtime.AndroidStartupCoordinator
@@ -344,7 +345,7 @@ class ContainerSession private constructor(
     private val activityThread: Any,
     private val hostProcessState: HostProcessState,
     val virtualEnvironment: VirtualEnvironment,
-    internal val compatibilityProfile: CompatibilityProfile?,
+    internal val compatibilityProfile: RuntimeCompatibilityProfile?,
     private val startupCoordinator: AndroidStartupCoordinator,
     private val environmentValidation: EnvironmentValidation,
     val intents: ContainerIntentResolver,
@@ -353,6 +354,7 @@ class ContainerSession private constructor(
     val virtualPackages: VirtualPackageRegistry
 ) {
     val id: String get() = spec.sessionId
+    internal val compatibilitySpec = spec.toRuntimeCompatLaunchSpec()
 
     /** Run target Activities without keeping the host on screen. */
     @Volatile
@@ -534,7 +536,7 @@ class ContainerSession private constructor(
         refreshNativeHooks()
         startupCoordinator.run(AndroidStartupPhase.APPLICATION_COMPATIBILITY) {
             compatibilityProfile?.afterApplicationCreated(
-                spec,
+                compatibilitySpec,
                 loader,
                 context,
                 application
@@ -555,7 +557,7 @@ class ContainerSession private constructor(
         }
         startupCoordinator.run(AndroidStartupPhase.STARTUP_COMPATIBILITY) {
             compatibilityProfile?.afterEmbeddedApplicationCreated(
-                spec,
+                compatibilitySpec,
                 loader,
                 context,
                 application
@@ -928,7 +930,7 @@ class ContainerSession private constructor(
             ?: (info.targetActivity?.takeIf { it.isNotBlank() } ?: info.name)
         val targetClass = loader.loadClass(activityClass).asSubclass(Activity::class.java)
         compatibilityProfile?.beforeTargetActivity(
-            spec,
+            compatibilitySpec,
             loader,
             context,
             targetClass
@@ -1771,8 +1773,15 @@ class ContainerSession private constructor(
             // package and abort with NameNotFoundException.
             publishVirtualIdentity(activityThread, context)
             TargetWebViewIdentityHook.install(context)
-            val compatibilityProfile = CompatibilityProfiles.resolve(spec, loader)
-            compatibilityProfile?.beforeApplicationAttach(spec, loader, context)
+            val compatibilityProfile = RuntimeCompatibilityProfiles.resolve(
+                spec.toRuntimeCompatLaunchSpec(),
+                loader
+            )
+            compatibilityProfile?.beforeApplicationAttach(
+                spec.toRuntimeCompatLaunchSpec(),
+                loader,
+                context
+            )
 
             ContainerLaunchProgress.advance(LaunchProgressStage.ATTACHING_APPLICATION)
             val applicationAttachStartedAt = SystemClock.elapsedRealtime()

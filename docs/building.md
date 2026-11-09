@@ -79,6 +79,45 @@ Release 会分别构建三个宿主变体：
 ./gradlew :app:testDebugUnitTest --tests com.coke.nestspace.knowledge.KnowledgePackTest
 ```
 
+## 插件与 SDK
+
+Debug 宿主会自动发现 `example-plugin/plugin` 和 `dev-plugins/*`，把插件 Java 直接编入
+宿主，并把资源隔离到 `assets/plugins-dev/<plugin-id>/`。正常开发插件只需要运行
+`:app:assembleDebug`，不需要手工生成 `.nestplugin`。
+
+构建公共 SDK：
+
+```bash
+./gradlew :plugin-api:assembleDebug :runtime-plugin-api:assembleDebug
+```
+
+构建完整示例插件安装包：
+
+```bash
+./gradlew :dev-plugin-runtime-demo:packagePlugin
+```
+
+产物：
+
+```text
+build/plugin-packages/runtime-demo-plugin.nestplugin
+```
+
+Debug APK 还会为源码插件自动生成仅供插件中心分享和导出的 `.nestplugin`。运行时仍直接
+使用宿主 ClassLoader，源码开发不依赖这份分享资产。
+
+运行插件相关测试：
+
+```bash
+./gradlew \
+  :plugin-api:testDebugUnitTest \
+  :runtime-plugin-api:testDebugUnitTest \
+  :app:testDebugUnitTest
+```
+
+插件 Manifest、源码直开、自定义设置 View 和安装包格式见
+[插件编写指南](plugin-authoring.md)。
+
 ## 版本号
 
 CI 会从 `vX.Y.Z` 标签解析版本号：
@@ -151,3 +190,5 @@ java -version
 
 - [快速开始](getting-started.md)
 - [应用安装与管理](app-manager.md)
+- [插件编写指南](plugin-authoring.md)
+- [插件平台与 Java SDK](plugin-center.md)

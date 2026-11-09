@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "title": "Runtime Demo",
+  "blocks": [
+    {
+      "type": "text",
+      "text": "This plugin demonstrates the complete NestSpace extension surface without hardening-specific code."
+    },
+    {
+      "type": "button",
+      "label": "Run diagnostics",
+      "action": "com.example.runtime.demo/diagnostics"
+    }
+  ]
+}

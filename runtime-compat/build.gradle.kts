@@ -21,8 +21,5 @@ android {
 dependencies {
     api(project(":runtime-api"))
     api(project(":runtime-core"))
-    implementation(libs.hiddenapibypass)
-    implementation(libs.json)
     testImplementation(libs.junit)
-    testImplementation(libs.json)
 }

@@ -333,10 +333,18 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
             when (val result = engine.launch(SPACE_ID, packageName, instanceId)) {
                 is EngineResult.Error -> fail("${result.code}: ${result.message}")
                 is EngineResult.Ok -> {
-                    notice.value = AppLanguage.tr(
-                    "已启动 ${packageName}（${result.value.instanceId}）",
-                    "Launched ${packageName} (${result.value.instanceId})"
-                )
+                    notice.value = if (result.value.hostFallback) {
+                        AppLanguage.tr(
+                            "已使用宿主兼容模式启动 ${packageName}：${result.value.fallbackReason}",
+                            "Launched $packageName in host compatibility mode: " +
+                                result.value.fallbackReason
+                        )
+                    } else {
+                        AppLanguage.tr(
+                            "已启动 ${packageName}（${result.value.instanceId}）",
+                            "Launched $packageName (${result.value.instanceId})"
+                        )
+                    }
                 }
             }
         }

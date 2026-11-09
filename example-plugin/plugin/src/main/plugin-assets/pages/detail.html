@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      padding: 18px;
+      font: 15px/1.55 system-ui, sans-serif;
+      background: transparent;
+      color: #26344c;
+    }
+    .hero {
+      padding: 18px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #dce9ff, #f4e8ff);
+      margin-bottom: 14px;
+    }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    h2 { font-size: 16px; margin: 18px 0 8px; }
+    ul { padding-left: 20px; margin: 6px 0; }
+    code {
+      background: rgba(70, 90, 125, .10);
+      padding: 2px 5px;
+      border-radius: 5px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .card {
+      border: 1px solid rgba(90, 110, 145, .20);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(255,255,255,.55);
+    }
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <h1>Runtime Demo Plugin</h1>
+    <p>这是一个不包含加固逻辑的完整插件示例，用于验证 NestSpace 的扩展能力。</p>
+  </section>
+  <h2>已覆盖能力</h2>
+  <div class="grid">
+    <div class="card">Agent Tool / Hook</div>
+    <div class="card">Android View</div>
+    <div class="card">设置 / 密钥</div>
+    <div class="card">缓存 / SQLite</div>
+    <div class="card">HTTP / SSE / WebSocket</div>
+    <div class="card">通知 / 分享 / 剪贴板</div>
+    <div class="card">任务 / 事件</div>
+    <div class="card">文件选择 / 导出</div>
+    <div class="card">LLM Provider</div>
+  </div>
+  <h2>测试方法</h2>
+  <p>让 Agent 调用 <code>runtime_demo</code>，并把 <code>action</code> 设置为
+    <code>cache</code>、<code>sqlite</code>、<code>http</code>、
+    <code>sse</code> 或 <code>websocket</code>。</p>
+</body>
+</html>

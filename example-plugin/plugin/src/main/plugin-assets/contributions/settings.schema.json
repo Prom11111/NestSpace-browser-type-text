@@ -1,0 +1,23 @@
+{
+  "title": "Runtime Demo settings",
+  "fields": [
+    {
+      "id": "enabled",
+      "title": "Enable demo",
+      "type": "boolean",
+      "default": "true"
+    },
+    {
+      "id": "mode",
+      "title": "Mode",
+      "type": "select",
+      "options": ["offline", "online"],
+      "default": "offline"
+    },
+    {
+      "id": "demo_secret",
+      "title": "Demo secret",
+      "type": "secret"
+    }
+  ]
+}

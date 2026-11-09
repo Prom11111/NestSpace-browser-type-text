@@ -12,7 +12,6 @@ import com.coke.nestspace.container.identity.HostIdentity
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.runtime.RuntimeHostIdentity
 import com.coke.nestspace.runtime.RuntimeHostHooks
-import com.coke.nestspace.runtime.RuntimePluginLoader
 import com.coke.nestspace.ui.DesktopNavigation
 import java.io.File
 
@@ -32,17 +31,52 @@ class NestSpaceApp : Application() {
         // Slot processes render container error screens too; every process
         // needs the persisted language.
         AppLanguage.init(this)
+        runCatching {
+            com.coke.nestspace.plugin.PluginSourceLoader
+                .restoreBundled(this)
+        }.onFailure {
+            android.util.Log.w(
+                "NestSpaceApp",
+                "source plugin restore failed",
+                it
+            )
+        }
+        runCatching {
+            com.coke.nestspace.plugin.PluginPackageInstaller
+                .get(this)
+                .restoreInstalled()
+        }.onFailure {
+            android.util.Log.w(
+                "NestSpaceApp",
+                "external plugin restore failed",
+                it
+            )
+        }
         if (!isMainProcess()) return
+        runCatching {
+            com.coke.nestspace.plugin.PluginPackageInstaller
+                .get(this)
+                .importIncomingPackages()
+        }.onFailure {
+            android.util.Log.w(
+                "NestSpaceApp",
+                "incoming plugin install failed",
+                it
+            )
+        }
         // Slot processes are killed when the host is updated or force-stopped;
         // do not report that as a virtual-app crash.
         ContainerProcessPool.resetLaunchedFlagsAfterHostRestart(this)
         UserGateManager.init(this)
+        com.coke.nestspace.plugin.AgentPluginSupport.installBuiltins(this)
         NestSpaceDeferredStartup.schedule(this, processStartedAt)
     }
 
     private fun installRuntimeHooks() {
         RuntimeHostIdentity.packageName = packageName
-        RuntimePluginLoader.installBuiltIns()
+        com.coke.nestspace.plugin.PluginCenterStore.applyProcessRuntimePlugins(
+            this
+        )
         RuntimeHostHooks.openBrowser = { context, url ->
             context.startActivity(
                 Intent(context, BrowserActivity::class.java)

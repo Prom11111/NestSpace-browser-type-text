@@ -32,6 +32,11 @@ import com.coke.nestspace.data.AppShortcut
 import com.coke.nestspace.data.LaunchInfo
 import com.coke.nestspace.data.VirtualApp
 import com.coke.nestspace.data.VirtualInstance
+import com.coke.nestspace.plugin.RuntimeFingerprints
+import com.coke.nestspace.plugin.RuntimeLaunchMode
+import com.coke.nestspace.plugin.RuntimeProxyExtensions
+import com.coke.nestspace.plugin.RuntimeProxyContext
+import com.coke.nestspace.plugin.RuntimeProxyPlugins
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -227,11 +232,102 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                         AppLanguage.tr("找不到实例 $instanceId", "Instance $instanceId not found")
                     )
             }
+            val fingerprint = RuntimeFingerprints.sha256(
+                app.packageName,
+                app.versionCode,
+                app.signatureSha256
+            )
+            RuntimeProxyPlugins.resolve(
+                RuntimeProxyContext(
+                    fingerprint,
+                    Build.VERSION.SDK_INT
+                )
+            )?.let { policy ->
+                when (policy.mode) {
+                    RuntimeLaunchMode.HOST_FALLBACK -> launchHostFallback(
+                        app = app,
+                        instanceId = instance.id,
+                        fallbackReason = policy.reason,
+                        pluginId = policy.pluginId,
+                        policyId = policy.policyId
+                    ).let { return@withLock it }
+                    RuntimeLaunchMode.BLOCKED -> return@withLock EngineResult.Error(
+                        "RUNTIME_BLOCKED_BY_PLUGIN",
+                        policy.reason
+                    )
+                    RuntimeLaunchMode.CONTAINER -> Unit
+                }
+            }
+            RuntimeProxyExtensions.resolve(
+                RuntimeProxyContext(
+                    fingerprint,
+                    Build.VERSION.SDK_INT
+                )
+            )?.let { extension ->
+                when (extension.mode) {
+                    RuntimeLaunchMode.HOST_FALLBACK -> launchHostFallback(
+                        app = app,
+                        instanceId = instance.id,
+                        fallbackReason = extension.reason,
+                        pluginId = extension.id,
+                        policyId = extension.id
+                    ).let { return@withLock it }
+                    RuntimeLaunchMode.BLOCKED -> return@withLock EngineResult.Error(
+                        "RUNTIME_BLOCKED_BY_PLUGIN",
+                        extension.reason
+                    )
+                    RuntimeLaunchMode.CONTAINER -> Unit
+                }
+            }
             launchLocked(
                 app = app,
                 instanceId = instance.id,
                 headless = headless,
                 requestedActivity = requestedActivity
+            )
+        }
+    }
+
+    private fun launchHostFallback(
+        app: StoredApp,
+        instanceId: String,
+        fallbackReason: String,
+        pluginId: String,
+        policyId: String
+    ): EngineResult<LaunchInfo> {
+        val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
+            ?: return EngineResult.Error(
+                "HOST_APP_REQUIRED",
+                AppLanguage.tr(
+                    "该版本需要宿主兼容模式，但平板上没有安装同名官方应用。",
+                    "This build requires host compatibility mode, but the official " +
+                        "app is not installed on the device."
+                )
+            )
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            context.startActivity(intent)
+            Log.i(
+                TAG,
+                "host fallback launch package=${app.packageName} reason=$fallbackReason"
+            )
+            EngineResult.Ok(
+                LaunchInfo(
+                    spaceId = app.spaceId,
+                    packageName = app.packageName,
+                    instanceId = instanceId,
+                    activity = intent.component?.className.orEmpty(),
+                    dataDir = "",
+                    hostFallback = true,
+                    fallbackReason = fallbackReason,
+                    runtimePluginId = pluginId,
+                    runtimePolicyId = policyId
+                )
+            )
+        } catch (t: Throwable) {
+            EngineResult.Error(
+                "HOST_FALLBACK_FAILED",
+                t.message ?: t.javaClass.simpleName
             )
         }
     }

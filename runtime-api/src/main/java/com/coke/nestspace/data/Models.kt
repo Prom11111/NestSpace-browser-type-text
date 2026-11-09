@@ -71,7 +71,12 @@ data class LaunchInfo(
     /** The previous slot process died; this launch starts a fresh one. */
     val restartedAfterCrash: Boolean = false,
     /** Human-readable reason when [restartedAfterCrash] is true. */
-    val crashReason: String? = null
+    val crashReason: String? = null,
+    /** The target was started in its host-installed package as a compatibility fallback. */
+    val hostFallback: Boolean = false,
+    val fallbackReason: String? = null,
+    val runtimePluginId: String? = null,
+    val runtimePolicyId: String? = null
 )
 
 data class Bounds(

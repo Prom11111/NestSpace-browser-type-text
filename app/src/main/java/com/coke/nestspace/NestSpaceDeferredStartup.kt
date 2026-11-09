@@ -15,6 +15,7 @@ import com.coke.nestspace.assistant.LocalSpeechEngine
 import com.coke.nestspace.assistant.LocalSpeechModelStore
 import com.coke.nestspace.browser.BrowserProxyManager
 import com.coke.nestspace.mcp.McpClientManager
+import com.coke.nestspace.plugin.PluginCenterStore
 import com.coke.nestspace.schedule.ScheduledTaskManager
 import com.coke.nestspace.service.McpForegroundService
 import java.util.concurrent.ExecutorService
@@ -125,8 +126,17 @@ internal object NestSpaceDeferredStartup {
         }.onFailure { Log.w(TAG, "Run recovery failed", it) }
 
         runCatching {
-            ScheduledTaskManager.recoverInterrupted(context, startedBefore = startedAt)
-            ScheduledTaskManager.rescheduleAll(context)
+            if (PluginCenterStore.isEnabled(
+                    context,
+                    PluginCenterStore.SCHEDULED_TASKS
+                )
+            ) {
+                ScheduledTaskManager.recoverInterrupted(
+                    context,
+                    startedBefore = startedAt
+                )
+                ScheduledTaskManager.rescheduleAll(context)
+            }
         }.onFailure { Log.w(TAG, "Schedule recovery failed", it) }
 
         runCatching {

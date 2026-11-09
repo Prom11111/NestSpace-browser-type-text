@@ -2,6 +2,9 @@
 
 `tools/nestspace-mcp` 是一个只用 Python 标准库实现的 MCP 客户端，支持 Streamable HTTP、一次性工具调用和交互式 shell。不需要安装第三方 Python 包。
 
+`tools` 返回的列表还包含已加载插件贡献的 `plugin_*` 动态工具。插件安装、启停或删除后
+重新执行 `tools` 即可刷新当前可见列表。
+
 ## 准备连接
 
 先在「空间设置 → MCP 控制服务」启动服务并复制 Token。也可以在

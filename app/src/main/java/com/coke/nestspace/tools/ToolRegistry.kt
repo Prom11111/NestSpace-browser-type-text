@@ -24,6 +24,8 @@ import com.coke.nestspace.host.RootStatus
 import com.coke.nestspace.knowledge.KnowledgeStore
 import com.coke.nestspace.memory.MemoryStore
 import com.coke.nestspace.memory.SkillStore
+import com.coke.nestspace.plugin.AgentPluginSupport
+import com.coke.nestspace.plugin.PluginCenterStore
 import com.coke.nestspace.schedule.ScheduledTaskManager
 import com.coke.nestspace.replay.ReplayStore
 import kotlinx.coroutines.CancellationException
@@ -82,8 +84,11 @@ class ToolRegistry(
     )
 
     fun list(): List<ToolSpec> {
-        if (HostControlSettings.isEnabled(context)) return tools
-        return tools.filterNot { it.name.startsWith("host_") }
+        val current = tools.filter {
+            PluginCenterStore.toolModuleEnabled(context, it.name)
+        } + AgentPluginSupport.toolSpecs()
+        if (HostControlSettings.isEnabled(context)) return current
+        return current.filterNot { it.name.startsWith("host_") }
     }
 
     /** Release leases owned by an MCP session that ended or expired. */
@@ -92,7 +97,7 @@ class ToolRegistry(
     }
 
     suspend fun execute(name: String, args: JSONObject, ctx: ToolContext): ToolResult {
-        val spec = tools.firstOrNull { it.name == name }
+        val spec = list().firstOrNull { it.name == name }
             ?: return ToolResult(false, "Unknown tool: $name", errorCode = "UNKNOWN_TOOL")
 
         if (name.startsWith("host_") && !HostControlSettings.isEnabled(context)) {

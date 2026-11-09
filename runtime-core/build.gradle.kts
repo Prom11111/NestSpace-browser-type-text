@@ -21,6 +21,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":plugin-api"))
+    implementation(project(":runtime-plugin-api"))
     api(project(":runtime-api"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.core.ktx)

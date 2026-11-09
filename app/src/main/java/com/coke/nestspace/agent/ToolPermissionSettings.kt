@@ -48,7 +48,8 @@ enum class ToolConfirmationCategory(val api: String) {
     DOWNLOAD("download"),
     RISKY("risky"),
     MONEY("money"),
-    EXTERNAL("external");
+    EXTERNAL("external"),
+    PLUGIN("plugin");
 
     val label: String
         get() = when (this) {
@@ -58,6 +59,7 @@ enum class ToolConfirmationCategory(val api: String) {
             RISKY -> AppLanguage.tr("风险点击", "Risky taps")
             MONEY -> AppLanguage.tr("金钱操作", "Money actions")
             EXTERNAL -> AppLanguage.tr("外部 MCP 工具", "External MCP tools")
+            PLUGIN -> AppLanguage.tr("插件工具", "Plugin tools")
         }
 
     val description: String
@@ -86,6 +88,11 @@ enum class ToolConfirmationCategory(val api: String) {
                 "调用你配置的外部 MCP Server 工具；这些工具可能执行真实操作。",
                 "Call tools from your external MCP servers; these tools may perform " +
                     "real actions."
+            )
+            PLUGIN -> AppLanguage.tr(
+                "调用插件提供的工具；插件可能访问网络、文件或执行真实操作。",
+                "Call tools provided by plugins; plugins may access the network, " +
+                    "files or perform real actions."
             )
         }
 }
@@ -130,7 +137,8 @@ object ToolPermissionSettings {
             ToolPermissionLevel.STRICT -> allCategories()
             ToolPermissionLevel.STANDARD -> setOf(
                 ToolConfirmationCategory.INSTALL,
-                ToolConfirmationCategory.MONEY
+                ToolConfirmationCategory.MONEY,
+                ToolConfirmationCategory.PLUGIN
             )
             ToolPermissionLevel.LOOSE -> setOf(ToolConfirmationCategory.MONEY)
             ToolPermissionLevel.CUSTOM -> customCategories(context)

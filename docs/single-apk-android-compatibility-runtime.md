@@ -19,7 +19,7 @@
 - 显式子进程组件若不在 base APK，会从实例已下载插件中定位包含该类的 APK，并按需统一挂载 DEX、Resources 和当前 ABI 的 native library 目录。
 - 已实现 manifest BroadcastReceiver 的跨进程路由：当前进程只分发本进程 receiver，其他 `android:process` 去重后异步绑定对应槽位；ordered broadcast 暂保持本地语义。
 - 已将 `SpaceStore` 升级为 v2，实例记录包含环境版本、兼容策略和最近探测结果，并兼容 v1 数据。
-- 已将目标业务 Hook 收拢到独立 `CompatibilityProfile`。
+- 已将目标业务 Hook 收拢到独立插件模块中的 `RuntimeCompatibilityProfile`。
 - 已将 `FragmentPagerAdapter` 首次布局归一化从版本化 profile 提升为所有目标共用的 AndroidX UI 兼容层。
 - 已对目标 native 模块启用受控 GOT/PLT Hook，覆盖 UID 读取和基础路径 API；宿主/系统库不 patch。
 - `/proc/self/status`、`cmdline`、`maps`、`mountinfo` 已支持只读合成和 fd→虚拟路径映射；property 的 `get/find/read_callback/read/serial` 已读取 Java Build 设备快照；直接 inline syscall 和完整跨进程自动化矩阵仍需继续实现。
@@ -896,7 +896,7 @@ StageAActivity 显示 LaunchLoadingView
 
 当前实现：部分完成。`AndroidStartupCoordinator` 已接管 Embedded ApplicationLike、进程 Application、Provider、`Application.onCreate`、兼容初始化器、宿主桥和崩溃保护的阶段执行与计时；首个 Activity 的调度和打开也有独立节点。Coordinator 会在阶段执行前发出 `phaseStarted`，结束后发出带 outcome、duration 和 failure 的结果，`ContainerLaunchProgress` 据此驱动启动页。`LaunchLoadingView` 在独立 SurfaceView 渲染线程读取阶段快照，因此主线程被目标初始化阻塞时仍能更新真实阶段文案与进度。固定 2.5 秒 settle 已移除，Coordinator 完成后直接将首个 Activity 排入下一轮主线程调度。已有 Session 只重新打开 Activity 时，不重跑 Application 和 Provider，而是推进到首 Activity 阶段。
 
-启动页只覆盖容器初始化。目标 App 自己的 Splash、网络、图片、WebView 和首屏内容加载没有统一 Framework 回调，不能声称已经由容器精确观测；详见 13.1.4。目标业务初始化仍暂由版本化 `CompatibilityProfile` 补齐，因此不能删除该 profile。
+启动页只覆盖容器初始化。目标 App 自己的 Splash、网络、图片、WebView 和首屏内容加载没有统一 Framework 回调，不能声称已经由容器精确观测；详见 13.1.4。目标业务初始化仍可由用户安装的版本化 `RuntimeCompatibilityProfile` 插件补齐，不再编译进通用容器。
 
 交付：
 

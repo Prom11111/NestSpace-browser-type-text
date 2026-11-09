@@ -34,6 +34,9 @@ object RuntimeApplicationFactories {
 
 interface RuntimePluginInstaller {
     fun install()
+
+    fun uninstall() {
+    }
 }
 
 /**
@@ -41,16 +44,51 @@ interface RuntimePluginInstaller {
  * native-only build can omit the compatibility module entirely.
  */
 object RuntimePluginLoader {
-    private val builtIns = listOf(
+    private val installed = LinkedHashMap<String, RuntimePluginInstaller>()
+
+    private val coreInstallers = listOf(
         "com.coke.nestspace.container.compat.CompatRuntimePlugin"
     )
 
+    @Synchronized
+    fun installCore() {
+        installClasses(coreInstallers)
+    }
+
+    @Synchronized
     fun installBuiltIns() {
-        builtIns.forEach { className ->
-            runCatching {
+        installClasses(coreInstallers)
+    }
+
+    @Synchronized
+    fun uninstallBuiltIns() {
+        uninstallClasses(coreInstallers.asReversed())
+    }
+
+    @Synchronized
+    fun isCoreInstalled(): Boolean = coreInstallers.any(installed::containsKey)
+
+    @Synchronized
+    fun isInstalled(): Boolean = installed.isNotEmpty()
+
+    private fun installClasses(classNames: List<String>) {
+        classNames.forEach { className ->
+            if (installed.containsKey(className)) return@forEach
+            val plugin = runCatching {
                 val type = Class.forName(className)
                 type.getDeclaredConstructor().newInstance() as RuntimePluginInstaller
-            }.getOrNull()?.install()
+            }.getOrNull() ?: return@forEach
+            runCatching { plugin.install() }.onSuccess {
+                installed[className] = plugin
+            }
+        }
+    }
+
+    private fun uninstallClasses(classNames: List<String>) {
+        classNames.forEach { className ->
+            installed.remove(className)?.let { plugin ->
+                runCatching { plugin.uninstall() }
+            }
         }
     }
 }

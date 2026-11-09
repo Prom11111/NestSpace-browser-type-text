@@ -66,6 +66,26 @@ if (requireReleaseSigning && !hasReleaseSigning) {
     )
 }
 
+fun devPluginProjectName(directoryName: String): String =
+    directoryName.lowercase()
+        .replace(Regex("[^a-z0-9_-]+"), "-")
+        .trim('-')
+
+val discoveredDevPluginProjects = buildList {
+    add(":dev-plugin-runtime-demo")
+    file("../dev-plugins").listFiles()
+        ?.filter { it.isDirectory }
+        ?.sortedBy { it.name }
+        ?.forEach { directory ->
+            val name = devPluginProjectName(directory.name)
+            if (name.isNotEmpty() &&
+                File(directory, "build.gradle.kts").isFile
+            ) {
+                add(":dev-plugin-$name")
+            }
+        }
+}
+
 android {
     namespace = "com.coke.nestspace"
     ndkVersion = "27.2.12479018"
@@ -144,6 +164,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":plugin-api"))
     implementation(project(":runtime-api"))
     implementation(project(":runtime-core"))
     implementation(project(":runtime-compat"))
@@ -159,17 +180,22 @@ dependencies {
     implementation(libs.androidx.webkit)
     testImplementation(libs.junit)
     testImplementation(libs.json)
+    testImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    discoveredDevPluginProjects.forEach {
+        debugImplementation(project(it))
+    }
 
     // Basic app: local MCP server + local agent + space management
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.okhttp)
     // Offline (on-device) speech recognition. The small language model is
     // downloaded once into app storage by LocalSpeechModelStore.
     implementation(libs.vosk.android)

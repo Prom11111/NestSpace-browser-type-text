@@ -39,6 +39,8 @@
 | --- | --- |
 | [架构与限制](architecture.md) | 容器实现、进程模型和已知边界 |
 | [单 APK 兼容运行时设计](single-apk-android-compatibility-runtime.md) | 免 Root 条件下的统一环境、Native Facade 和分阶段改造方案 |
+| [插件平台与 Java SDK](plugin-center.md) | Java SDK、Agent Tools/Hook、文件与密钥、任务/事件、UI、LLM Provider、运行指纹和插件中心计划 |
+| [插件编写指南](plugin-authoring.md) | 从创建源码插件到 Manifest、Java API、设置 View、Host API、运行时代理、调试和发布 |
 | [整体性能审计与修改建议](performance-audit-and-improvement-plan.md) | 容器启动、Hook、进程池、截图和 target 热路径的性能优化路线 |
 | [MCP 工具参考](mcp-tools.md) | 全部 MCP 工具和参数 |
 | [App / 网站知识包](knowledge-packs.md) | 知识包的格式、匹配和新增方法 |

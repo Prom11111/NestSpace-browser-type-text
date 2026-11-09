@@ -2,7 +2,7 @@
 
 - 状态：草案
 - 日期：2026-11-09
-- 范围：宿主启动、容器启动、Java/native Hook、进程池、APK 处理、Agent/MCP UI 链路、截图、存储和发布构建
+- 范围：宿主启动、容器启动、Java/native Hook、进程池、APK 处理、插件加载、Agent/MCP UI 链路、截图、存储和发布构建
 - 依据：当前仓库静态代码审查
 - 说明：本文尚未加入线上或真机采样数据，因此不承诺具体百分比收益。实施前应先建立基线，再按优先级逐步验证。
 
@@ -17,6 +17,7 @@
 5. 自动槽位已按可用内存动态计算；固定模式继续严格使用用户选择的 1–16。
 6. 主线程与进程池锁内 I/O 已完成改造：桌面启动改用轻量内存索引，kill、`/proc`、ActivityManager、PSS 和 SharedPreferences 均在状态锁外执行。
 7. target 启动热路径仍存在重复反射和完整 Parcel 深拷贝；宿主 `Application.onCreate` 的非首屏任务已迁到首帧后的串行后台线程。
+8. Debug 源码插件在启动时解析 Manifest、提取插件资源并使用宿主 ClassLoader 注册；插件分享包在构建时生成 DEX 和 ZIP，不进入日常源码运行热路径。外部 `.nestplugin` 仍需要解压和 `DexClassLoader` 初始化，插件数量增加后应纳入启动基准。
 
 建议按以下顺序处理：
 

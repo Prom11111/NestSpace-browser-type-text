@@ -154,6 +154,7 @@ import com.coke.nestspace.ui.settings.TokenUsageScreen
 import com.coke.nestspace.ui.settings.ToolPermissionScreen
 import com.coke.nestspace.ui.settings.HostControlScreen
 import com.coke.nestspace.ui.settings.LocationSimulationScreen
+import com.coke.nestspace.ui.plugins.PluginCenterActivity
 import com.coke.nestspace.ui.settings.SettingsHomeScreen
 import com.coke.nestspace.ui.settings.SettingsCategory
 import com.coke.nestspace.location.MockLocationSettings
@@ -584,6 +585,11 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                         context.startActivity(Intent(context, BrowserActivity::class.java))
                     },
                     onOpenAgent = { tab = 2 },
+                    onOpenPlugins = {
+                        context.startActivity(
+                            Intent(context, PluginCenterActivity::class.java)
+                        )
+                    },
                     onOpenSpaces = { spacesPage = SpacesPage.ROOT; tab = 1 },
                     onOpenModel = {
                         modelSettingsFromAssistant = false

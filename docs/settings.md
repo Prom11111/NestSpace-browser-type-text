@@ -15,6 +15,16 @@
 
 首页下方还有「应用与容器」「AI 助手」「系统与网络」三个分类入口，以及独立的「关于」页面。
 
+## 插件中心
+
+插件中心不是“空间设置”的二级页面。它作为桌面独立应用入口打开，返回时直接回到桌面。
+插件中心统一管理已安装的源码插件和第三方插件，系统内置能力不会作为列表项显示。
+
+长按插件图标可以设置、重命名、分享或导出；第三方 `.nestplugin` 还可以删除。插件设置
+页由插件自己返回 Android View，因此不同插件可以展示完全不同的参数界面。
+
+详见 [插件平台与 Java SDK](plugin-center.md) 和 [插件编写指南](plugin-authoring.md)。
+
 ## 应用与容器
 
 ### 应用管理
@@ -164,3 +174,5 @@ Android 10 及以上会把二维码保存到相册的 `Pictures/NestSpace`；旧
 - [AI 助手](assistant.md)
 - [MCP 控制服务](mcp.md)
 - [常见问题](troubleshooting.md)
+- [插件平台与 Java SDK](plugin-center.md)
+- [插件编写指南](plugin-authoring.md)

@@ -24,6 +24,8 @@ nav:
   - 常见问题: troubleshooting.md
   - 参考:
       - 架构与限制: architecture.md
+      - 插件编写指南: plugin-authoring.md
+      - 插件平台与 Java SDK: plugin-center.md
       - MCP 工具参考: mcp-tools.md
       - App / 网站知识包: knowledge-packs.md
       - 从源码构建: building.md

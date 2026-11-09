@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "id": "runtime_demo",
+      "title": "Runtime demo",
+      "description": "Exercises settings, secrets, notifications, clipboard, sharing, tasks, files, HTTP, SSE, WebSocket and events.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["info", "settings", "secret", "cache", "sqlite", "notify", "clipboard", "share", "task", "export", "pick", "http", "sse", "websocket", "events"]
+          }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      },
+      "mutating": false,
+      "timeout_ms": 60000
+    }
+  ]
+}

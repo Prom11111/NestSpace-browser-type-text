@@ -166,6 +166,47 @@ Android 会按内存和后台策略回收进程。NestSpace 只能保证前台�
 - 需要后台启动时检查悬浮窗权限。
 - 查看 MCP 工具返回的错误信息。
 
+## 插件中心
+
+### 源码插件没有出现
+
+- 确认插件位于 `dev-plugins/<name>` 或 `example-plugin/plugin`；
+- 确认目录中包含 `build.gradle.kts`、`src/main/plugin-assets/manifest.json` 和入口类；
+- 检查 Manifest `id`、`entry_class`、Gradle namespace 和 Java 包名；
+- 重新运行 `:app:assembleDebug`，不要只重新打开 Activity；
+- 在 Logcat 中检查 `PluginSourceLoader`。
+
+源码插件会与第三方插件显示在同一网格，图标左下角带有“源码”角标。它不会单独占一栏。
+
+### 看不到系统插件
+
+系统内置插件当前不显示在插件中心，仍在宿主内部按设置运行。插件中心只显示可管理的
+源码插件、第三方插件和当前进程已加载但不属于内置模块的插件。
+
+### 长按菜单不能删除某些插件
+
+源码插件随 Debug APK 编译，系统内置能力属于宿主，均不能从插件中心删除。只有第三方
+`.nestplugin` 支持删除。源码插件可以通过设置、重命名、分享和导出来管理。
+
+### 插件设置页打不开或显示错误
+
+- 确认 Manifest 声明了 `settings`；
+- 确认入口类实现 `PluginSettingsViewProvider`；
+- 如果是 Schema 回退模式，检查 `contributions.settings` JSON；
+- 查看 `AndroidRuntime`，确认自定义 View 没有在非 UI 线程创建或访问已关闭的 Context。
+
+### 分享或导出失败
+
+- 第三方插件安装目录必须包含 `manifest.json` 和 `classes.dex`；
+- 源码插件需要重新构建 Debug APK，以生成自动分享资产；
+- 检查系统文件选择器是否有写入权限和可用空间；
+- 安装包最大 32 MB，插件资源不应把大型模型或视频打入包内。
+
+### 删除插件后的行为
+
+删除第三方插件会清理插件包、私有文件、缓存、SQLite、设置和密钥密文。当前已经启动的
+其他容器槽位可能会继续持有旧 Hook，直到对应进程重启。
+
 ## 数据与重置
 
 ### 数据在哪里
@@ -202,3 +243,5 @@ Android 会按内存和后台策略回收进程。NestSpace 只能保证前台�
 - [架构与限制](architecture.md)
 - [应用安装与管理](app-manager.md)
 - [MCP 控制服务](mcp.md)
+- [插件平台与 Java SDK](plugin-center.md)
+- [插件编写指南](plugin-authoring.md)

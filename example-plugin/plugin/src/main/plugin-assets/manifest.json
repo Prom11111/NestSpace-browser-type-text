@@ -1,0 +1,69 @@
+{
+  "manifest_version": 1,
+  "id": "com.example.runtime.demo",
+  "name": "Runtime Demo Plugin",
+  "version": "1.0.0",
+  "publisher": "NestSpace Examples",
+  "description": "A broad non-hardening example covering Agent, UI, services and runtime proxy APIs.",
+  "api_version": 1,
+  "min_host_version": "1.0.0",
+  "entry_class": "com.example.runtimedemo.RuntimeDemoPlugin",
+  "priority": 100,
+  "permissions": [
+    "agent_prompt",
+    "agent_question",
+    "agent_tools",
+    "agent_tool_hooks",
+    "agent_tool_presentation",
+    "llm_providers",
+    "commands",
+    "tasks",
+    "events",
+    "settings",
+    "secrets",
+    "cache",
+    "database",
+    "file_picker",
+    "file_export",
+    "share",
+    "clipboard",
+    "ui_pages",
+    "ui_renderers",
+    "notifications",
+    "network",
+    "websocket",
+    "runtime_launch_policy",
+    "runtime_proxy"
+  ],
+  "host_permissions": [
+    "https://example.com/*",
+    "wss://echo.websocket.events/*"
+  ],
+  "icons": {
+    "128": "icons/runtime-demo.png"
+  },
+  "ui": {
+    "html_page": "pages/detail.html"
+  },
+  "contributes": {
+    "agent_tools": "contributions/tools.json",
+    "commands": "contributions/commands.json",
+    "settings": "contributions/settings.schema.json",
+    "llm_providers": "contributions/llm.json",
+    "pages": [
+      {
+        "id": "overview",
+        "title": "Runtime Demo",
+        "description": "Broad plugin API example",
+        "entry": "pages/overview.json"
+      }
+    ],
+    "result_renderers": [
+      {
+        "id": "example.runtime.card",
+        "title": "Runtime demo result",
+        "types": ["runtime.demo.v1"]
+      }
+    ]
+  }
+}

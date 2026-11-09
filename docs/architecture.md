@@ -6,23 +6,34 @@
 
 ## 整体结构
 
-NestSpace 由三部分组成：
+NestSpace 由四部分组成：
 
 - **应用级容器**：在宿主进程内加载目标 APK，为目标应用提供一套虚拟化的 Android 运行环境。
 - **桌面与空间管理**：安装 APK、导入宿主应用、多开、数据隔离和图标整理。
 - **控制通道**：容器内的 Binder UI 控制、本地 AI 助手，以及对外的 MCP Server。
+- **插件平台**：通过稳定 Java API 扩展 Agent、界面、Host 服务、运行策略和目标专用
+  运行时 Hook，不需要修改主工程。
 
 容器不是系统级虚拟化；它运行在 NestSpace 自己的进程里，通过 ClassLoader、资源、Context 和系统服务代理来模拟目标应用需要的环境。
 
 ## 代码模块
 
-运行时拆分为三个边界明确的 Gradle 模块：
+当前主要 Gradle 模块：
 
+- `plugin-api`：Java 优先的外部插件 SDK、Agent Hook、Host API、设置 View、能力和
+  启动策略契约。
+- `runtime-plugin-api`：目标运行时代理 Java API、启动描述、类名索引和 ClassLoader scope。
 - `runtime-api`：引擎契约、共享模型、Application factory 注册表和宿主 hook。
 - `runtime-core`：APK 与实例存储、Session、Activity Host、进程槽位、Provider、生命周期、Native Facade 和 MCP UI。
-- `runtime-compat`：加固 Application 启动链解析、兼容 Application factory 和版本化兼容 profile。
+- `runtime-compat`：通用目标 Application 启动链解析、兼容 Application factory 和
+  Tinker/AppLike 行为。
+- `app`：Compose 控制面、Agent、插件中心、设置 View 宿主和插件注册。
+- `example-plugin/plugin`、`dev-plugins/*`：只在 Debug 构建中发现和加载的源码插件。
 
-依赖方向为 `runtime-compat → runtime-core → runtime-api`，`app` 作为控制面同时依赖三者。运行时后端通过 `RuntimePluginLoader` 安装，`app` 不直接调用具体后端实现。
+依赖方向为 `runtime-compat → runtime-core → runtime-api`；`runtime-core` 同时依赖
+`plugin-api` 和 `runtime-plugin-api`，`app` 作为控制面依赖全部模块。通用兼容后端
+通过 `RuntimePluginLoader` 安装；目标版本、类名哈希和专用 Profile 放在独立插件模块，
+不进入通用容器代码。
 
 ## 安装与启动
 
@@ -66,6 +77,9 @@ NestSpace 由三部分组成：
 - **远程 MCP**：内置 Streamable HTTP Server，默认只监听 `127.0.0.1`，可显式开启局域网监听；支持多客户端会话、SSE 心跳和 DELETE 会话。
 - **外部 MCP 工具**：本地助手可以连接外部 MCP Server，工具名以 `mcp_<id>_` 前缀隔离，不暴露给远程客户端。
 - **浏览器**：内置多标签 WebView，无头标签由 Agent 创建，可被可见浏览器接管；网页弹窗、外部回退链接和下载页不会交给系统浏览器。
+- **插件平台**：插件可以扩展 Agent 提示、问答、模型请求、工具和工具展示，也可以提供
+  自定义设置 View、网络、任务、事件、缓存和 SQLite。Debug 源码插件直接使用宿主
+  ClassLoader；正式 `.nestplugin` 当前使用 `DexClassLoader`。
 
 ## 已知限制
 
@@ -84,3 +98,9 @@ NestSpace 由三部分组成：
 - 内置浏览器代理需要 Android 10+ 且 WebView 支持 `PROXY_OVERRIDE`，暂不支持需要用户名/密码的代理。
 - 外部 MCP 客户端目前只支持 HTTP POST（JSON 或 SSE 响应）和 Bearer Token。
 - AI 助手固定在 `virtual-1` 空间内操作，不会控制系统全局应用。
+- 外部插件尚未运行在独立进程，发布者签名、信任等级和在线市场仍未完成。
+
+## 相关文档
+
+- [插件编写指南](plugin-authoring.md)
+- [插件平台与 Java SDK](plugin-center.md)

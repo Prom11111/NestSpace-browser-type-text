@@ -233,6 +233,7 @@ internal fun LauncherDock(
     modifier: Modifier = Modifier
 ) {
     if (entries.isEmpty()) return
+    val itemWidth = if (entries.size >= 5) 70.dp else 82.dp
     Row(
         modifier = modifier
             .widthIn(max = 390.dp)
@@ -247,7 +248,7 @@ internal fun LauncherDock(
         entries.forEach { entry ->
             Column(
                 modifier = Modifier
-                    .width(82.dp)
+                    .width(itemWidth)
                     .clip(RoundedCornerShape(18.dp))
                     .clickable { onLaunch(entry) }
                     .padding(vertical = 2.dp, horizontal = 2.dp),

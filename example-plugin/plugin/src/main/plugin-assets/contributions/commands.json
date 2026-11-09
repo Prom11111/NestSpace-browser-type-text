@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "id": "diagnostics",
+      "title": "Plugin diagnostics",
+      "description": "Returns plugin and host capability information.",
+      "arguments_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "mutating": false,
+      "timeout_ms": 30000
+    }
+  ]
+}

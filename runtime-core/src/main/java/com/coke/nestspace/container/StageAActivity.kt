@@ -1946,7 +1946,7 @@ open class StageAActivity : Activity() {
         targetRequestParameterHook?.close()
         targetRequestParameterHook = session.compatibilityProfile
             ?.installFirstActivityHooks(
-                session.spec,
+                session.compatibilitySpec,
                 session.loader,
                 session.context
             )

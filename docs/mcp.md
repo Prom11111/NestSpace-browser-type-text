@@ -2,6 +2,10 @@
 
 NestSpace 内置一个 MCP（Model Context Protocol）Server，把容器控制能力暴露给电脑上的 MCP 客户端，例如 Claude Code。手机日常使用完全不需要它；这是给高级用户和自动化场景准备的可选能力。
 
+插件通过 `AgentToolProvider` 贡献的工具会与内置容器工具共用 `ToolRegistry`。因此远程
+MCP 客户端也可能看到动态的 `plugin_*` 工具；插件开发见
+[插件编写指南](plugin-authoring.md)。
+
 ## 启动服务
 
 入口：**空间设置 → MCP 控制服务**。
@@ -145,3 +149,4 @@ Token 不正确或没有带 `Authorization` Header。重新复制 Token，确认
 - [MCP 工具参考](mcp-tools.md)
 - [nestspace-mcp CLI](cli.md)
 - [架构与限制](architecture.md)
+- [插件平台与 Java SDK](plugin-center.md)

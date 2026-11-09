@@ -19,6 +19,9 @@ import com.coke.nestspace.tools.ToolContext
 import com.coke.nestspace.tools.ToolRegistry
 import com.coke.nestspace.tools.ToolResult
 import com.coke.nestspace.tools.ToolSpec
+import com.coke.nestspace.plugin.AgentPluginSupport
+import com.coke.nestspace.plugin.AgentModelHookOutcome
+import com.coke.nestspace.plugin.PluginCenterStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -44,7 +47,15 @@ class LlmAgentRuntime(
 ) {
 
     private val externalToolSpecs: List<ToolSpec> =
-        com.coke.nestspace.mcp.McpClientManager.toolSpecs()
+        if (PluginCenterStore.isEnabled(
+                registry.context,
+                PluginCenterStore.MCP_TOOL_BRIDGE
+            )
+        ) {
+            com.coke.nestspace.mcp.McpClientManager.toolSpecs()
+        } else {
+            emptyList()
+        }
 
     private val toolSpecs: List<ToolSpec> = (registry.list() + externalToolSpecs).filterNot {
         it.name in setOf(
@@ -88,6 +99,15 @@ class LlmAgentRuntime(
         }
 
         record(AgentMessage(AgentMessage.Role.USER, command))
+        AgentPluginSupport.answer(
+            userMessage = command,
+            recentUserMessages = listOf(command),
+            toolNames = chatTools.map { it.name }
+        )?.let { answer ->
+            onTextDelta?.invoke(answer.text)
+            record(AgentMessage(AgentMessage.Role.AGENT, answer.text))
+            return@withContext trace
+        }
         if (!config.isConfigured) {
             record(
                 AgentMessage(
@@ -126,6 +146,12 @@ class LlmAgentRuntime(
             return true
         }
 
+        AgentPluginSupport.publishEvent(
+            "agent.run.started",
+            JSONObject()
+                .put("session_id", sessionId)
+                .put("model", config.model)
+        )
         try {
             val service = ChatServices.create(
                 config,
@@ -135,7 +161,12 @@ class LlmAgentRuntime(
                     metrics?.recordRequest(usage)
                 }
             )
-            val systemPrompt = nativeSystemPrompt(config, memoryContext, skillIndex)
+            val systemPrompt = nativeSystemPrompt(config, memoryContext, skillIndex) +
+                AgentPluginSupport.promptBlock(
+                    userMessage = command,
+                    recentUserMessages = userUtterances.takeLast(6),
+                    toolNames = chatTools.map { it.name }
+                )
             val maxToolRounds = config.maxToolRounds
                 .coerceIn(LlmConfig.MIN_TOOL_ROUNDS, LlmConfig.MAX_TOOL_ROUNDS)
             var lastResponseText = ""
@@ -144,9 +175,32 @@ class LlmAgentRuntime(
                 while (step < maxToolRounds) {
                     step++
                     drainSteering()
+                    val requestPrompt = when (
+                        val hooked = AgentPluginSupport.beforeModelRequest(
+                            requestId = "$sessionId-${System.currentTimeMillis()}-$step",
+                            protocol = config.protocol.name,
+                            model = config.model,
+                            userMessage = command,
+                            systemPrompt = systemPrompt,
+                            toolNames = chatTools.map { it.name },
+                            round = step
+                        )
+                    ) {
+                        is AgentModelHookOutcome.Proceed ->
+                            hooked.systemPrompt
+                        is AgentModelHookOutcome.Answer -> {
+                            onTextDelta?.invoke(hooked.text)
+                            record(AgentMessage(AgentMessage.Role.AGENT, hooked.text))
+                            return@withContext trace
+                        }
+                        is AgentModelHookOutcome.Blocked -> {
+                            record(AgentMessage(AgentMessage.Role.ERROR, hooked.message))
+                            return@withContext trace
+                        }
+                    }
                     ContextCompressor.compact(
                         messages = messages,
-                        systemPrompt = systemPrompt,
+                        systemPrompt = requestPrompt,
                         tools = chatTools,
                         maxOutputTokens = config.maxTokens,
                         budgetTokens = config.contextTokens
@@ -154,7 +208,7 @@ class LlmAgentRuntime(
                     var response = service.streamChat(
                         ChatRequest(
                             model = config.model,
-                            system = systemPrompt,
+                            system = requestPrompt,
                             messages = messages.toList(),
                             tools = chatTools,
                             maxTokens = config.maxTokens,
@@ -172,7 +226,7 @@ class LlmAgentRuntime(
                         response = retryWithLargerBudget(
                             service = service,
                             config = config,
-                            systemPrompt = systemPrompt,
+                            systemPrompt = requestPrompt,
                             messages = messages
                         ) ?: response
                     }
@@ -208,7 +262,7 @@ class LlmAgentRuntime(
                             val summary = summarizeEmptyResponse(
                                 service = service,
                                 config = config,
-                                systemPrompt = systemPrompt,
+                                systemPrompt = requestPrompt,
                                 messages = messages
                             ) ?: lastResponseText.takeIf { it.isNotBlank() }
                             record(
@@ -231,12 +285,59 @@ class LlmAgentRuntime(
                     for (use in toolUses) {
                         onToolCall?.invoke(use.name, use.input)
                         metrics?.recordToolCall()
-                        val result = executeTool(use, ctx)
+                        val guard = AgentPluginSupport.beforeToolCall(
+                            use.name,
+                            use.input,
+                            ctx
+                        )
+                        val result = guard.blockedMessage?.let {
+                            ToolResult(
+                                false,
+                                it,
+                                errorCode = "PLUGIN_BLOCKED"
+                            )
+                        } ?: executeTool(
+                            use.copy(input = guard.arguments),
+                            ctx
+                        )
+                        AgentPluginSupport.afterToolCall(
+                            use.name,
+                            guard.arguments,
+                            result,
+                            ctx
+                        )
+                        AgentPluginSupport.publishEvent(
+                            "agent.tool.completed",
+                            JSONObject()
+                                .put("session_id", sessionId)
+                                .put("tool", use.name)
+                                .put("successful", result.ok)
+                                .put(
+                                    "error_code",
+                                    result.errorCode ?: JSONObject.NULL
+                                )
+                        )
                         val header = if (result.ok) "ok" else result.errorCode ?: "error"
+                        val rawDisplayText = toolDisplayText(use.name, result)
+                        val presentation = AgentPluginSupport.presentTool(
+                            toolName = use.name,
+                            arguments = guard.arguments,
+                            resultText = rawDisplayText,
+                            successful = result.ok,
+                            errorCode = result.errorCode
+                        )
                         record(
                             AgentMessage(
                                 AgentMessage.Role.TOOL,
-                                "${use.name} -> $header\n${toolDisplayText(use.name, result)}"
+                                AgentPluginSupport.formatToolMessage(
+                                    use.name,
+                                    header,
+                                    rawDisplayText,
+                                    presentation,
+                                    guard.arguments,
+                                    result.ok,
+                                    result.errorCode
+                                )
                             )
                         )
                         resultBlocks += ChatBlock.ToolResult(
@@ -320,6 +421,12 @@ class LlmAgentRuntime(
                 )
             )
         } finally {
+            AgentPluginSupport.publishEvent(
+                "agent.run.completed",
+                JSONObject()
+                    .put("session_id", sessionId)
+                    .put("messages", trace.size)
+            )
             withContext(NonCancellable) {
                 runCatching {
                     registry.execute("session_release", JSONObject(), ctx)

@@ -103,6 +103,9 @@ split_config.xxhdpi.apk
 
 此操作不可恢复。
 
+插件和虚拟应用使用不同的数据边界。虚拟应用卸载不会删除插件，插件删除也不会删除
+虚拟应用。插件包、私有存储、缓存、SQLite、设置和密钥由插件中心单独管理。
+
 ## 常见安装问题
 
 ### `SIGNATURE_MISMATCH`
@@ -135,3 +138,4 @@ APK 的 native 库与当前设备或其他实例架构不匹配。ARM64 真机�
 - [桌面与外观](desktop.md)
 - [架构与限制](architecture.md)
 - [常见问题](troubleshooting.md)
+- [插件平台与 Java SDK](plugin-center.md)

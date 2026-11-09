@@ -12,10 +12,12 @@ fun interface ChatUsageSink {
 object ChatServices {
 
     fun create(config: LlmConfig, usageSink: ChatUsageSink? = null): ChatService {
-        val service = when (config.protocol) {
-            LlmProtocol.ANTHROPIC -> AnthropicChatService(config)
-            LlmProtocol.OPENAI -> OpenAiChatService(config)
-        }
+        val service = config.pluginProviderId()?.let {
+            PluginChatService(config, it)
+        } ?: when (config.protocol) {
+                LlmProtocol.ANTHROPIC -> AnthropicChatService(config)
+                LlmProtocol.OPENAI -> OpenAiChatService(config)
+            }
         return if (usageSink == null) service else RecordingChatService(service, usageSink)
     }
 }

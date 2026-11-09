@@ -108,6 +108,7 @@ internal fun DesktopScreen(
     onLaunchSystem: (String) -> Unit,
     onOpenBrowser: () -> Unit,
     onOpenAgent: () -> Unit,
+    onOpenPlugins: () -> Unit,
     onOpenSpaces: () -> Unit,
     onOpenModel: () -> Unit,
     onOpenPermissions: () -> Unit,
@@ -134,10 +135,18 @@ internal fun DesktopScreen(
         virtualApps.associate { it.packageName to it.instances.size }
     }
     val appEntries = remember(entries) {
-        entries.filter { it.kind == LauncherKind.VIRTUAL || it.kind == LauncherKind.SYSTEM }
+        entries.filter {
+            it.kind == LauncherKind.VIRTUAL ||
+                it.kind == LauncherKind.SYSTEM ||
+                it.kind == LauncherKind.PLUGINS
+        }
     }
     val dockEntries = remember(entries) {
-        entries.filter { it.kind != LauncherKind.VIRTUAL && it.kind != LauncherKind.SYSTEM }
+        entries.filter {
+            it.kind != LauncherKind.VIRTUAL &&
+                it.kind != LauncherKind.SYSTEM &&
+                it.kind != LauncherKind.PLUGINS
+        }
     }
     val entriesById = remember(appEntries) { appEntries.associateBy { it.id } }
     var savedLayout by remember { mutableStateOf(DesktopLayoutStore.load(context)) }
@@ -162,6 +171,7 @@ internal fun DesktopScreen(
             LauncherKind.SYSTEM -> onLaunchSystem(entry.packageName)
             LauncherKind.BROWSER -> onOpenBrowser()
             LauncherKind.AGENT -> onOpenAgent()
+            LauncherKind.PLUGINS -> onOpenPlugins()
             LauncherKind.SPACES -> onOpenSpaces()
             LauncherKind.RUNNING -> onOpenRunning()
         }

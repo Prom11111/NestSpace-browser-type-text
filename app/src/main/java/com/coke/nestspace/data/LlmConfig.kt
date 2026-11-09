@@ -75,7 +75,11 @@ data class LlmConfig(
     val reasoningEffort: ReasoningEffort = ReasoningEffort.MEDIUM
 ) {
     val isConfigured: Boolean
-        get() = baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank()
+        get() = if (pluginProviderId() != null) {
+            model.isNotBlank()
+        } else {
+            baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank()
+        }
 
     /** The Base URL field stores the complete request endpoint. */
     fun endpoint(): String = baseUrl.trim()
@@ -88,6 +92,10 @@ data class LlmConfig(
      * endpoints are left unchanged.
      */
     fun withNormalizedEndpoint(): LlmConfig {
+        if (pluginProviderId() != null) {
+            return if (baseUrl == baseUrl.trim()) this
+            else copy(baseUrl = baseUrl.trim())
+        }
         if (protocol != LlmProtocol.ANTHROPIC) return this
         val raw = baseUrl.trim()
         if (raw.isEmpty()) return this
@@ -100,6 +108,22 @@ data class LlmConfig(
             return if (baseUrl == raw) this else copy(baseUrl = raw)
         }
         return copy(baseUrl = path.trimEnd('/') + "/v1/messages" + suffix)
+    }
+
+    /**
+     * A plugin provider uses `plugin://provider-id` in the existing Base URL
+     * field. The plugin owns credentials and wire protocol.
+     */
+    fun pluginProviderId(): String? {
+        val value = baseUrl.trim()
+        if (!value.startsWith("plugin://", ignoreCase = true)) return null
+        return value
+            .substring("plugin://".length)
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringBefore('#')
+            .trim()
+            .takeIf { it.matches(Regex("[A-Za-z0-9_.-]{1,128}")) }
     }
 
     companion object {
