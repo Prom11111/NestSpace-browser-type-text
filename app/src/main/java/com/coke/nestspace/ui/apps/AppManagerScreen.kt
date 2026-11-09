@@ -122,6 +122,7 @@ internal fun AppManagerScreen(
     onLaunchVirtual: (String, String?) -> Unit,
     onMultiOpen: (String) -> Unit,
     onUninstall: (String) -> Unit,
+    onOpenInstance: (String, String) -> Unit,
     onImportApps: (Set<String>) -> Unit,
     onRefreshApps: () -> Unit
 ) {
@@ -216,6 +217,7 @@ internal fun AppManagerScreen(
                     displayLabel = entry.displayLabel,
                     onLaunch = onLaunchVirtual,
                     onMultiOpen = onMultiOpen,
+                    onOpenInstance = onOpenInstance,
                     onUninstall = { pendingUninstall = it }
                 )
             }
@@ -258,9 +260,9 @@ internal fun AppManagerScreen(
     }
 
     if (showSystemPicker) {
+        val installedPackages = virtualApps.map { it.packageName }.toSet()
         SystemAppPickerDialog(
-            apps = systemApps,
-            installedPackages = virtualApps.map { it.packageName }.toSet(),
+            apps = systemApps.filterNot { it.packageName in installedPackages },
             onImport = onImportApps,
             onDismiss = { showSystemPicker = false }
         )
@@ -277,9 +279,10 @@ private data class ManagedInstance(
 
 @Composable
 private fun DesktopAppIcon(app: AppInfo) {
-    if (app.icon != null) {
+    val icon = app.icon
+    if (icon != null) {
         Image(
-            bitmap = app.icon,
+            bitmap = icon,
             contentDescription = null,
             modifier = Modifier
                 .size(36.dp)
@@ -301,7 +304,6 @@ private fun DesktopAppIcon(app: AppInfo) {
 @Composable
 private fun SystemAppPickerDialog(
     apps: List<AppInfo>,
-    installedPackages: Set<String>,
     onImport: (Set<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -313,18 +315,28 @@ private fun SystemAppPickerDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     AppLanguage.tr(
-                        "勾选要安装到虚拟空间的应用。",
-                        "Choose apps to install in the virtual space."
+                        "勾选要安装到虚拟空间的应用。已安装的应用不会重复显示。",
+                        "Choose apps to install in the virtual space. Apps already installed are hidden."
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (apps.isNotEmpty()) {
+                if (apps.isEmpty()) {
+                    Text(
+                        AppLanguage.tr(
+                            "宿主应用均已安装，没有需要重复导入的应用。",
+                            "All host apps are already installed. There is nothing to import again."
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
                     LazyColumn(
                         modifier = Modifier.heightIn(max = 420.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         items(apps, key = { it.packageName }) { app ->
+                        val icon = app.icon
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -344,9 +356,9 @@ private fun SystemAppPickerDialog(
                                 // toggle when the check mark itself is tapped.
                                 onCheckedChange = null
                             )
-                            if (app.icon != null) {
+                            if (icon != null) {
                                 Image(
-                                    bitmap = app.icon,
+                                    bitmap = icon,
                                     contentDescription = null,
                                     modifier = Modifier
                                         .size(36.dp)
@@ -372,11 +384,7 @@ private fun SystemAppPickerDialog(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    if (app.packageName in installedPackages) {
-                                        "${app.packageName} · ${AppLanguage.tr("已导入，将覆盖", "Imported; will replace")}"
-                                    } else {
-                                        app.packageName
-                                    },
+                                    app.packageName,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -417,6 +425,7 @@ private fun VirtualAppRow(
     displayLabel: String,
     onLaunch: (String, String?) -> Unit,
     onMultiOpen: (String) -> Unit,
+    onOpenInstance: (String, String) -> Unit,
     onUninstall: (VirtualApp) -> Unit
 ) {
     Column(
@@ -427,10 +436,11 @@ private fun VirtualAppRow(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        val icon = app.icon
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (app.icon != null) {
+            if (icon != null) {
                 Image(
-                    bitmap = app.icon,
+                    bitmap = icon,
                     contentDescription = null,
                     modifier = Modifier
                         .size(40.dp)
@@ -470,19 +480,33 @@ private fun VirtualAppRow(
             }
         }
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(onClick = { onLaunch(app.packageName, instance.id) }) {
-                Text(AppLanguage.tr("启动", "Launch"))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(onClick = { onLaunch(app.packageName, instance.id) }) {
+                    Text(AppLanguage.tr("启动", "Launch"))
+                }
+                OutlinedButton(onClick = { onMultiOpen(app.packageName) }) {
+                    Text(AppLanguage.tr("多开", "Duplicate"))
+                }
             }
-            OutlinedButton(onClick = { onMultiOpen(app.packageName) }) { Text(AppLanguage.tr("多开", "Duplicate")) }
-            TextButton(onClick = { onUninstall(app) }) {
-                Text(
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = { onOpenInstance(app.packageName, instance.id) }
+                ) {
+                    Text(AppLanguage.tr("实例信息", "Instance info"))
+                }
+                TextButton(onClick = { onUninstall(app) }) {
+                    Text(
                         AppLanguage.tr("卸载", "Uninstall"),
                         color = MaterialTheme.colorScheme.error
                     )
+                }
             }
         }
     }

@@ -121,6 +121,26 @@ class RunRecordStoreTest {
     }
 
     @Test
+    fun recoveryDoesNotInterruptRunStartedAfterProcessStart() {
+        val recorder = RunRecordStore.begin(root, "当前进程的新任务")
+        val beforeProcessStart = recorder.startedAt
+
+        assertTrue(
+            RunRecordStore.recoverInterrupted(
+                root,
+                chinese = true,
+                startedBefore = beforeProcessStart
+            ).isEmpty()
+        )
+        assertEquals(
+            RunRecordStore.STATUS_RUNNING,
+            RunRecordStore.recent(root).single().status
+        )
+
+        recorder.finish(RunRecordStore.STATUS_DONE, "done")
+    }
+
+    @Test
     fun interruptedSummaryKeepsStopDetails() {
         val summary = RunRecordStore.buildStopSummary(
             command = "检查天气",

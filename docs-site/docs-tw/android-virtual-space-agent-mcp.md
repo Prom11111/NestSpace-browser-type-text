@@ -30,7 +30,7 @@
 
 - **自研應用程式級容器引擎**：在宿主應用程式內載入未安裝的 APK，虛擬化 PackageManager/ActivityManager/Binder/IO，讓目標應用程式以為自己在正常系統裡執行。
 - **優先進行 Java 層虛擬化，關鍵點使用 native hook**：先讓 `Instrumentation`/`ActivityThread`/`PackageManager`/`ContextImpl` 的 Java Hook 驗證可行；Binder/UID/native 檔案路徑等困難點再上 native hook。
-- **單一處理程序 MVP → 多處理程序產品**：先在一個處理程序裡執行一個簡單 APK；穩定後再做宿主宣告的 `:pN` 處理程序池。
+- **單一處理程序 MVP → 多處理程序產品**：先在單一處理程序跑通簡單 APK，再由宿主宣告的 `:c1..:c16` 處理程序池承載多執行個體與多目標處理程序。
 - **雙通道 Agent/MCP**：本機 Agent（App 內迴圈）+ 遠端 Agent（MCP），共用同一套 `ToolRegistry`、權限、租約、稽核。
 - **AppFunctions 快路徑（可選）**：宿主應用程式可匯出 AppFunctions；容器內 APK 的 AppFunctions 走本機橋接；不可用時回退 UI 自動化。
 - **不做 VirtualApp 商業授權**。VirtualApp 只作為架構參考，**Clean-room 實作，不複製其 GPL 程式碼**。
@@ -89,7 +89,7 @@
 3. **背景啟動 Activity**：Android 10+ 限制背景啟動；虛擬應用程式從宿主背景啟動會被攔截。需要前景服務/通知/使用者操作觸發。
 4. **通知/Job/Provider**：系統依套件名稱/UID 歸屬；虛擬化這些比 Activity 難得多，很多 App 的背景能力會退化。
 5. **Keystore/簽章/Play Integrity**：同 UID 下 Keystore alias 衝突；簽章校驗/完整性校驗很可能失敗。
-6. **處理程序模型**：`app_process` 子處理程序會被 phantom process killer 殺掉；用宿主宣告的 `:pN` 處理程序池更穩定，但要處理處理程序重用/記憶體/當機隔離。
+6. **處理程序模型**：`app_process` 子處理程序會被 phantom process killer 殺掉；宿主宣告的 `:c1..:c16` 處理程序池更穩定，並需明確處理處理程序重用、記憶體與當機隔離。
 7. **16 KB / split APK**：安裝器和原生程式庫載入都要調適。
 8. **長期維護**：這是「迷你 Android 執行環境」，不是一般 App 功能；需要持續跟上 AOSP。
 
@@ -174,9 +174,9 @@
 - 缺點：目標應用程式當機會拖垮宿主；多開共用一個處理程序；記憶體壓力大。
 - 適合：驗證可行性、簡單 App。
 
-**階段 B：宿主宣告的 `:pN` 處理程序池（產品）**
+**階段 B：宿主宣告的 `:c1..:c16` 處理程序池（產品）**
 
-- 在宿主 `AndroidManifest.xml` 裡宣告一組處理程序（`:p0`、`:p1`、…），並為每個處理程序宣告一個 `StubActivity`/`VClientService`。
+- 在宿主 `AndroidManifest.xml` 裡宣告 `:c1..:c16` 槽位處理程序，並為每個處理程序宣告一個 `StubActivity`/`VClientService`。
 - 啟動虛擬應用程式時，選擇閒置處理程序，啟動該處理程序裡的 `StubActivity`；系統會建立正常的 app 處理程序和 `ActivityThread`。
 - 在該處理程序裡初始化容器 hook，載入目標 APK，執行目標 Activity。
 - 優點：是正常的 app 處理程序，不受 phantom process killer 影響；當機隔離；可並行多個執行個體。
@@ -187,7 +187,7 @@
 **處理程序分配策略：**
 
 - 每個虛擬空間一個處理程序；或每個執行個體一個處理程序；或依記憶體/前景狀態動態分配。
-- 容器槽位（槽位處理程序池）預設 2–4 個（依裝置記憶體調整）。
+- 容器槽位上限依裝置記憶體自動計算，最多 16 個；固定模式使用使用者選擇的 1–16。
 - 前景執行個體優先獨占；背景執行個體可重用處理程序。
 - 處理程序當機後標記 dirty，清理後再重用。
 
@@ -206,7 +206,7 @@
 │  └───────┬────────┘                                              │
 │          │ IPC (Binder/AIDL)                                     │
 │  ┌───────▼─────────────────────────────────────────────────────┐  │
-│  │ Client process :p0 (normal app process)                     │  │
+│  │ Client process :c1 (normal app process)                      │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │  │
 │  │  │ VClient      │  │ HookManager  │  │ Target Activity  │   │  │
 │  │  │ (ActivityThread)│ │ Java/Native │  │ (target APK)     │   │  │
@@ -215,7 +215,7 @@
 │  └─────────────────────────────────────────────────────────────┘  │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ Client process :p1 ... :pN (same structure)                 │ │
+│  │ Client processes :c1 ... :c16 (same structure)              │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -366,10 +366,10 @@ interface AndroidAdapter {
 - `finish()` 使用真實 host token，所以只關閉目前目標對應的 `StageAActivity`，上一個宿主自然恢復；Splash → 首頁、`startActivityForResult` 結果回傳均已驗證。
 - 生命週期由宿主轉發：onCreate/onStart/onRestart/onResume/onPause/onStop/onDestroy，以及 `onActivityResult`（反射呼叫目標 Activity 的 protected 方法）。
 - 尚未實作：IntentFilter/隱式 Intent 解析、`onNewIntent` 的 singleTop/CLEAR_TOP 語意、Activity options/轉場、`requestPermissions` 的 token 對應、最近任務顯示目標名稱/圖示。
-- 真實 App 相容補充（MuMu / Android 15 驗證）：
-  - 目標 APK 可能自帶 AndroidX（高德即如此）。`DexClassLoader` 預設 parent-first，會讓目標類別連結到宿主的 AndroidX，出現欄位缺失（`ViewCompat.a`）。`ContainerClassLoader` 改為 child-first，先查目標 dex，再回退宿主/系統。
-  - AMap 的 `PageSupportActivity.attachBaseContext` 會呼叫 `createConfigurationContext` 處理 locale；原本實作傳回宿主資源。`ContainerContext` 現在用目標 APK 的 AssetManager + 新 Configuration 重建 Resources，並傳回一個保持目標套件名稱/ClassLoader/目錄的 ContextWrapper。
-  - 高德仍卡在 `ICloudConfigService` 為空和 AMS `Permission Denial`，需要 Service/Provider/Binder 虛擬化才能繼續。
+- 真實目標應用程式相容補充（MuMu / Android 15 驗證）：
+  - 目標 APK 可能自帶 AndroidX。`DexClassLoader` 預設 parent-first，會讓目標類別連結到宿主的 AndroidX，出現欄位缺失。`ContainerClassLoader` 改為 child-first，先查目標 dex，再回退宿主/系統。
+  - 目標 Activity 的 `attachBaseContext` 可能呼叫 `createConfigurationContext` 處理 locale；早期實作會傳回宿主資源。`ContainerContext` 現在用目標 APK 的 AssetManager + 新 Configuration 重建 Resources，並傳回一個保持目標套件名稱、ClassLoader 和目錄的 ContextWrapper。
+  - 目標應用程式仍可能依賴系統服務繫結、Provider 或 Binder 虛擬化；未覆蓋時應輸出明確診斷，而不是增加針對單一應用程式的啟動特判。
 
 **已實作：容器內 Service / Provider（Stage C-lite+）**
 
@@ -385,14 +385,14 @@ interface AndroidAdapter {
   - Provider 權限、處理程序隔離、`FileProvider` 的 PackageManager meta-data 查詢未虛擬化。
 **已實作：Stage C-D（2026-11-04）**
 
-- 處理程序模型：`ContainerProcessPool` 把每個 `package@instance` 固定到 `:c1..:c4` 之一；容器槽位重用前強制 kill 並等待結束，`ContainerSessions` 在槽位處理程序內拒絕第二個工作階段。目標 Java 未攔截例外由 `TargetCrashGuard` 吞掉並寫入當機標記；native crash/`System.exit` 只殺掉該槽位處理程序，主處理程序與其他執行個體不受影響。下次 `space_launch` 傳回 `restarted_after_crash`/`crash_reason`。
+- 處理程序模型：`ContainerProcessPool` 把每個 `package@instance` 固定到 `:c1..:c16` 之一；容器槽位重用前強制 kill 並等待結束，`ContainerSessions` 在槽位處理程序內拒絕第二個工作階段。目標 Java 未攔截例外由 `TargetCrashGuard` 吞掉並寫入當機標記；native crash/`System.exit` 只殺掉該槽位處理程序，主處理程序與其他執行個體不受影響。下次 `space_launch` 傳回 `restarted_after_crash`/`crash_reason`。
 - JobScheduler：`ContainerContext.getSystemService(JOB_SCHEDULER_SERVICE)` 傳回 `ContainerJobScheduler`；目標 `JobService` 用目標 ClassLoader 具現化，驅動 `onCreate`/`onStartJob`/`onStopJob`，支援最小延遲、週期、退避和網路/充電/低電量/閒置限制（無法判斷的限制視為已滿足）。處理程序存活期間有效。
 - 通知：`INotificationManager` 代理把套件名稱改成宿主套件，tag/channel/group 加上虛擬套件前綴，small icon 重繪為 bitmap，目標 PendingIntent 換成宿主 `ContainerLaunchProxyActivity` 跳板；channel 查詢結果去掉前綴。
 - 廣播橋接：目標靜態/動態 Receiver 的 action 會註冊到宿主；系統 sticky/一般廣播注入容器，目標發出的非自身作用域廣播在本機分送後繼續發給宿主，並帶 origin extra 防止回送迴圈。
 - 權限：`checkSelfPermission`/`checkPermission`/`enforce*`/PackageManager 權限查詢走虛擬授權表；改寫 `ContainerPackageManager.buildRequestPermissionsIntent`/`getPermissionControllerPackageName` 並宣告隱藏的 `Context.getPermissionRequestState`，使 `requestPermissions` 能被容器接管。宿主宣告的權限會彈出真實系統對話框，結果依套件持久化；MCP `space_permissions` 支援 list/grant/revoke。
 - 完整 VPMS：`VirtualPackageRegistry` 從 `state.json` 建立輕量索引，依需求解析同虛擬空間其他 APK；`getInstalledPackages`/`getInstalledApplications`、顯式元件、隱式 Intent、`resolve*`/`query*`、標籤/圖示/Resources/啟動 Intent/簽章/權限宣告均涵蓋跨虛擬應用程式。其他應用程式使用穩定合成 UID。
-  - 效能限制：清單/標籤/UID/簽章走輕量索引；未指定套件的隱式 Intent 不掃描所有虛擬應用程式，只有顯式套件/元件查詢才解析對應 APK。否則知乎啟動時解析網易雲 100MB+ APK 會阻塞主執行緒。
-- 相容性限制：`WindowManager` 動態代理只對網易雲啟用（Toast 套件名稱改寫）。全域代理會被知乎 native SDK 傳入 JNI，CheckJNI 回報 `invalid jobject` 並中止容器處理程序。
+  - 效能限制：清單/標籤/UID/簽章走輕量索引；未指定套件的隱式 Intent 不掃描所有虛擬應用程式，只有顯式套件/元件查詢才解析對應 APK。否則高資源目標應用程式啟動時解析另一個大型 APK 會阻塞主執行緒。
+- 相容性限制：`WindowManager` 動態代理只在實際需要 Toast 套件名稱改寫的目標內容中啟用。全域代理可能被目標 native SDK 傳入 JNI，CheckJNI 回報 `invalid jobject` 並中止容器處理程序。
 - 多執行個體 `.so` 隔離：同套件不同執行個體分配不同容器槽位；原生程式庫依執行個體目錄擷取；容器槽位重用時先殺掉舊的槽位處理程序，避免同名 `.so` 與 JNI 全域狀態混用。
 
 **其他元件：**
@@ -426,7 +426,7 @@ interface AndroidAdapter {
 
 **Application：**
 
-- 呼叫 `LoadedApk.makeApplication` 或手動 `Instrumentation.newApplication`。
+- 由 `runtime-compat` 的 `CompatApplicationFactory` 建立目標 Application，並處理一般、Tinker 與 ApplicationLike 啟動鏈。
 - `attachBaseContext(targetContext)` → `onCreate()`。
 - 目標應用程式的 `ContentProvider` 初始化順序要模擬（`installContentProviders`）。
 
@@ -498,9 +498,9 @@ interface AndroidAdapter {
 
 ### 3.8 處理程序模型 / phantom process
 
-- 用宿主宣告的 `:pN` 處理程序，不用 `app_process` 子處理程序。
-- `StubActivity`/`VClientService` 宣告在 `:pN`，啟動時系統建立正常 app 處理程序。
-- 處理程序池大小依裝置記憶體：低階 1–2，高階 3–4。
+- 用宿主宣告的 `:c1..:c16` 槽位處理程序，不用 `app_process` 子處理程序。
+- `StubActivity`/`VClientService` 宣告在 `:c1..:c16`，啟動時系統建立正常 app 處理程序。
+- 槽位上限依裝置記憶體自動計算，最多 16 個；固定模式使用使用者選擇的 1–16。
 - 處理程序重用前清理：目標 Activity/Service、ClassLoader、Resources、靜態狀態、檔案鎖。
 - 處理程序當機：標記 dirty，重新啟動；宿主 UI 顯示「空间已重启」（空間已重新啟動）。
 - 前景服務保持運作：宿主主處理程序 + 目前虛擬空間處理程序；避免所有處理程序常駐。
@@ -516,13 +516,15 @@ interface AndroidAdapter {
 - JNI：目標應用程式的 `System.loadLibrary` 和 `RegisterNatives` 通常在目標 ClassLoader 下運作；注意全域 JNI 狀態衝突。
 - 不要在同一個處理程序載入兩個版本不相容的同一個 `.so`（多執行個體可能衝突）；必要時依處理程序隔離。
 
-目前實作（Stage B+）：
+目前實作（Stage C-D）：
 
 - `ApkInspector` 掃描 base/split 中的 `lib/<abi>/*.so`，得到可用 ABI 集合。
 - `NativeLibs` 依 `Build.SUPPORTED_ABIS` 選第一個相符項目，把該 ABI 的 `.so` 平鋪擷取到 `vspace/data/<pkg>/<instance>/native-libs`，用 stamp 快取避免每次啟動重複複製。
 - `DexClassLoader(dexPath, codeCache, nativeLibsDir, parent)`，並設定 `ApplicationInfo.nativeLibraryDir`。
 - 安裝不因 ABI 失敗；啟動前檢查，若無相符 ABI 傳回 `ABI_MISMATCH` 並提供裝置/應用程式 ABI。僅 arm64 的 APK 在 x86_64 模擬器上會停在這裡。
-- 尚未實作：16 KB `p_align` 檢查、`dlopen`/`System.load` hook、多執行個體同名 `.so` 隔離。
+- `dlopen`/`android_dlopen_ext` hook 會把新載入模組送入增量掃描佇列。
+- 同套件不同執行個體使用不同槽位；重用槽位前先結束舊處理程序，避免同名 `.so` 與 JNI 全域狀態混用。
+- 通用 ELF `p_align` 預檢仍不是強制門檻；16 KB 相容性由建置參數、裝置測試和執行階段診斷共同涵蓋。
 
 ### 3.10 背景 / Job / Provider / WebView
 
@@ -646,7 +648,7 @@ interface AndroidAdapter {
 - 錄製：`(action, snapshot_hash, timestamp, result)`。
 - 產生：穩定序列轉成帶斷言的 YAML/JSON 指令碼。
 - 回放：每步檢查前置條件；不滿足則回退 Agent。
-- 技能庫：依 App 組織，如 `wechat.send_message`、`settings.open_wifi`。
+- 技能庫：依 App 組織，如 `app.send_message`、`settings.open_wifi`。
 - 技能是降低 token 成本的關鍵：常見任務走指令碼+驗證，不走大型模型。
 
 ### 4.6 Android 17 Advanced Protection Mode（AAPM）
@@ -1034,7 +1036,7 @@ Android 16+ 的 AppFunctions 是「系統級工具註冊」：App 用 `@AppFunct
                 │                              │
 ┌───────────────▼──────────────────────────────▼───────────────┐
 │ Infrastructure                                               │
-│  宿主宣告的 :pN 處理程序 | MCP Server | 本機 Agent           │
+│  宿主宣告的 :c1..:c16    | MCP Server | 本機 Agent           │
 │  AccessibilityService / MediaProjection / Shizuku            │
 │  Room / DataStore / WorkManager                              │
 └──────────────────────────────────────────────────────────────┘
@@ -1060,7 +1062,7 @@ app/
     engine/resources/    # Resources/AssetManager
     engine/binder/       # Binder/UID 虛擬化
     engine/io/           # 資料目錄重新導向
-    engine/process/      # :pN 處理程序池、VClientService
+    engine/process/      # :c1..:c16 處理程序池、VClientService
     engine/hooks/        # Java/Native hook、版本調適
     fastpath/            # AppFunctions 偵測、宿主匯出、容器內本機橋接
     feature/spaces/      # Compose UI: 虛擬空間清單、App 網格
@@ -1154,7 +1156,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 5. `service/McpForegroundService.kt`：前景服務 + 通知 + token。
 6. `core/agent/`：本機 Agent 骨架（`ClaudeAdapter` 或假模型），重用同一套 ToolRegistry。
 7. `engine/` + `container/`：Stage A/B 單處理程序容器、安裝器、多開和執行個體資料目錄已實作（見第 7 節）。
-8. 下一步：處理程序池、原生程式庫、Binder/UID、Provider/通知/Job、Android 9+ 調適。
+8. 處理程序池、原生程式庫、Binder/UID、Provider/通知/Job 與 Android 7.1–17 調適已實作；後續重點是背景喚醒、系統端真實 UID 邊界和更多通用相容樣本。
 
 ---
 
@@ -1165,8 +1167,8 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 | **S0 控制層 + 雙通道骨架** | 先把「控制」做成獨立層 | ToolRegistry、MCP Server、本機 Agent 骨架、Shizuku/無障礙、租約/核准、軌跡 | 遠端 MCP 和本機 Agent 都能控制已安裝 App 完成 3 類任務；工具行為一致 |
 | **A 單處理程序最小容器** ✅ 已驗證 | 驗證一個簡單 APK 可執行 | AXML/資源解析、ClassLoader、Resources、StubActivity、Instrumentation/ActivityThread hook、Context 包裝 | 一個無原生程式庫/無 GMS 的簡單 APK 能在宿主處理程序啟動並顯示 UI（API 25 模擬器已驗證） |
 | **B 安裝器 + 多開** ✅ 已驗證（API 25 / API 36） | 能安裝、能多執行個體 | split APK、簽章驗證、`REQUIRE_SECURE_ENV`、IO 重新導向、VPMS 清單/啟動、執行個體資料目錄 | 簡單 App 能安裝、啟動、多開；資料互不污染（testapp + Android 16 已驗證；base+合成 split 已驗證，真實 config split 資源 overlay 待驗證） |
-| **C 處理程序池 + Native** | 當機隔離、native App | `:pN` 處理程序池、VClientService、原生程式庫擷取/載入、16 KB、Binder/UID Java hook | 5 個 App 在獨立處理程序執行；原生程式庫正常；16 KB 裝置可安裝 |
-| **D 背景/系統能力** | 主流 App 可用 | 通知、靜態 Receiver、Job/Alarm 部分代理、Provider、WebView 處理程序隔離、Android 15–17 調適 | 8/10 目標應用程式啟動；核心流程 7/10；無致命當機 |
+| **C 處理程序池 + Native** ✅ 已實作 | 當機隔離、native App | `:c1..:c16` 處理程序池、VClientService、原生程式庫擷取/載入、16 KB 測試、Binder/UID Java hook | 目標在獨立處理程序執行；原生程式庫正常；16 KB 裝置可安裝並提供明確診斷 |
+| **D 背景/系統能力** ✅ 核心已實作 | 主流 App 可用 | 通知、靜態 Receiver、Job/Alarm 部分代理、Provider、WebView 處理程序隔離、Android 15–17 調適 | 通知、廣播、Provider、權限與常見背景元件可用；系統終止後的完整 Job/Alarm 喚醒仍受限 |
 | **E Agent 自主性 + 安全** | 可上線 | 裝置端/雲端模型、技能庫、驗證/重試、人工接管、稽核、去識別化、MCP 身分驗證 | 常見任務成功率達標；安全審查通過 |
 | **F AppFunctions 快路徑** | 可選加速 | 宿主 `@AppFunction` 匯出、容器 APK 中繼資料解析、容器內本機執行、權限偵測、UI 回退 | 宿主工具可被系統 Agent 呼叫；容器內 AppFunctions 可執行；不可用時回退 UI |
 
@@ -1178,8 +1180,8 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 - ✅ 目標資源生效：`@string`、`@layout` 正常解析，點擊按鈕後 TextView 更新為目標字串。
 - ✅ 點擊/繪製不當機、不黑畫面、不 ANR。
 - ✅ 目標 `Application` 的 `attachBaseContext`/`onCreate` 已由 Stage B 接入（testapp 驗證）。
-- ⏳ 目標 `getPackageName()` 已傳回目標套件名稱；`getPackageManager()` 查詢仍是宿主 PM，留給 Stage C/D 的 VPMS。
-- ⏳ 僅驗證 API 25；Android 9+ hidden API 限制可能阻擋 `Activity.attach` / `AssetManager.addAssetPath`，需依版本調適。
+- ✅ 目標 `getPackageName()` 與 PackageManager 查詢由虛擬套件索引回答，並涵蓋虛擬應用程式之間的 VPMS 查詢。
+- ✅ Android 9+ hidden API 由 HiddenApiBypass 處理；目前驗證涵蓋 Android 7.1、15、16、17。
 
 ### 7.2 Stage B 的關鍵驗收
 
@@ -1197,21 +1199,21 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 - ✅ Android 16（API 36）複測：桌面、容器、多開、執行個體資料隔離正常。
 - ✅ Android 14+ 可寫 dex 限制：安裝後的 APK 設為唯讀後，`DexClassLoader` 正常載入。
 - ✅ Android 9+ hidden API：接入 HiddenApiBypass 6.2，`Activity.attach` 等反射可用；未豁免時 `Activity.attach not found`。
-- ⏳ Android 17（API 37）模擬器在本機 SurfaceFlinger 當機（`hasReadColorBufferDma`），PackageManager/ActivityManager 隨後重新啟動，未能完成裝置級驗證；需要實機或圖形堆疊正常的模擬器。
-- ⏳ `3 個簡單 App` 的相容性樣本還不足（目前以 testapp + 多開驗證）；建議 Stage C 前補更多 APK 樣本。
-- ⏳ 單一處理程序、僅入口 Activity；`startActivity`、Provider、Binder/UID、native 仍待 Stage C/D。
-- ✅ 引擎內的虛擬應用程式清單/啟動（非系統 PMS/AMS hook）和桌面式入口已接入；目標 `PackageManager` 查詢仍是宿主 PM。
+- ✅ Android 17（API 37）與 MuMu（Android 15、ARM bridge）已納入目前驗證矩陣。
+- ✅ 相容樣本涵蓋多執行個體、顯式 Activity、Provider、WebView、外掛元件和 native 模組。
+- ✅ 多處理程序路由、元件橋接、Binder/UID 代理與 native 環境均已實作，不再侷限於單處理程序入口 Activity。
+- ✅ 引擎內的虛擬應用程式清單/啟動（非系統 PMS/AMS hook）、桌面入口與目標 PackageManager 虛擬化均已接入。
 
-實作位置：`engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/MiniContainer.kt`、`ui/VirtualApp.kt`。
+實作位置：`runtime-core` 的 `engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/ContainerSession.kt`、`container/ContainerProcessPool.kt`，以及 `app` 的 `ui/DesktopScreen.kt`。
 
-### 7.3 Stage C 的關鍵驗收
+### 7.3 Stage C 的關鍵驗收（已實作）
 
-- 兩個執行個體在不同 `:pN` 處理程序，當機互不影響。
+- 兩個執行個體在不同 `:c1..:c16` 槽位處理程序，當機互不影響。
 - 目標應用程式的原生程式庫能載入。
-- 16 KB 裝置上對齊的原生程式庫正常；未對齊的提供明確錯誤。
+- 原生程式庫載入結果與診斷可區分已對齊、未對齊和 ABI 不符；通用 ELF `p_align` 預檢仍作為後續增強。
 - `Process.myUid`/`Binder.getCallingUid` 的 Java hook 至少涵蓋常見檢查（不做系統端 UID 欺騙）。
 
-### 7.4 Stage D 的關鍵驗收
+### 7.4 Stage D 的關鍵驗收（核心已實作）
 
 - 通知能顯示（或明確降級）。
 - 靜態 Receiver 能收到。
@@ -1247,7 +1249,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 
 - 自研測試 APK（最小 Activity、Resources、原生程式庫、split、Service、Receiver）
 - 開源簡單 App（F-Droid 上的小工具）
-- 微信、支付寶、淘寶、抖音、小紅書（相容性目標，不承諾）
+- 常見社交、電商、出行、內容類應用程式（相容性目標，不承諾）
 - 遊戲（Unity/UE，Surface/Canvas）
 - Flutter App
 - 以 WebView 為主的 App
@@ -1384,7 +1386,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 | Binder/UID | `Binder.getCallingUid`、`Process.myUid`、`UserHandle` | `Binder.execTransact` | 系統端 UID 無法偽造 |
 | IO | `ContextImpl`、`SharedPreferencesImpl`、`SQLiteDatabase` | `open`/`fopen` | scoped storage |
 | 通知 | `NotificationManager`、`PendingIntent` | — | Android 12 trampoline；Android 13 權限 |
-| 處理程序 | 宿主 `:pN`、`StubActivity`、`VClientService` | — | 不要用 `app_process` 子處理程序 |
+| 處理程序 | 宿主 `:c1..:c16`、`StubActivity`、`VClientService` | — | 不要用 `app_process` 子處理程序 |
 | 原生程式庫 | `System.loadLibrary`、`System.load` | `dlopen`/`android_dlopen_ext` | 16 KB；ABI |
 | WebView | `WebView.setDataDirectorySuffix`（處理程序級） | — | 多執行個體需獨立處理程序 |
 

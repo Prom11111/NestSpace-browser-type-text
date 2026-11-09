@@ -123,7 +123,8 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                 "space_id" to "string",
                 "package" to "string",
                 "instance_id" to "string",
-                "headless" to "boolean"
+                "headless" to "boolean",
+                "activity" to "string"
             ),
             mutating = true
         ) { args, ctx ->
@@ -134,6 +135,7 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
             )
             if (spaceId != "system") {
                 val instanceId = args.optString("instance_id").takeIf { it.isNotBlank() }
+                val requestedActivity = args.optString("activity").takeIf { it.isNotBlank() }
                 // Direct open/action requests use a normal window. Information
                 // gathering defaults to the assistant's square headless mirror.
                 val explicitVisible = args.has("headless") &&
@@ -142,13 +144,8 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                 // Headless reads use the UI service directly; no mirror or
                 // screenshot card needs to be shown on the assistant page.
                 LivePreview.setSuppressed(headless)
-                val running = ContainerProcessPool.runningSlots(context)
-                    .lastOrNull {
-                        it.packageName == pkg &&
-                            it.processName == pkg &&
-                            (instanceId == null || it.instanceId == instanceId)
-                    }
-                if (running != null) {
+                val running = ContainerProcessPool.findRunningSlot(pkg, instanceId)
+                if (running != null && requestedActivity == null) {
                     if (explicitVisible) {
                         val mirrored = ContainerUiClient.isMirrorMode(context, running.slot)
                             ?: (HeadlessMirrorWindow.activeSlot() == running.slot)
@@ -188,7 +185,7 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                             // Restart that slot inside the assistant mirror.
                             android.util.Log.d(
                                 "SpaceToolSpecs",
-                                "demoting visible ${running.packageName} slot=${running.slot} to headless"
+                                "demoting visible $pkg slot=${running.slot} to headless"
                             )
                             ContainerProcessPool.closeSlot(context, running.slot)
                             HeadlessMirrorWindow.hide()
@@ -214,13 +211,20 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                         }
                     }
                 }
-                when (val result = engine.launch(spaceId, pkg, instanceId, headless)) {
+                when (val result = engine.launch(
+                    spaceId,
+                    pkg,
+                    instanceId,
+                    headless,
+                    requestedActivity
+                )) {
                     is EngineResult.Error -> return@ToolSpec ToolResult(
                         false, "${result.code}: ${result.message}", errorCode = result.code
                     )
                     is EngineResult.Ok -> {
                         val launched = result.value
-                        val slot = ContainerProcessPool.slotFor(pkg, launched.instanceId)
+                        val slot = launched.slot
+                            ?: ContainerProcessPool.slotFor(pkg, launched.instanceId)
                         if (!awaitContainerReady(slot)) {
                             return@ToolSpec launchBlockedResult()
                         }
@@ -234,6 +238,11 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                                 .put("package", pkg)
                                 .put("instance_id", launched.instanceId)
                                 .put("activity", launched.activity)
+                                .put(
+                                    "target_process",
+                                    launched.targetProcess ?: pkg
+                                )
+                                .put("slot", launched.slot ?: JSONObject.NULL)
                                 .put("data_dir", launched.dataDir)
                                 .put("headless", headless)
                                 .put("restarted_after_crash", launched.restartedAfterCrash)
@@ -335,16 +344,27 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                     splitUris.optString(i).takeIf { it.isNotBlank() }?.let(uris::add)
                 }
             }
-            val denied = requireConfirmation(
-                ctx,
-                "install APK",
-                AppLanguage.tr(
-                    "安装 APK 到虚拟空间？\n$base",
-                    "Install this APK into the virtual space?\n$base"
-                ),
-                ToolConfirmationCategory.INSTALL
-            )
-            if (denied != null) return@ToolSpec denied
+            val alreadyInstalled = engine.matchesInstalledPayload(spaceId, uris)
+            val sameIdentity = alreadyInstalled ||
+                engine.matchesInstalledIdentity(spaceId, uris)
+            if (sameIdentity) {
+                android.util.Log.d(
+                    "SpaceInstall",
+                    "skip install confirmation: same app and signing certificate"
+                )
+            }
+            if (!sameIdentity) {
+                val denied = requireConfirmation(
+                    ctx,
+                    "install APK",
+                    AppLanguage.tr(
+                        "安装 APK 到虚拟空间？\n$base",
+                        "Install this APK into the virtual space?\n$base"
+                    ),
+                    ToolConfirmationCategory.INSTALL
+                )
+                if (denied != null) return@ToolSpec denied
+            }
             when (val result = engine.install(spaceId, uris)) {
                 is EngineResult.Error -> ToolResult(
                     false, "${result.code}: ${result.message}", errorCode = result.code
@@ -353,6 +373,7 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                     true,
                     JSONObject()
                         .put("installed", true)
+                        .put("already_installed", alreadyInstalled)
                         .put("package", result.value.packageName)
                         .put("label", result.value.label)
                         .put("version_name", result.value.versionName ?: JSONObject.NULL)

@@ -116,6 +116,8 @@ internal fun DesktopScreen(
     loadShortcuts: suspend (String) -> List<AppShortcut>,
     onOpenRunning: () -> Unit,
     onUninstallVirtual: (String) -> Unit,
+    onDeleteVirtualInstance: (String, String) -> Unit,
+    onOpenVirtualInstance: (String, String) -> Unit,
     onRemoveSystemApp: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -127,6 +129,9 @@ internal fun DesktopScreen(
     }
     val entries = remember(virtualApps, systemApps, languageRevision) {
         buildEntries(virtualApps, systemApps)
+    }
+    val virtualInstanceCounts = remember(virtualApps) {
+        virtualApps.associate { it.packageName to it.instances.size }
     }
     val appEntries = remember(entries) {
         entries.filter { it.kind == LauncherKind.VIRTUAL || it.kind == LauncherKind.SYSTEM }
@@ -173,6 +178,7 @@ internal fun DesktopScreen(
     var renameText by remember { mutableStateOf("") }
     var folderAppMenu by remember { mutableStateOf<LauncherEntry?>(null) }
     var confirmUninstall by remember { mutableStateOf<LauncherEntry?>(null) }
+    var confirmDeleteInstance by remember { mutableStateOf<LauncherEntry?>(null) }
     var confirmRemove by remember { mutableStateOf<LauncherEntry?>(null) }
     var appInfo by remember { mutableStateOf<LauncherEntry?>(null) }
     var menuShortcuts by remember { mutableStateOf<List<AppShortcut>>(emptyList()) }
@@ -404,7 +410,8 @@ internal fun DesktopScreen(
     val overlayOpen = menuSlot != null || blankMenuPoint != null || openFolderId != null ||
         addingToFolderId != null || folderPickerApp != null ||
         renamingFolder != null || folderAppMenu != null ||
-        confirmUninstall != null || confirmRemove != null || appInfo != null
+        confirmUninstall != null || confirmDeleteInstance != null ||
+            confirmRemove != null || appInfo != null
     LaunchedEffect(overlayOpen) {
         FloatingDotOverlay.setOverlayHidden(context, "desktop-overlay", overlayOpen)
     }
@@ -870,24 +877,48 @@ internal fun DesktopScreen(
                                 }
                             }
                             MenuAction(
-                                AppLanguage.tr("应用信息", "App info"),
+                                if (entry.kind == LauncherKind.VIRTUAL &&
+                                    entry.instanceId != null
+                                ) {
+                                    AppLanguage.tr("实例信息", "Instance info")
+                                } else {
+                                    AppLanguage.tr("应用信息", "App info")
+                                },
                                 Icons.Default.Info
                             ) {
                                 menuSlot = null
-                                if (entry.kind == LauncherKind.SYSTEM) {
-                                    openSystemAppInfo(context, entry.packageName)
-                                } else {
-                                    appInfo = entry
+                                when {
+                                    entry.kind == LauncherKind.VIRTUAL &&
+                                        entry.instanceId != null ->
+                                        onOpenVirtualInstance(
+                                            entry.packageName,
+                                            entry.instanceId
+                                        )
+                                    entry.kind == LauncherKind.SYSTEM ->
+                                        openSystemAppInfo(context, entry.packageName)
+                                    else -> appInfo = entry
                                 }
                             }
                             when (entry.kind) {
-                                LauncherKind.VIRTUAL -> MenuAction(
-                                    AppLanguage.tr("卸载应用", "Uninstall app"),
-                                    Icons.Default.DeleteOutline,
-                                    danger = true
-                                ) {
-                                    menuSlot = null
-                                    confirmUninstall = entry
+                                LauncherKind.VIRTUAL -> {
+                                    val multipleInstances =
+                                        (virtualInstanceCounts[entry.packageName] ?: 0) > 1
+                                    MenuAction(
+                                        if (multipleInstances) {
+                                            AppLanguage.tr("删除此实例", "Delete this instance")
+                                        } else {
+                                            AppLanguage.tr("卸载应用", "Uninstall app")
+                                        },
+                                        Icons.Default.DeleteOutline,
+                                        danger = true
+                                    ) {
+                                        menuSlot = null
+                                        if (multipleInstances && entry.instanceId != null) {
+                                            confirmDeleteInstance = entry
+                                        } else {
+                                            confirmUninstall = entry
+                                        }
+                                    }
                                 }
 
                                 LauncherKind.SYSTEM -> MenuAction(
@@ -1283,6 +1314,38 @@ internal fun DesktopScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmUninstall = null }) {
+                    Text(AppLanguage.tr("取消", "Cancel"))
+                }
+            }
+        )
+    }
+
+    confirmDeleteInstance?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { confirmDeleteInstance = null },
+            title = { Text(AppLanguage.tr("删除此实例", "Delete this instance")) },
+            text = {
+                Text(
+                    AppLanguage.tr(
+                        "只删除 ${entry.label} 的实例数据和桌面图标，其他实例不会受影响。此操作无法撤销。",
+                        "This deletes only the instance data and desktop icon for " +
+                            "${entry.label}. Other instances are not affected. " +
+                            "This cannot be undone."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDeleteInstance = null
+                        entry.instanceId?.let {
+                            onDeleteVirtualInstance(entry.packageName, it)
+                        }
+                    }
+                ) { Text(AppLanguage.tr("删除实例", "Delete")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteInstance = null }) {
                     Text(AppLanguage.tr("取消", "Cancel"))
                 }
             }

@@ -196,6 +196,9 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
         if (uris.isEmpty() || installing.value) return
         viewModelScope.launch {
             installing.value = true
+            val installedBefore = engine.virtualApps.value
+                .filter { it.spaceId == SPACE_ID }
+                .associateBy { it.packageName }
             notice.value = AppLanguage.tr(
                     "正在导入 ${uris.size} 个 APK…",
                     "Importing ${uris.size} APK(s)…"
@@ -209,6 +212,17 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     is EngineResult.Ok -> {
                         val app = result.value
+                        val previous = installedBefore[app.packageName]
+                        if (previous != null &&
+                            previous.installedAt == app.installedAt &&
+                            previous.updatedAt == app.updatedAt
+                        ) {
+                            notice.value = AppLanguage.tr(
+                                "${app.label} 已安装，无需重复导入",
+                                "${app.label} is already installed; no duplicate import was made"
+                            )
+                            return@launch
+                        }
                         notice.value = AppLanguage.tr(
                             "已安装 ${app.label}（${app.instances.size} 个实例）",
                             "Installed ${app.label} (${app.instances.size} instance(s))"
@@ -238,21 +252,26 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importHostApps(packageNames: Set<String>) {
         if (packageNames.isEmpty() || installing.value) return
+        val installedPackages = engine.virtualApps.value
+            .filter { it.spaceId == SPACE_ID }
+            .mapTo(mutableSetOf()) { it.packageName }
+        val pendingPackages = packageNames - installedPackages
+        if (pendingPackages.isEmpty()) return
         viewModelScope.launch {
             installing.value = true
             val available = apps.value.associateBy { it.packageName }
             val failures = mutableListOf<String>()
             var imported = 0
             try {
-                packageNames.forEachIndexed { index, packageName ->
+                pendingPackages.forEachIndexed { index, packageName ->
                     val app = available[packageName]
                     if (app == null || app.apkPaths.isEmpty()) {
                         failures += packageName
                         return@forEachIndexed
                     }
                     notice.value = AppLanguage.tr(
-                        "正在导入 ${app.label}（${index + 1}/${packageNames.size}）…",
-                        "Importing ${app.label} (${index + 1}/${packageNames.size})…"
+                        "正在导入 ${app.label}（${index + 1}/${pendingPackages.size}）…",
+                        "Importing ${app.label} (${index + 1}/${pendingPackages.size})…"
                     )
                     val apkUris = app.apkPaths.map { Uri.fromFile(File(it)).toString() }
                     when (val result = engine.install(SPACE_ID, apkUris)) {
@@ -283,33 +302,32 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
 
     fun launchVirtual(packageName: String, instanceId: String? = null) {
         viewModelScope.launch {
-            val running = ContainerProcessPool.runningSlots(getApplication())
-                .lastOrNull {
-                    it.packageName == packageName &&
-                        it.processName == packageName &&
-                        (instanceId == null || it.instanceId == instanceId)
-                }
+            val running = ContainerProcessPool.findRunningSlot(packageName, instanceId)
             if (running != null) {
-                val mirrored = ContainerUiClient.isMirrorMode(
-                    getApplication(),
-                    running.slot
-                ) ?: (HeadlessMirrorWindow.activeSlot() == running.slot)
-                if (!mirrored && ContainerProcessPool.bringToFront(
+                val opened = withContext(Dispatchers.IO) {
+                    val mirrored = ContainerUiClient.isMirrorMode(
                         getApplication(),
-                        running.slot,
-                        packageName,
-                        running.instanceId
-                    )
-                ) {
+                        running.slot
+                    ) ?: (HeadlessMirrorWindow.activeSlot() == running.slot)
+                    if (mirrored) {
+                        ContainerProcessPool.closeSlot(getApplication(), running.slot)
+                        HeadlessMirrorWindow.hide()
+                        false
+                    } else {
+                        ContainerProcessPool.bringToFront(
+                            getApplication(),
+                            running.slot,
+                            packageName,
+                            running.instanceId
+                        )
+                    }
+                }
+                if (opened) {
                     notice.value = AppLanguage.tr(
                         "已打开 ${packageName}",
                         "Opened $packageName"
                     )
                     return@launch
-                }
-                if (mirrored) {
-                    ContainerProcessPool.closeSlot(getApplication(), running.slot)
-                    HeadlessMirrorWindow.hide()
                 }
             }
             when (val result = engine.launch(SPACE_ID, packageName, instanceId)) {
@@ -381,6 +399,44 @@ class VirtualViewModel(app: Application) : AndroidViewModel(app) {
                     "已卸载 $packageName，实例数据已清理",
                     "Uninstalled $packageName and cleaned up instance data"
                 )
+                }
+            }
+        }
+    }
+
+    fun deleteVirtualInstance(packageName: String, instanceId: String) {
+        viewModelScope.launch {
+            when (val result = engine.deleteInstance(SPACE_ID, packageName, instanceId)) {
+                is EngineResult.Error -> fail(
+                    AppLanguage.tr(
+                        "删除实例失败：${result.code}: ${result.message}",
+                        "Failed to delete instance: ${result.code}: ${result.message}"
+                    )
+                )
+                is EngineResult.Ok -> {
+                    notice.value = AppLanguage.tr(
+                        "已删除 $packageName 的实例 $instanceId",
+                        "Deleted $packageName instance $instanceId"
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearVirtualInstanceData(packageName: String, instanceId: String) {
+        viewModelScope.launch {
+            when (val result = engine.clearInstanceData(SPACE_ID, packageName, instanceId)) {
+                is EngineResult.Error -> fail(
+                    AppLanguage.tr(
+                        "清空数据失败：${result.code}: ${result.message}",
+                        "Failed to clear data: ${result.code}: ${result.message}"
+                    )
+                )
+                is EngineResult.Ok -> {
+                    notice.value = AppLanguage.tr(
+                        "已清空 $packageName 实例 $instanceId 的数据",
+                        "Cleared data for $packageName instance $instanceId"
+                    )
                 }
             }
         }

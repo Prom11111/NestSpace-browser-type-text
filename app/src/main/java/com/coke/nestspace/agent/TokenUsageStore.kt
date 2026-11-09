@@ -8,6 +8,9 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 data class TokenUsageTotals(
     val requests: Long = 0,
@@ -64,7 +67,13 @@ class TokenUsageStore private constructor(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val lock = Any()
+    private val writeLock = Any()
     private var cached: JSONObject? = null
+    private var revision = 0L
+    private var pendingSave: ScheduledFuture<*>? = null
+    private val writer = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "token-usage-writer").apply { isDaemon = true }
+    }
 
     fun record(config: LlmConfig, usage: ChatUsage, kind: String = "chat") {
         synchronized(lock) {
@@ -125,7 +134,7 @@ class TokenUsageStore private constructor(context: Context) {
                     .put("estimated", usage.estimated)
             )
             while (recent.length() > RECENT_LIMIT) recent.remove(0)
-            save(data)
+            scheduleSaveLocked()
         }
     }
 
@@ -192,7 +201,12 @@ class TokenUsageStore private constructor(context: Context) {
 
     fun reset() {
         synchronized(lock) {
+            revision++
+            pendingSave?.cancel(false)
+            pendingSave = null
             cached = JSONObject()
+        }
+        synchronized(writeLock) {
             prefs.edit().remove(KEY).commit()
         }
     }
@@ -206,9 +220,25 @@ class TokenUsageStore private constructor(context: Context) {
         return data
     }
 
-    private fun save(data: JSONObject) {
-        cached = data
-        prefs.edit().putString(KEY, data.toString()).commit()
+    private fun scheduleSaveLocked() {
+        revision++
+        val expectedRevision = revision
+        pendingSave?.cancel(false)
+        pendingSave = writer.schedule({
+            synchronized(writeLock) {
+                val serialized = synchronized(lock) {
+                    if (revision != expectedRevision) {
+                        null
+                    } else {
+                        pendingSave = null
+                        cached?.toString()
+                    }
+                }
+                if (serialized != null) {
+                    prefs.edit().putString(KEY, serialized).commit()
+                }
+            }
+        }, SAVE_DELAY_MS, TimeUnit.MILLISECONDS)
     }
 
     private fun increment(totals: JSONObject, usage: ChatUsage) {
@@ -244,6 +274,7 @@ class TokenUsageStore private constructor(context: Context) {
         private const val KEY = "state.v1"
         private const val RECENT_LIMIT = 100
         private const val DAY_LIMIT = 400
+        private const val SAVE_DELAY_MS = 500L
 
         @Volatile
         private var instance: TokenUsageStore? = null

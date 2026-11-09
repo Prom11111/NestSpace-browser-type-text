@@ -85,6 +85,9 @@ markdown_extensions:
 
 exclude_docs: |
   archive/
+  performance-audit-and-improvement-plan.md
+  runtime-modules.md
+  releases/
 
 extra:
   generator: false

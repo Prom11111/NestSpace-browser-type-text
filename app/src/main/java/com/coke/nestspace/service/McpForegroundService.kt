@@ -41,7 +41,7 @@ class McpForegroundService : Service() {
         }
 
         /**
-         * Auto-start entry point. Application.onCreate runs before the process
+         * Auto-start entry point. Deferred startup may run before the process
          * is foreground on Android 16+, so the start is also retried from
          * MainActivity.onResume. Never crashes the caller on background-FGS
          * limits, and respects an explicit Stop from settings.

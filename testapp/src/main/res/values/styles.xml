@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="TestApp.Button" parent="@android:style/Widget.Material.Button">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_margin">4dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:backgroundTint">#FFFFFF</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">#24324A</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <style name="TestApp.Button.Full">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_weight">0</item>
+    </style>
+
+    <style name="TestApp.Button.Primary">
+        <item name="android:backgroundTint">#3D7EFF</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="TestApp.Card" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:background">@drawable/card_background</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">8dp</item>
+    </style>
+
+    <style name="TestApp.SectionTitle" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textColor">#52627A</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TestApp.Result" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_margin">4dp</item>
+        <item name="android:background">#F2F5FA</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:textColor">#24324A</item>
+        <item name="android:textIsSelectable">true</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="TestApp.TabButton" parent="@android:style/Widget.Material.Button.Borderless">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:layout_marginStart">2dp</item>
+        <item name="android:layout_marginEnd">2dp</item>
+        <item name="android:minWidth">88dp</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">#52627A</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="TestApp.MenuRow" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">3dp</item>
+        <item name="android:background">@drawable/menu_item_background</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingBottom">6dp</item>
+    </style>
+
+    <style name="TestApp.MenuTitle" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">#1F2A3D</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TestApp.MenuSummary" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">3dp</item>
+        <item name="android:textColor">#6B778C</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+</resources>

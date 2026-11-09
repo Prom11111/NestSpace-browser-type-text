@@ -220,14 +220,16 @@ object RunRecordStore {
     }
 
     /**
-     * Runs left in [STATUS_RUNNING] belong to a process that is gone: this is
-     * called once at main-process startup, before any assistant run can begin.
-     * Mark each one interrupted and write a deterministic recovery summary so
-     * the history no longer shows a run that can never finish.
+     * Runs left in [STATUS_RUNNING] belong to a process that is gone. The
+     * caller passes its process start time so recovery can run asynchronously
+     * without touching a run started by the current process. Mark each stale
+     * run interrupted and write a deterministic recovery summary so the
+     * history no longer shows a run that can never finish.
      */
     fun recoverInterrupted(
         root: File,
-        chinese: Boolean = AppLanguage.isChinese()
+        chinese: Boolean = AppLanguage.isChinese(),
+        startedBefore: Long = Long.MAX_VALUE
     ): List<RunSummary> {
         val runsDir = File(root, RUNS_DIR)
         val recovered = mutableListOf<RunSummary>()
@@ -236,10 +238,11 @@ object RunRecordStore {
             val meta = runCatching { JSONObject(metaFile.readText()) }.getOrNull()
                 ?: continue
             if (meta.optString("status") != STATUS_RUNNING) continue
+            val startedAt = meta.optLong("started_at")
+            if (startedAt >= startedBefore) continue
 
             val id = meta.optString("id", folder.name)
             val command = meta.optString("command")
-            val startedAt = meta.optLong("started_at")
             val events = events(root, id)
             val lastAt = events.lastOrNull()?.at ?: startedAt
             val endedAt = maxOf(startedAt, minOf(lastAt, System.currentTimeMillis()))

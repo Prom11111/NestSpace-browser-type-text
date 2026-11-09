@@ -8,7 +8,9 @@ import com.coke.nestspace.agent.ToolConfirmationCategory
 import com.coke.nestspace.agent.ToolPermissionSettings
 import com.coke.nestspace.agent.UserGateManager
 import com.coke.nestspace.container.ContainerProcessPool
+import com.coke.nestspace.container.ContainerProcessRouter
 import com.coke.nestspace.container.HeadlessMirrorWindow
+import com.coke.nestspace.control.ContainerPreviewCapture
 import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.control.ContainerUiKeepAlive
 import com.coke.nestspace.control.LivePreview
@@ -25,9 +27,7 @@ import com.coke.nestspace.memory.SkillStore
 import com.coke.nestspace.schedule.ScheduledTaskManager
 import com.coke.nestspace.replay.ReplayStore
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -55,7 +55,6 @@ class ToolRegistry(
     internal val skills by lazy { SkillStore(context) }
     internal val schedules by lazy { ScheduledTaskManager(context) }
     internal val replays by lazy { ReplayStore(context) }
-    private val previewScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** Read-only tools available to a child agent; write/UI actions stay with the parent. */
     internal val subagentTools = setOf(
         "space_list",
@@ -225,10 +224,22 @@ class ToolRegistry(
         return JSONObject().put("apps", arr)
     }
 
-    internal fun containerSlot(args: JSONObject): Int? = ContainerProcessPool.slotFor(
-        args.optString("package").takeIf { it.isNotBlank() },
-        args.optString("instance_id").takeIf { it.isNotBlank() }
-    )
+    internal fun containerSlot(args: JSONObject): Int? {
+        val explicit = args.optInt("slot", -1)
+        if (explicit in 0 until ContainerProcessPool.SLOT_COUNT) return explicit
+        val packageName = args.optString("package").takeIf { it.isNotBlank() }
+        val instanceId = args.optString("instance_id").takeIf { it.isNotBlank() }
+        val process = args.optString("process").takeIf { it.isNotBlank() }
+        if (packageName != null && instanceId != null && process != null) {
+            ContainerProcessRouter.slotForProcess(
+                context,
+                packageName,
+                instanceId,
+                process
+            )?.let { return it }
+        }
+        return ContainerProcessPool.slotFor(packageName, instanceId)
+    }
 
     /**
      * The assistant closes the square mirror when a run ends, while the
@@ -318,16 +329,7 @@ class ToolRegistry(
      */
     internal fun capturePreview(slot: Int?, label: String?) {
         val actualSlot = slot ?: ContainerProcessPool.lastSlot() ?: return
-        previewScope.launch {
-            val base64 = ContainerUiClient.screenshotJpegBase64(context, actualSlot)
-                ?: return@launch
-            LivePreview.publish(
-                base64 = base64,
-                mimeType = "image/jpeg",
-                slot = actualSlot,
-                label = label.orEmpty()
-            )
-        }
+        ContainerPreviewCapture.request(context, actualSlot, label.orEmpty())
     }
 
     internal suspend fun awaitContainerReady(slot: Int?, timeoutMs: Long = 20_000L): Boolean {

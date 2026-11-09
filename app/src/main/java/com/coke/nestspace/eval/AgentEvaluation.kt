@@ -116,7 +116,10 @@ class AgentEvaluationRunner(private val context: Context) {
         }
         val registry = AppGraph.registry(context)
         val runtime = LlmAgentRuntime(registry)
-        val testappWasRunning = ContainerProcessPool.slotFor("com.coke.testapp") != null
+        val requiredPackages = tasks.mapNotNull { it.requiresApp }.toSet()
+        val runningBefore = requiredPackages.associateWith {
+            ContainerProcessPool.slotFor(it) != null
+        }
         val results = mutableListOf<EvalResult>()
 
         try {
@@ -172,8 +175,9 @@ class AgentEvaluationRunner(private val context: Context) {
             // Closing a slot kills its process and can block for seconds;
             // never do that on the caller's (UI) thread.
             withContext(Dispatchers.IO) {
-                if (!testappWasRunning) {
-                    val slot = ContainerProcessPool.slotFor("com.coke.testapp")
+                requiredPackages.forEach { packageName ->
+                    if (runningBefore[packageName] == true) return@forEach
+                    val slot = ContainerProcessPool.slotFor(packageName)
                     if (slot != null) {
                         runCatching { ContainerProcessPool.closeSlot(context, slot) }
                     }

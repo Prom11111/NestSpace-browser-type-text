@@ -173,14 +173,15 @@ class ScheduledTaskManager(context: Context) {
 
     /**
      * A schedule whose [lastStatus] is still "running" belongs to a process
-     * that is gone. Called once at main-process startup, before any alarm can
-     * start a new run, so every such record is stale.
+     * that is gone. [startedBefore] is the caller's process start time, so
+     * asynchronous recovery cannot mark a run started by the current process.
      */
-    fun recoverInterrupted(): Int = synchronized(lock) {
+    fun recoverInterrupted(startedBefore: Long = Long.MAX_VALUE): Int = synchronized(lock) {
         val tasks = load().toMutableList()
         var changed = 0
         for (index in tasks.indices) {
             if (tasks[index].lastStatus != "running") continue
+            if (tasks[index].lastRunAt >= startedBefore) continue
             tasks[index] = tasks[index].copy(
                 lastStatus = "interrupted",
                 lastAnswer = AppLanguage.tr(
@@ -453,8 +454,11 @@ class ScheduledTaskManager(context: Context) {
             ScheduledTaskManager(context.applicationContext).rescheduleAll()
         }
 
-        fun recoverInterrupted(context: Context): Int =
-            ScheduledTaskManager(context.applicationContext).recoverInterrupted()
+        fun recoverInterrupted(
+            context: Context,
+            startedBefore: Long = Long.MAX_VALUE
+        ): Int = ScheduledTaskManager(context.applicationContext)
+            .recoverInterrupted(startedBefore)
     }
 }
 

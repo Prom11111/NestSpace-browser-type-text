@@ -48,6 +48,7 @@ import com.coke.nestspace.agent.AssistantConversation
 import com.coke.nestspace.agent.ChildRunRegistry
 import com.coke.nestspace.container.ContainerProcessPool
 import com.coke.nestspace.container.HeadlessMirrorWindow
+import com.coke.nestspace.control.ContainerPreviewCapture
 import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.control.LivePreview
 import com.coke.nestspace.agent.ToolPermissionLevel
@@ -161,15 +162,15 @@ internal fun AgentScreen(
         val slot = frame.slot
         while (isActive) {
             delay(1_500)
-            if (!ContainerProcessPool.isProcessAlive(context, slot)) break
-            val base64 = withContext(Dispatchers.IO) {
-                ContainerUiClient.screenshotJpegBase64(context, slot)
-            } ?: break
-            LivePreview.publish(
-                base64 = base64,
-                mimeType = "image/jpeg",
+            val alive = withContext(Dispatchers.IO) {
+                ContainerProcessPool.isProcessAlive(context, slot)
+            }
+            if (!alive) break
+            ContainerPreviewCapture.capture(
+                context = context,
                 slot = slot,
-                label = frame.label
+                label = frame.label,
+                rejectBlank = true
             )
         }
     }

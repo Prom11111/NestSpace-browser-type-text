@@ -513,10 +513,11 @@ internal fun ShortcutAction(shortcut: AppShortcut, onClick: () -> Unit) {
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        val icon = shortcut.icon
         Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-            if (shortcut.icon != null) {
+            if (icon != null) {
                 Image(
-                    bitmap = shortcut.icon,
+                    bitmap = icon,
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxSize()

@@ -1,6 +1,7 @@
 package com.coke.nestspace.ui.agent
 
 import com.coke.nestspace.i18n.AppLanguage
+import com.coke.nestspace.container.identity.HostIdentity
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -372,15 +373,16 @@ private fun humanizeWait(body: String): String {
     }
 }
 
-private fun appLabel(packageName: String): String = when (packageName) {
-    "tv.danmaku.bili" -> AppLanguage.tr("哔哩哔哩", "Bilibili")
-    "com.xunmeng.pinduoduo" -> AppLanguage.tr("拼多多", "Pinduoduo")
-    "com.xingin.xhs" -> AppLanguage.tr("小红书", "Xiaohongshu")
-    "com.tencent.mm" -> AppLanguage.tr("微信", "WeChat")
-    "com.taobao.taobao" -> AppLanguage.tr("淘宝", "Taobao")
-    "com.ss.android.ugc.aweme" -> AppLanguage.tr("抖音", "Douyin")
-    "com.coke.testapp" -> AppLanguage.tr("测试应用", "Test app")
-    else -> packageName.ifBlank { AppLanguage.tr("应用", "App") }
+private fun appLabel(packageName: String): String {
+    if (packageName.isBlank()) return AppLanguage.tr("应用", "App")
+    val context = HostIdentity.application ?: return packageName
+    return runCatching {
+        val pm = context.packageManager
+        pm.getApplicationInfo(packageName, 0)
+            .loadLabel(pm)
+            .toString()
+            .takeIf(String::isNotBlank)
+    }.getOrNull() ?: packageName
 }
 
 private fun toolDetail(tool: ToolActivity, json: JSONObject?): String {

@@ -1,54 +1,76 @@
 package com.coke.nestspace
 
 import android.app.Application
+import android.content.Intent
 import android.os.Build
-import com.coke.nestspace.service.McpForegroundService
+import com.coke.nestspace.agent.UserGateManager
+import com.coke.nestspace.assistant.FloatingDotOverlay
+import com.coke.nestspace.browser.BrowserActivity
+import com.coke.nestspace.container.ContainerProcessPool
+import com.coke.nestspace.container.ContainerSessions
+import com.coke.nestspace.container.identity.HostIdentity
+import com.coke.nestspace.i18n.AppLanguage
+import com.coke.nestspace.runtime.RuntimeHostIdentity
+import com.coke.nestspace.runtime.RuntimeHostHooks
+import com.coke.nestspace.runtime.RuntimePluginLoader
+import com.coke.nestspace.ui.DesktopNavigation
 import java.io.File
 
 /**
- * Starts the local MCP server with the app process so an agent can control
- * virtual apps without opening the UI first.
+ * Performs only the process-wide initialization required by the first screen
+ * synchronously. Recovery, external MCP tools, overlays, proxy setup and speech
+ * preloading are dispatched by [NestSpaceDeferredStartup].
  */
 class NestSpaceApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        com.coke.nestspace.container.identity.HostIdentity.captureProcess(this)
+        val processStartedAt = System.currentTimeMillis()
+        installRuntimeHooks()
+        HostIdentity.captureProcess(this)
+        ContainerSessions.installHostActivityInstrumentation(this)
         // Slot processes render container error screens too; every process
         // needs the persisted language.
-        com.coke.nestspace.i18n.AppLanguage.init(this)
+        AppLanguage.init(this)
         if (!isMainProcess()) return
         // Slot processes are killed when the host is updated or force-stopped;
         // do not report that as a virtual-app crash.
-        com.coke.nestspace.container.ContainerProcessPool
-            .resetLaunchedFlagsAfterHostRestart(this)
-        com.coke.nestspace.agent.UserGateManager.init(this)
-        // A run cannot survive its process. Finish stale records before any
-        // new assistant turn can start.
-        com.coke.nestspace.agent.RunRecovery.recover(this)
-        runCatching {
-            com.coke.nestspace.schedule.ScheduledTaskManager.recoverInterrupted(this)
-        }.onFailure { android.util.Log.w("NestSpaceApp", "Schedule recovery failed", it) }
-        com.coke.nestspace.mcp.McpClientManager.initialize(this)
-        runCatching {
-            com.coke.nestspace.schedule.ScheduledTaskManager.rescheduleAll(this)
-        }.onFailure { android.util.Log.w("NestSpaceApp", "Schedule reschedule failed", it) }
-        com.coke.nestspace.assistant.FloatingDotOverlay.ensure(this)
-        com.coke.nestspace.browser.BrowserProxyManager.apply(this)
-        // If the offline speech model is already cached, load it in the
-        // background at startup so the voice sheet opens ready to listen.
-        val speechSettings = com.coke.nestspace.assistant.FloatingDotSettings.load(this)
-        if (com.coke.nestspace.assistant.LocalSpeechModelStore.isReady(
-                this,
-                speechSettings.speechLanguage
-            )
-        ) {
-            com.coke.nestspace.assistant.LocalSpeechEngine.preload(
-                this,
-                speechSettings.speechLanguage
+        ContainerProcessPool.resetLaunchedFlagsAfterHostRestart(this)
+        UserGateManager.init(this)
+        NestSpaceDeferredStartup.schedule(this, processStartedAt)
+    }
+
+    private fun installRuntimeHooks() {
+        RuntimeHostIdentity.packageName = packageName
+        RuntimePluginLoader.installBuiltIns()
+        RuntimeHostHooks.openBrowser = { context, url ->
+            context.startActivity(
+                Intent(context, BrowserActivity::class.java)
+                    .putExtra(BrowserActivity.EXTRA_URL, url)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         }
-        McpForegroundService.ensureStarted(this)
+        RuntimeHostHooks.setOverlayHidden = { context, reason, hidden ->
+            FloatingDotOverlay.setOverlayHidden(context, reason, hidden)
+        }
+        RuntimeHostHooks.publishContainerMode = { context, visible ->
+            FloatingDotOverlay.publishContainerMode(context, visible)
+        }
+        RuntimeHostHooks.requestDesktop = {
+            DesktopNavigation.requestDesktop()
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (!isMainProcess()) return
+        ContainerProcessPool.onTrimMemory(this, level)
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        if (!isMainProcess()) return
+        ContainerProcessPool.onLowMemory(this)
     }
 
     private fun isMainProcess(): Boolean {

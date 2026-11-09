@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -44,7 +45,31 @@
         <activity
             android:name=".SubprocessActivity"
             android:exported="false"
+            android:launchMode="singleTop"
             android:process=":worker" />
+
+        <activity
+            android:name=".SingleTopActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
+
+        <activity
+            android:name=".SingleTaskActivity"
+            android:exported="false"
+            android:launchMode="singleTask" />
+
+        <activity
+            android:name=".StackActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".SingleInstanceActivity"
+            android:exported="false"
+            android:launchMode="singleInstance" />
+
+        <activity
+            android:name=".StandardChildActivity"
+            android:exported="false" />
 
         <activity
             android:name=".SplashActivity"
@@ -65,10 +90,21 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".TestWorkerService"
+            android:exported="false"
+            android:process=":worker" />
+
         <provider
             android:name=".TestProvider"
             android:authorities="com.coke.testapp.testprovider"
             android:exported="false" />
+
+        <provider
+            android:name=".TestWorkerProvider"
+            android:authorities="com.coke.testapp.workerprovider"
+            android:exported="false"
+            android:process=":worker" />
 
         <receiver
             android:name=".TestReceiver"
@@ -80,6 +116,15 @@
             <intent-filter>
                 <action android:name="com.coke.testapp.ORDERED" />
                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".TestProcessReceiver"
+            android:exported="false"
+            android:process=":worker">
+            <intent-filter>
+                <action android:name="com.coke.testapp.PROCESS_PING" />
             </intent-filter>
         </receiver>
     </application>

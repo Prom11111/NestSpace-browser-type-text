@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
                 VirtualApp()
             }
         }
+        NestSpaceDeferredStartup.afterFirstFrame(window.decorView)
         // Virtual-app notifications are posted under the host package, so the
         // host needs the runtime notification permission on Android 13+.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

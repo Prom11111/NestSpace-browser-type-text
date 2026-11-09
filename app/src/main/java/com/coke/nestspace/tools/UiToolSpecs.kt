@@ -4,10 +4,11 @@ import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.agent.ToolConfirmationCategory
 import com.coke.nestspace.agent.UserGateManager
 import com.coke.nestspace.container.ContainerProcessPool
+import com.coke.nestspace.control.ContainerPreviewCapture
 import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.control.ContainerUiKeepAlive
-import com.coke.nestspace.control.LivePreview
 import org.json.JSONObject
+import android.util.Base64
 
 internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
         ToolSpec(
@@ -16,7 +17,9 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "to target a specific container; otherwise the most recently launched one is used.",
             inputSchema = schema(
                 "package" to "string",
-                "instance_id" to "string"
+                "instance_id" to "string",
+                "process" to "string",
+                "slot" to "integer"
             )
         ) { args, ctx ->
             var slot = containerSlot(args)
@@ -46,7 +49,9 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "x" to "integer",
                 "y" to "integer",
                 "package" to "string",
-                "instance_id" to "string"
+                "instance_id" to "string",
+                "process" to "string",
+                "slot" to "integer"
             ),
             mutating = true
         ) { args, ctx ->
@@ -86,7 +91,9 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
             inputSchema = schema(
                 "key" to "string",
                 "package" to "string",
-                "instance_id" to "string"
+                "instance_id" to "string",
+                "process" to "string",
+                "slot" to "integer"
             ),
             mutating = true
         ) { args, _ ->
@@ -117,7 +124,9 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "node_id" to "string",
                 "text" to "string",
                 "package" to "string",
-                "instance_id" to "string"
+                "instance_id" to "string",
+                "process" to "string",
+                "slot" to "integer"
             ),
             mutating = true
         ) { args, _ ->
@@ -236,6 +245,8 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "timeout_ms" to "integer",
                 "package" to "string",
                 "instance_id" to "string",
+                "process" to "string",
+                "slot" to "integer",
                 required = listOf("text")
             )
         ) { args, _ ->
@@ -261,25 +272,27 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "to target a specific container.",
             inputSchema = schema(
                 "package" to "string",
-                "instance_id" to "string"
+                "instance_id" to "string",
+                "process" to "string",
+                "slot" to "integer"
             )
         ) { args, _ ->
             val slot = containerSlot(args)
             if (missingRequestedContainer(args, slot)) {
                 return@ToolSpec noContainerResult(null, args)
             }
-            val base64 = ContainerUiClient.screenshotJpegBase64(context, slot)
-                ?: return@ToolSpec noContainerResult(slot, args)
-            LivePreview.publish(
-                base64 = base64,
-                mimeType = "image/jpeg",
-                slot = slot ?: ContainerProcessPool.lastSlot() ?: -1,
-                label = args.optString("package")
+            val actualSlot = slot ?: ContainerProcessPool.lastSlot() ?: -1
+            val jpeg = ContainerPreviewCapture.capture(
+                context = context,
+                slot = actualSlot,
+                label = args.optString("package"),
+                rejectBlank = false
             )
+                ?: return@ToolSpec noContainerResult(slot, args)
             ToolResult(
                 true,
                 "screenshot captured",
-                imageBase64 = base64,
+                imageBase64 = Base64.encodeToString(jpeg, Base64.NO_WRAP),
                 imageMimeType = "image/jpeg"
             )
         },

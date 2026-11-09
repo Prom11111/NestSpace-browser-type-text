@@ -43,7 +43,7 @@ class ContextCompressorTest {
                     ChatBlock.ToolUse(
                         id = "t$i",
                         name = "ui_observe",
-                        input = JSONObject().put("package", "com.coke.testapp")
+                        input = JSONObject().put("package", "com.example.testapp")
                     )
                 )
             )

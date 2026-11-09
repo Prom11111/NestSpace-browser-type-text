@@ -12,6 +12,16 @@ NestSpace 由三部分組成：
 
 容器不是系統層級虛擬化；它執行在 NestSpace 自己的處理程序裡，透過 ClassLoader、資源、Context 和系統服務代理來模擬目標應用程式需要的環境。
 
+## 程式碼模組
+
+執行階段拆分為三個界線明確的 Gradle 模組：
+
+- `runtime-api`：引擎契約、共享模型、Application factory 註冊表和宿主 hook。
+- `runtime-core`：APK 與執行個體儲存、Session、Activity Host、處理程序槽位、Provider、生命週期、Native Facade 和 MCP UI。
+- `runtime-compat`：加固 Application 啟動鏈解析、相容 Application factory 和版本化相容 profile。
+
+相依方向為 `runtime-compat → runtime-core → runtime-api`，`app` 作為控制面同時相依三者。執行階段後端透過 `RuntimePluginLoader` 安裝，`app` 不直接呼叫具體後端實作。
+
 ## 安裝與啟動
 
 ### 安裝

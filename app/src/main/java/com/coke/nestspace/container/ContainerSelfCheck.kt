@@ -261,7 +261,7 @@ class ContainerSelfCheckRunner(private val context: Context) {
                 AppLanguage.tr("没有可启动的虚拟应用", "No virtual app to launch")
             )
         }
-        val app = apps.firstOrNull { it.packageName == "com.coke.testapp" } ?: apps.first()
+        val app = apps.first()
         val existing = ContainerProcessPool.slotFor(app.packageName)
         launchedHere = existing == null
         val launch = engine.launch("virtual-1", app.packageName, null, headless = true)
@@ -333,13 +333,13 @@ class ContainerSelfCheckRunner(private val context: Context) {
     private suspend fun checkScreenshot(): Outcome {
         val slot = sessionSlot
             ?: return Outcome(ContainerCheckStatus.SKIPPED, AppLanguage.tr("没有容器可截图", "No container to capture"))
-        val base64 = ContainerUiClient.screenshotBase64(context, slot)
-        return if (!base64.isNullOrBlank()) {
+        val jpeg = ContainerUiClient.screenshotJpeg(context, slot)
+        return if (jpeg != null && jpeg.isNotEmpty()) {
             Outcome(
                 ContainerCheckStatus.PASS,
                 AppLanguage.tr(
-                    "截图 ${base64.length / 1024} KB",
-                    "Screenshot ${base64.length / 1024} KB"
+                    "截图 ${jpeg.size / 1024} KB",
+                    "Screenshot ${jpeg.size / 1024} KB"
                 )
             )
         } else {

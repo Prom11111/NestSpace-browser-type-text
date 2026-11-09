@@ -30,7 +30,7 @@
 
 - **In-house app-level container engine**: Load an uninstalled APK inside the host app, virtualize PackageManager/ActivityManager/Binder/IO, and make the target app believe it is running in a normal system.
 - **Java-layer virtualization first, native hooks at critical points**: Start with Java hooks on `Instrumentation`/`ActivityThread`/`PackageManager`/`ContextImpl`; add native hooks only for hard points such as Binder/UID/native file paths.
-- **Single-process MVP → multi-process product**: First run a simple APK in one process; once stable, build a host-declared `:pN` process pool.
+- **Single-process MVP → multi-process product**: First bring up a simple APK in one process, then use the host-declared `:c1..:c16` process pool for multiple instances and target processes.
 - **Dual-channel Agent/MCP**: Local Agent (in-app loop) + remote Agent (MCP), sharing one `ToolRegistry`, permissions, leases, and audit.
 - **AppFunctions fast path (optional)**: The host app can export AppFunctions; AppFunctions in container APKs go through a local bridge; fall back to UI automation when unavailable.
 - **No commercial VirtualApp license**. VirtualApp is only an architectural reference; the implementation is **clean-room and does not copy its GPL code**.
@@ -89,7 +89,7 @@
 3. **Background Activity launch**: Android 10+ restricts background launches; a virtual app launched from the host's background will be blocked. It needs a foreground service/notification/user interaction to trigger.
 4. **Notifications/Job/Provider**: Ownership is determined by package name/UID at the system level; virtualizing these is much harder than Activities, and many apps' background capabilities will degrade.
 5. **Keystore/signatures/Play Integrity**: Keystore aliases conflict under the same UID; signature verification/integrity checks will most likely fail.
-6. **Process model**: `app_process` child processes are killed by the phantom process killer; a host-declared `:pN` process pool is more stable, but requires handling process reuse/memory/crash isolation.
+6. **Process model**: `app_process` child processes are killed by the phantom process killer; a host-declared `:c1..:c16` process pool is more stable, with explicit handling for process reuse, memory, and crash isolation.
 7. **16 KB / split APK**: Both the installer and native library loading must be adapted.
 8. **Long-term maintenance**: This is a "mini Android runtime," not an ordinary app feature; it requires continuous AOSP tracking.
 
@@ -174,9 +174,9 @@ Writing it yourself avoids the VirtualApp license, but the following constraints
 - Cons: a target app crash takes down the host; multiple instances share one process; high memory pressure.
 - Suitable for: feasibility validation, simple apps.
 
-**Stage B: host-declared `:pN` process pool (production)**
+**Stage B: host-declared `:c1..:c16` process pool (production)**
 
-- Declare a set of processes (`:p0`, `:p1`, …) in the host `AndroidManifest.xml`, and declare a `StubActivity`/`VClientService` for each process.
+- Declare `:c1..:c16` slot processes in the host `AndroidManifest.xml`, and declare a `StubActivity`/`VClientService` for each process.
 - When launching a virtual app, select an idle process and start the `StubActivity` in that process; the system creates a normal app process and `ActivityThread`.
 - Initialize the container hooks in that process, load the target APK, and run the target Activity.
 - Pros: it is a normal app process, unaffected by the phantom process killer; crash isolation; multiple instances can run in parallel.
@@ -187,7 +187,7 @@ Writing it yourself avoids the VirtualApp license, but the following constraints
 **Process allocation strategy:**
 
 - One process per virtual space; or one process per instance; or dynamic allocation based on memory/foreground state.
-- The process pool defaults to 2–4 (adjusted for device memory).
+- The process pool is sized automatically from device memory with a maximum of 16; fixed mode uses the user's selected value from 1 through 16.
 - Foreground instances get exclusive priority; background instances can reuse processes.
 - Mark a process dirty after a crash, clean it up, then reuse it.
 
@@ -206,7 +206,7 @@ Writing it yourself avoids the VirtualApp license, but the following constraints
 │  └───────┬────────┘                                              │
 │          │ IPC (Binder/AIDL)                                     │
 │  ┌───────▼─────────────────────────────────────────────────────┐  │
-│  │ Client process :p0 (normal app process)                     │  │
+│  │ Client process :c1 (normal app process)                      │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │  │
 │  │  │ VClient      │  │ HookManager  │  │ Target Activity  │   │  │
 │  │  │ (ActivityThread)│ │ Java/Native │  │ (target APK)     │   │  │
@@ -215,7 +215,7 @@ Writing it yourself avoids the VirtualApp license, but the following constraints
 │  └─────────────────────────────────────────────────────────────┘  │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ Client process :p1 ... :pN (same structure)                 │ │
+│  │ Client processes :c1 ... :c16 (same structure)              │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -366,10 +366,10 @@ Instead of introducing a `StubActivity0..N` array, `StageAActivity` itself is re
 - `finish()` uses the real host token, so it closes only the `StageAActivity` corresponding to the current target; the previous host naturally resumes; Splash → home and `startActivityForResult` result return have both been verified.
 - The host forwards the lifecycle: onCreate/onStart/onRestart/onResume/onPause/onStop/onDestroy, as well as `onActivityResult` (reflection invokes the target Activity's protected method).
 - Not yet implemented: IntentFilter/implicit Intent resolution, singleTop/CLEAR_TOP semantics for `onNewIntent`, Activity options/transitions, token mapping for `requestPermissions`, and recent tasks showing the target name/icon.
-- Real-app compatibility additions (verified on MuMu / Android 15):
-  - The target APK may bundle AndroidX (AMap does). `DexClassLoader` defaults to parent-first, causing target classes to link against the host's AndroidX and hit missing fields (`ViewCompat.a`). `ContainerClassLoader` was changed to child-first: check the target dex first, then fall back to the host/system.
-  - AMap's `PageSupportActivity.attachBaseContext` calls `createConfigurationContext` to handle locale; the original implementation returned host resources. `ContainerContext` now rebuilds Resources with the target APK's AssetManager + a new Configuration, and returns a ContextWrapper that preserves the target package name/ClassLoader/directories.
-  - AMap is still stuck at an empty `ICloudConfigService` and AMS `Permission Denial`, and requires Service/Provider/Binder virtualization to proceed.
+- Real target-app compatibility additions (verified on MuMu / Android 15):
+  - The target APK may bundle AndroidX. `DexClassLoader` defaults to parent-first, causing target classes to link against the host's AndroidX and hit missing fields. `ContainerClassLoader` was changed to child-first: check the target dex first, then fall back to the host/system.
+  - A target Activity's `attachBaseContext` may call `createConfigurationContext` to handle locale; the original implementation returned host resources. `ContainerContext` now rebuilds Resources with the target APK's AssetManager + a new Configuration, and returns a ContextWrapper that preserves the target package name, ClassLoader, and directories.
+  - A target app may still depend on system-service binding, Provider, or Binder virtualization. Unsupported cases should produce explicit diagnostics instead of app-specific startup special cases.
 
 **Implemented: in-container Service / Provider (Stage C-lite+)**
 
@@ -385,14 +385,14 @@ Instead of introducing a `StubActivity0..N` array, `StageAActivity` itself is re
   - Provider permissions, process isolation, and PackageManager meta-data queries for `FileProvider` are not virtualized.
 **Implemented: Stage C-D (2026-11-04)**
 
-- Process model: `ContainerProcessPool` pins each `package@instance` to one of `:c1..:c4`; before reusing a container slot it force-kills the slot process and waits for exit, and `ContainerSessions` rejects a second session in the same process. Uncaught target Java exceptions are swallowed by `TargetCrashGuard` and a crash marker is written; native crashes/`System.exit` kill only the slot process, leaving the main process and other instances unaffected. The next `space_launch` returns `restarted_after_crash`/`crash_reason`.
+- Process model: `ContainerProcessPool` pins each `package@instance` to one of `:c1..:c16`; before reusing a container slot it force-kills the slot process and waits for exit, and `ContainerSessions` rejects a second session in the same process. Uncaught target Java exceptions are swallowed by `TargetCrashGuard` and a crash marker is written; native crashes/`System.exit` kill only the slot process, leaving the main process and other instances unaffected. The next `space_launch` returns `restarted_after_crash`/`crash_reason`.
 - JobScheduler: `ContainerContext.getSystemService(JOB_SCHEDULER_SERVICE)` returns `ContainerJobScheduler`; target `JobService` components are instantiated with the target ClassLoader and `onCreate`/`onStartJob`/`onStopJob` are driven, supporting minimum latency, periodic execution, backoff, and network/charging/low-battery/idle constraints (constraints that cannot be determined are treated as satisfied). Valid while the process is alive.
 - Notifications: the `INotificationManager` proxy rewrites the package name to the host package, prefixes tag/channel/group with the virtual package, redraws the small icon as a bitmap, and swaps the target PendingIntent for the host `ContainerLaunchProxyActivity` trampoline; channel query results have the prefix removed.
 - Broadcast bridging: actions of the target's static/dynamic Receivers are registered with the host; system sticky/normal broadcasts are injected into the container; broadcasts emitted by the target that are not scoped to itself are dispatched locally and then forwarded to the host, with an origin extra to prevent loops.
 - Permissions: `checkSelfPermission`/`checkPermission`/`enforce*`/PackageManager permission queries go through the virtual grant table; `ContainerPackageManager.buildRequestPermissionsIntent`/`getPermissionControllerPackageName` are overridden and the hidden `Context.getPermissionRequestState` is declared so `requestPermissions` can be taken over by the container. Permissions declared by the host trigger a real system dialog, and results are persisted per package; MCP `space_permissions` supports list/grant/revoke.
 - Full VPMS: `VirtualPackageRegistry` builds a lightweight index from `state.json` and parses other APKs in the same space on demand; `getInstalledPackages`/`getInstalledApplications`, explicit components, implicit Intents, `resolve*`/`query*`, labels/icons/Resources/launch Intents/signatures/permission declarations all cover cross-virtual-app queries. Other apps use stable synthetic UIDs.
-  - Performance constraint: list/label/UID/signature lookups use the lightweight index; implicit Intents without a specified package do not scan all virtual apps, and only explicit package/component queries parse the corresponding APK. Otherwise, resolving NetEase Cloud Music's 100 MB+ APK at Zhihu startup would block the main thread.
-- Compatibility constraint: the `WindowManager` dynamic proxy is enabled only for NetEase Cloud Music (Toast package-name rewriting). A global proxy would be passed into JNI by Zhihu's native SDK, causing CheckJNI to report `invalid jobject` and abort the container process.
+  - Performance constraint: list/label/UID/signature lookups use the lightweight index; implicit Intents without a specified package do not scan all virtual apps, and only explicit package/component queries parse the corresponding APK. Otherwise, resolving another large APK while a resource-heavy target app starts would block the main thread.
+- Compatibility constraint: the `WindowManager` dynamic proxy is enabled only for target contexts that need Toast package-name rewriting. A global proxy may be passed into JNI by a target native SDK, causing CheckJNI to report `invalid jobject` and abort the container process.
 - Multi-instance `.so` isolation: different instances of the same package are assigned different container slots; native libraries are extracted into per-instance directories; when a container slot is reused, the old slot process is killed first to avoid mixing `.so` files with the same name and JNI global state.
 
 **Other components:**
@@ -426,7 +426,7 @@ Instead of introducing a `StubActivity0..N` array, `StageAActivity` itself is re
 
 **Application:**
 
-- Call `LoadedApk.makeApplication` or manually call `Instrumentation.newApplication`.
+- Create the target Application through `CompatApplicationFactory` in `runtime-compat`, covering the regular, Tinker, and ApplicationLike startup chains.
 - `attachBaseContext(targetContext)` → `onCreate()`.
 - Simulate the target app's `ContentProvider` initialization order (`installContentProviders`).
 
@@ -498,9 +498,9 @@ Instead of introducing a `StubActivity0..N` array, `StageAActivity` itself is re
 
 ### 3.8 Process model / phantom process
 
-- Use host-declared `:pN` slot processes, not `app_process` child processes.
-- Declare `StubActivity`/`VClientService` in `:pN`; the system creates a normal app process at launch.
-- Slot process pool size based on device memory: 1–2 on low-end devices, 3–4 on high-end devices.
+- Use host-declared `:c1..:c16` slot processes, not `app_process` child processes.
+- Declare `StubActivity`/`VClientService` in `:c1..:c16`; the system creates a normal app process at launch.
+- Compute the slot limit automatically from device memory, capped at 16; fixed mode uses the user's selected value from 1 through 16.
 - Clean before process reuse: target Activities/Services, ClassLoader, Resources, static state, file locks.
 - Slot process crash: mark dirty, restart; the host UI shows "Space restarted."
 - Foreground service keepalive: host main process + current space process; avoid keeping all processes resident.
@@ -516,13 +516,15 @@ Instead of introducing a `StubActivity0..N` array, `StageAActivity` itself is re
 - JNI: the target app's `System.loadLibrary` and `RegisterNatives` usually work under the target ClassLoader; watch for global JNI state conflicts.
 - Do not load two incompatible versions of the same `.so` in the same process (multiple instances may conflict); isolate by process when necessary.
 
-Current implementation (Stage B+):
+Current implementation (Stage C-D):
 
 - `ApkInspector` scans `lib/<abi>/*.so` in the base/splits and obtains the set of available ABIs.
 - `NativeLibs` selects the first match in `Build.SUPPORTED_ABIS`, extracts the `.so` files for that ABI flat into `vspace/data/<pkg>/<instance>/native-libs`, and uses a stamp cache to avoid copying again on every launch.
 - `DexClassLoader(dexPath, codeCache, nativeLibsDir, parent)`, with `ApplicationInfo.nativeLibraryDir` set.
 - Installation does not fail because of ABI; the check happens before launch, and if there is no matching ABI it returns `ABI_MISMATCH` with the device/app ABIs. An arm64-only APK will stop here on an x86_64 emulator.
-- Not yet implemented: 16 KB `p_align` checks, `dlopen`/`System.load` hooks, and isolation of same-named `.so` files across multiple instances.
+- `dlopen`/`android_dlopen_ext` hooks enqueue newly loaded modules for incremental scanning.
+- Different instances of the same package use different slots; the old slot process is terminated before reuse so same-named `.so` files and JNI global state do not mix.
+- A universal ELF `p_align` preflight is not yet a hard gate; 16 KB compatibility is covered by build flags, device tests, and runtime diagnostics.
 
 ### 3.10 Background / Job / Provider / WebView
 
@@ -646,7 +648,7 @@ Vision is a fallback, not the primary path; both cost and latency are high.
 - Recording: `(action, snapshot_hash, timestamp, result)`.
 - Generation: convert stable sequences into YAML/JSON scripts with assertions.
 - Replay: check preconditions at each step; fall back to the Agent if they are not met.
-- Skill library: organized by app, such as `wechat.send_message`, `settings.open_wifi`.
+- Skill library: organized by app, such as `app.send_message` and `settings.open_wifi`.
 - Skills are key to reducing token cost: common tasks use scripts + verification instead of a large model.
 
 ### 4.6 Android 17 Advanced Protection Mode (AAPM)
@@ -1034,7 +1036,7 @@ Android 16+ AppFunctions are "system-level tool registration": apps declare capa
                 │                              │
 ┌───────────────▼──────────────────────────────▼───────────────┐
 │ Infrastructure                                               │
-│  Host-declared :pN processes | MCP Server | Local Agent      │
+│  Host-declared :c1..:c16     | MCP Server | Local Agent      │
 │  AccessibilityService / MediaProjection / Shizuku             │
 │  Room / DataStore / WorkManager                              │
 └──────────────────────────────────────────────────────────────┘
@@ -1060,7 +1062,7 @@ app/
     engine/resources/    # Resources/AssetManager
     engine/binder/       # Binder/UID virtualization
     engine/io/           # Data directory redirection
-    engine/process/      # :pN process pool, VClientService
+    engine/process/      # :c1..:c16 process pool, VClientService
     engine/hooks/        # Java/Native hooks, version adaptation
     fastpath/            # AppFunctions detection, host export, in-container local bridge
     feature/spaces/      # Compose UI: space list, app grid
@@ -1154,7 +1156,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 5. `service/McpForegroundService.kt`: foreground service + notification + token.
 6. `core/agent/`: local Agent skeleton (`ClaudeAdapter` or a fake model), reusing the same ToolRegistry.
 7. `engine/` + `container/`: Stage A/B single-process container, installer, multiple instances, and instance data directories are implemented (see Section 7).
-8. Next steps: process pool, native libraries, Binder/UID, Provider/notification/Job, Android 9+ adaptation.
+8. The process pool, native libraries, Binder/UID, Provider/notification/Job support, and Android 7.1–17 adaptation are implemented; remaining work focuses on background wakeups, system-side real-UID boundaries, and broader generic compatibility samples.
 
 ---
 
@@ -1165,8 +1167,8 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 | **S0 Control layer + dual-channel skeleton** | First make "control" an independent layer | ToolRegistry, MCP Server, local Agent skeleton, Shizuku/accessibility, leases/approval, traces | Both remote MCP and local Agent can control an installed app to complete 3 types of tasks; tool behavior is consistent |
 | **A Single-process minimal container** ✅ Verified | Get one simple APK running end to end | AXML/resource parsing, ClassLoader, Resources, StubActivity, Instrumentation/ActivityThread hooks, Context wrapping | A simple APK with no native/GMS can launch and display UI in the host process (verified on API 25 emulator) |
 | **B Installer + multiple instances** ✅ Verified (API 25 / API 36) | Can install, can run multiple instances | split APK, signature verification, `REQUIRE_SECURE_ENV`, IO redirection, VPMS list/launch, instance data directories | A simple app can be installed, launched, and duplicated; data does not pollute other instances (verified with testapp + Android 16; base + synthetic split verified; resource overlay for real config splits still to be verified) |
-| **C Process pool + Native** | Crash isolation, native apps | `:pN` process pool, VClientService, native library extraction/loading, 16 KB, Binder/UID Java hooks | 5 apps run in independent processes; native libraries work; 16 KB devices can install |
-| **D Background/system capabilities** | Mainstream apps usable | Notifications, static Receivers, partial Job/Alarm proxying, Providers, WebView process isolation, Android 15–17 adaptation | 8/10 target apps launch; core flows 7/10; no fatal crashes |
+| **C Process pool + Native** ✅ Implemented | Crash isolation, native apps | `:c1..:c16` process pool, VClientService, native library extraction/loading, 16 KB tests, Binder/UID Java hooks | Targets run in independent processes; native libraries work; 16 KB devices install with explicit diagnostics |
+| **D Background/system capabilities** ✅ Core implemented | Mainstream apps usable | Notifications, static Receivers, partial Job/Alarm proxying, Providers, WebView process isolation, Android 15–17 adaptation | Notifications, broadcasts, Providers, permissions, and common background components work; full Job/Alarm wakeup after system death remains limited |
 | **E Agent autonomy + safety** | Ready to ship | On-device/cloud models, skill library, verification/retry, human takeover, audit, masking, MCP authentication | Common-task success rate meets target; security review passes |
 | **F AppFunctions fast path** | Optional acceleration | Host `@AppFunction` export, container APK metadata parsing, in-container local execution, permission detection, UI fallback | Host tools can be called by the system Agent; in-container AppFunctions can execute; fall back to UI when unavailable |
 
@@ -1178,8 +1180,8 @@ Verified on an Android 7.1.1 x86 emulator (testapp APK not installed; loaded dir
 - ✅ Target resources take effect: `@string` and `@layout` resolve correctly; after tapping a button, the TextView updates to the target string.
 - ✅ Tapping/rendering does not crash, show a black screen, or ANR.
 - ✅ The target `Application`'s `attachBaseContext`/`onCreate` are integrated by Stage B (verified with testapp).
-- ⏳ The target `getPackageName()` already returns the target package name; `getPackageManager()` queries still use the host PM, deferred to VPMS in Stage C/D.
-- ⏳ Only API 25 has been verified; Android 9+ hidden API restrictions may block `Activity.attach` / `AssetManager.addAssetPath`, requiring per-version adaptation.
+- ✅ The target `getPackageName()` and PackageManager queries are answered by the virtual package index, including cross-virtual-app VPMS lookups.
+- ✅ Android 9+ hidden APIs are handled through HiddenApiBypass; current verification covers Android 7.1, 15, 16, and 17.
 
 ### 7.2 Key Stage B acceptance
 
@@ -1197,21 +1199,21 @@ Verified on an Android 7.1.1 x86 emulator:
 - ✅ Android 16 (API 36) retest: desktop, container, multiple instances, and instance data isolation work normally.
 - ✅ Android 14+ writable dex restriction: after the installed APK is made read-only, `DexClassLoader` loads it normally.
 - ✅ Android 9+ hidden API: integrated HiddenApiBypass 6.2; reflection such as `Activity.attach` works; without exemption, `Activity.attach not found`.
-- ⏳ The Android 17 (API 37) emulator crashed SurfaceFlinger on this machine (`hasReadColorBufferDma`), and PackageManager/ActivityManager restarted with it, so device-level verification could not be completed; a physical device or an emulator with a working graphics stack is needed.
-- ⏳ The compatibility sample of "3 simple apps" is still insufficient (currently verified with testapp + multiple instances); it is recommended to add more APK samples before Stage C.
-- ⏳ Single-process, entry Activity only; `startActivity`, Provider, Binder/UID, and native are still pending Stage C/D.
-- ✅ The in-engine virtual app list/launch (not system PMS/AMS hooks) and desktop-style entry are integrated; target `PackageManager` queries still use the host PM.
+- ✅ Android 17 (API 37) and MuMu (Android 15, ARM bridge) are part of the current verification matrix.
+- ✅ Compatibility samples cover multiple instances, explicit Activities, Providers, WebView, plugin components, and native modules.
+- ✅ Multi-process routing, component bridging, Binder/UID proxies, and the native environment are implemented; the runtime is no longer limited to a single-process entry Activity.
+- ✅ The in-engine virtual app list/launch (not system PMS/AMS hooks), desktop entry, and target PackageManager virtualization are integrated.
 
-Implementation locations: `engine/MiniContainerEngine.kt`, `container/ContainerContext.kt`, `container/MiniContainer.kt`, `ui/VirtualApp.kt`.
+Implementation locations: `runtime-core` (`engine/MiniContainerEngine.kt`, `container/ContainerContext.kt`, `container/ContainerSession.kt`, and `container/ContainerProcessPool.kt`) and `app` (`ui/DesktopScreen.kt`).
 
-### 7.3 Key Stage C acceptance
+### 7.3 Key Stage C acceptance (implemented)
 
-- Two instances run in different `:pN` processes, and crashes do not affect each other.
+- Two instances run in different `:c1..:c16` slot processes, and crashes do not affect each other.
 - The target app's native libraries can load.
-- Aligned libraries work on 16 KB devices; unaligned libraries produce a clear error.
+- Native library loading and diagnostics distinguish aligned, unaligned, and ABI-mismatch cases; a universal ELF `p_align` preflight remains a follow-up enhancement.
 - Java hooks for `Process.myUid`/`Binder.getCallingUid` cover at least common checks (no system-side UID spoofing).
 
-### 7.4 Key Stage D acceptance
+### 7.4 Key Stage D acceptance (core implemented)
 
 - Notifications can be displayed (or explicitly degraded).
 - Static Receivers can receive.
@@ -1247,7 +1249,7 @@ Implementation locations: `engine/MiniContainerEngine.kt`, `container/ContainerC
 
 - In-house test APK (minimal Activity, Resources, native library, split, Service, Receiver)
 - Simple open-source apps (small tools on F-Droid)
-- WeChat, Alipay, Taobao, Douyin, Xiaohongshu (compatibility targets, not promised)
+- Common social, e-commerce, travel, and content app categories (compatibility targets, not promised)
 - Games (Unity/UE, Surface/Canvas)
 - Flutter apps
 - WebView-heavy apps
@@ -1384,7 +1386,7 @@ Implementation locations: `engine/MiniContainerEngine.kt`, `container/ContainerC
 | Binder/UID | `Binder.getCallingUid`, `Process.myUid`, `UserHandle` | `Binder.execTransact` | System-side UID cannot be forged |
 | IO | `ContextImpl`, `SharedPreferencesImpl`, `SQLiteDatabase` | `open`/`fopen` | scoped storage |
 | Notifications | `NotificationManager`, `PendingIntent` | — | Android 12 trampoline; Android 13 permission |
-| Process | Host `:pN`, `StubActivity`, `VClientService` | — | Do not use `app_process` child processes |
+| Process | Host `:c1..:c16`, `StubActivity`, `VClientService` | — | Do not use `app_process` child processes |
 | Native libs | `System.loadLibrary`, `System.load` | `dlopen`/`android_dlopen_ext` | 16 KB; ABI |
 | WebView | `WebView.setDataDirectorySuffix` (process-level) | — | Multiple instances need separate processes |
 

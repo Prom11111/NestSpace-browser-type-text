@@ -1,217 +1,756 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:background="#F4F6FA"
+    android:orientation="vertical">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="24dp">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#17243A"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp">
 
-    <TextView
-        android:id="@+id/text"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/hello"
-        android:textSize="22sp" />
+            <Button
+                android:id="@+id/run_compatibility_suite"
+                style="@style/TestApp.Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_weight="0"
+                android:text="@string/run_compatibility_suite" />
+        </LinearLayout>
 
-    <TextView
-        android:id="@+id/info"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:fontFamily="monospace"
-        android:gravity="center"
-        android:textSize="13sp" />
+        <FrameLayout
+            android:id="@+id/section_host"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="#F4F6FA">
 
-    <Button
-        android:id="@+id/button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="@string/click_me" />
+            <ScrollView
+                android:id="@+id/menu_root"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:padding="12dp"
+                android:scrollbarStyle="insideOverlay">
 
-    <Button
-        android:id="@+id/open_second"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="@string/open_second" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
-    <Button
-        android:id="@+id/open_second_result"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/open_second_result" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="8dp"
+                        android:paddingTop="4dp"
+                        android:paddingEnd="8dp"
+                        android:paddingBottom="4dp"
+                        android:text="@string/test_menu"
+                        android:textColor="#68768C"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
 
-    <Button
-        android:id="@+id/open_implicit"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/open_implicit" />
+                    <LinearLayout
+                        android:id="@+id/menu_overview"
+                        style="@style/TestApp.MenuRow">
 
-    <Button
-        android:id="@+id/implicit_service"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/implicit_service" />
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
-    <Button
-        android:id="@+id/pm_check"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/pm_check" />
+                            <TextView
+                                style="@style/TestApp.MenuTitle"
+                                android:text="@string/tab_overview" />
 
-    <Button
-        android:id="@+id/send_static_broadcast"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/send_static_broadcast" />
+                            <TextView
+                                style="@style/TestApp.MenuSummary"
+                                android:text="@string/menu_overview_summary" />
+                        </LinearLayout>
 
-    <Button
-        android:id="@+id/send_dynamic_broadcast"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/send_dynamic_broadcast" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textColor="#8C98AA"
+                            android:textSize="24sp" />
+                    </LinearLayout>
 
-    <Button
-        android:id="@+id/send_ordered_broadcast"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/send_ordered_broadcast" />
+                    <LinearLayout
+                        android:id="@+id/menu_components"
+                        style="@style/TestApp.MenuRow">
 
-    <Button
-        android:id="@+id/send_sticky_broadcast"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/send_sticky_broadcast" />
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/broadcast_result"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:gravity="center"
-        android:textSize="13sp" />
+                            <TextView
+                                style="@style/TestApp.MenuTitle"
+                                android:text="@string/tab_components" />
 
-    <Button
-        android:id="@+id/open_splash"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/open_splash" />
+                            <TextView
+                                style="@style/TestApp.MenuSummary"
+                                android:text="@string/menu_components_summary" />
+                        </LinearLayout>
 
-    <Button
-        android:id="@+id/start_service"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/start_service" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textColor="#8C98AA"
+                            android:textSize="24sp" />
+                    </LinearLayout>
 
-    <Button
-        android:id="@+id/bind_service"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/bind_service" />
+                    <LinearLayout
+                        android:id="@+id/menu_system"
+                        style="@style/TestApp.MenuRow">
 
-    <Button
-        android:id="@+id/query_provider"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/query_provider" />
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/service_result"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:gravity="center"
-        android:textSize="13sp" />
+                            <TextView
+                                style="@style/TestApp.MenuTitle"
+                                android:text="@string/tab_system" />
 
-    <TextView
-        android:id="@+id/pm_result"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:fontFamily="monospace"
-        android:gravity="center"
-        android:textSize="12sp" />
+                            <TextView
+                                style="@style/TestApp.MenuSummary"
+                                android:text="@string/menu_system_summary" />
+                        </LinearLayout>
 
-    <TextView
-        android:id="@+id/result"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:gravity="center"
-        android:textSize="13sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textColor="#8C98AA"
+                            android:textSize="24sp" />
+                    </LinearLayout>
 
-    <Button
-        android:id="@+id/request_permission"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="@string/request_permission" />
+                    <LinearLayout
+                        android:id="@+id/menu_compatibility"
+                        style="@style/TestApp.MenuRow">
 
-    <TextView
-        android:id="@+id/permission_result"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:gravity="center"
-        android:textSize="13sp" />
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
-    <Button
-        android:id="@+id/schedule_job"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/schedule_job" />
+                            <TextView
+                                style="@style/TestApp.MenuTitle"
+                                android:text="@string/tab_compatibility" />
 
-    <TextView
-        android:id="@+id/job_result"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:gravity="center"
-        android:textSize="13sp" />
+                            <TextView
+                                style="@style/TestApp.MenuSummary"
+                                android:text="@string/menu_compatibility_summary" />
+                        </LinearLayout>
 
-    <Button
-        android:id="@+id/post_notification"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/post_notification" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textColor="#8C98AA"
+                            android:textSize="24sp" />
+                    </LinearLayout>
 
-    <TextView
-        android:id="@+id/notification_result"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:gravity="center"
-        android:textSize="13sp" />
+                    <LinearLayout
+                        android:id="@+id/menu_process"
+                        style="@style/TestApp.MenuRow">
 
-    <TextView
-        android:id="@+id/system_result"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:fontFamily="monospace"
-        android:gravity="center"
-        android:textSize="12sp" />
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
-    <Button
-        android:id="@+id/vpms_query"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/vpms_query" />
+                            <TextView
+                                style="@style/TestApp.MenuTitle"
+                                android:text="@string/tab_process" />
 
-    <TextView
-        android:id="@+id/vpms_result"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:fontFamily="monospace"
-        android:gravity="center"
-        android:textSize="12sp" />
+                            <TextView
+                                style="@style/TestApp.MenuSummary"
+                                android:text="@string/menu_process_summary" />
+                        </LinearLayout>
 
-    </LinearLayout>
-</ScrollView>
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textColor="#8C98AA"
+                            android:textSize="24sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/menu_identity"
+                        style="@style/TestApp.MenuRow">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/TestApp.MenuTitle"
+                                android:text="@string/tab_identity" />
+
+                            <TextView
+                                style="@style/TestApp.MenuSummary"
+                                android:text="@string/menu_identity_summary" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textColor="#8C98AA"
+                            android:textSize="24sp" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/current_environment" />
+
+                        <TextView
+                            android:id="@+id/text"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:padding="8dp"
+                            android:text="@string/hello"
+                            android:textColor="#1F2A3D"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/info"
+                            style="@style/TestApp.Result"
+                            android:maxLines="6" />
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+
+            <LinearLayout
+                android:id="@+id/section_detail"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:background="#FFFFFF"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="12dp">
+
+                    <Button
+                        android:id="@+id/back_to_menu"
+                        style="@style/TestApp.TabButton"
+                        android:text="@string/back_to_menu" />
+
+                    <TextView
+                        android:id="@+id/section_title"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:textColor="#1F2A3D"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:id="@+id/section_content"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
+
+            <ScrollView
+                android:id="@+id/tab_overview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:padding="8dp"
+                android:scrollbarStyle="insideOverlay">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/basic_interaction" />
+
+                        <EditText
+                            android:id="@+id/ime_input"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="4dp"
+                            android:hint="InputMethod test"
+                            android:importantForAutofill="no"
+                            android:inputType="text"
+                            android:minHeight="48dp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/button"
+                                style="@style/TestApp.Button"
+                                android:text="@string/click_me" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/result"
+                            style="@style/TestApp.Result" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/page_navigation" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/open_second"
+                                style="@style/TestApp.Button"
+                                android:text="@string/open_second" />
+
+                            <Button
+                                android:id="@+id/open_second_result"
+                                style="@style/TestApp.Button"
+                                android:text="@string/open_second_result" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/open_implicit"
+                                style="@style/TestApp.Button"
+                                android:text="@string/open_implicit" />
+
+                            <Button
+                                android:id="@+id/open_splash"
+                                style="@style/TestApp.Button"
+                                android:text="@string/open_splash" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/open_single_top"
+                                style="@style/TestApp.Button"
+                                android:text="@string/open_single_top" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+
+            <ScrollView
+                android:id="@+id/tab_components"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:padding="8dp"
+                android:scrollbarStyle="insideOverlay">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/component_bridge" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/implicit_service"
+                                style="@style/TestApp.Button"
+                                android:text="@string/implicit_service" />
+
+                            <Button
+                                android:id="@+id/start_service"
+                                style="@style/TestApp.Button"
+                                android:text="@string/start_service" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/bind_service"
+                                style="@style/TestApp.Button"
+                                android:text="@string/bind_service" />
+
+                            <Button
+                                android:id="@+id/query_provider"
+                                style="@style/TestApp.Button"
+                                android:text="@string/query_provider" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/service_result"
+                            style="@style/TestApp.Result" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/package_manager" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/pm_check"
+                                style="@style/TestApp.Button"
+                                android:text="@string/pm_check" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/pm_result"
+                            style="@style/TestApp.Result" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/broadcast_tests" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/send_static_broadcast"
+                                style="@style/TestApp.Button"
+                                android:text="@string/send_static_broadcast" />
+
+                            <Button
+                                android:id="@+id/send_dynamic_broadcast"
+                                style="@style/TestApp.Button"
+                                android:text="@string/send_dynamic_broadcast" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/send_ordered_broadcast"
+                                style="@style/TestApp.Button"
+                                android:text="@string/send_ordered_broadcast" />
+
+                            <Button
+                                android:id="@+id/send_sticky_broadcast"
+                                style="@style/TestApp.Button"
+                                android:text="@string/send_sticky_broadcast" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/broadcast_result"
+                            style="@style/TestApp.Result" />
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+
+            <ScrollView
+                android:id="@+id/tab_system"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:padding="8dp"
+                android:scrollbarStyle="insideOverlay">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/system_capabilities" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/request_permission"
+                                style="@style/TestApp.Button"
+                                android:text="@string/request_permission" />
+
+                            <Button
+                                android:id="@+id/schedule_job"
+                                style="@style/TestApp.Button"
+                                android:text="@string/schedule_job" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/permission_result"
+                            style="@style/TestApp.Result" />
+
+                        <TextView
+                            android:id="@+id/job_result"
+                            style="@style/TestApp.Result" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/post_notification"
+                                style="@style/TestApp.Button"
+                                android:text="@string/post_notification" />
+
+                            <Button
+                                android:id="@+id/vpms_query"
+                                style="@style/TestApp.Button"
+                                android:text="@string/vpms_query" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/notification_result"
+                            style="@style/TestApp.Result" />
+
+                        <TextView
+                            android:id="@+id/vpms_result"
+                            style="@style/TestApp.Result" />
+
+                        <TextView
+                            android:id="@+id/system_result"
+                            style="@style/TestApp.Result" />
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+
+            <ScrollView
+                android:id="@+id/tab_compatibility"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:padding="8dp"
+                android:scrollbarStyle="insideOverlay">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/compatibility_results" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:padding="8dp"
+                            android:text="@string/compatibility_hint"
+                            android:textColor="#64748B"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/storage_result"
+                            style="@style/TestApp.Result" />
+
+                        <TextView
+                            android:id="@+id/account_result"
+                            style="@style/TestApp.Result" />
+
+                        <TextView
+                            android:id="@+id/native_result"
+                            style="@style/TestApp.Result" />
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+
+            <ScrollView
+                android:id="@+id/tab_process"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:padding="8dp"
+                android:scrollbarStyle="insideOverlay">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/process_tests" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/send_process_broadcast"
+                                style="@style/TestApp.Button"
+                                android:text="@string/send_process_broadcast" />
+
+                            <Button
+                                android:id="@+id/start_worker_service"
+                                style="@style/TestApp.Button"
+                                android:text="@string/start_worker_service" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/query_worker_provider"
+                                style="@style/TestApp.Button"
+                                android:text="@string/query_worker_provider" />
+
+                            <Button
+                                android:id="@+id/open_subprocess_result"
+                                style="@style/TestApp.Button"
+                                android:text="@string/open_subprocess_result" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/process_result"
+                            style="@style/TestApp.Result" />
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+
+            <ScrollView
+                android:id="@+id/tab_identity"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:padding="8dp"
+                android:scrollbarStyle="insideOverlay">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout style="@style/TestApp.Card">
+
+                        <TextView
+                            style="@style/TestApp.SectionTitle"
+                            android:text="@string/identity_tests" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/test_system_attribution"
+                                style="@style/TestApp.Button"
+                                android:text="@string/test_system_attribution" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/attribution_result"
+                            style="@style/TestApp.Result" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/test_services"
+                                style="@style/TestApp.Button"
+                                android:text="@string/test_services" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/services_result"
+                            style="@style/TestApp.Result" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/test_ime"
+                                style="@style/TestApp.Button"
+                                android:text="@string/test_ime" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/ime_result"
+                            style="@style/TestApp.Result" />
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+                </FrameLayout>
+            </LinearLayout>
+        </FrameLayout>
+</LinearLayout>

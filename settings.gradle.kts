@@ -24,5 +24,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "NestSpace"
 include(":app")
+include(":runtime-api")
+include(":runtime-core")
+include(":runtime-compat")
 include(":testapp")
- 

@@ -152,7 +152,7 @@ API Key 使用 Android Keystore 加密保存。详见 [AI 助手](assistant.md)�
 “关于”页面位于设置首页底部，包含：
 
 - Telegram 交流群；
-- 微信群二维码和「保存二维码」按钮；
+- 交流群二维码和「保存二维码」按钮；
 - 当前版本号和应用介绍。
 
 Android 10 及以上会把二维码保存到相册的 `Pictures/NestSpace`；旧系统保存到应用图片目录。

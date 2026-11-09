@@ -158,6 +158,7 @@ internal fun RunningAppsScreen(apps: List<VirtualApp>) {
         .sortedBy { it.label.lowercase() }
 
     val instanceCounts = groups.groupingBy { it.packageName }.eachCount()
+    val runningAppCount = slots.map { it.packageName }.distinct().size
     val totalKb = slots.sumOf { it.memoryKb }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -173,9 +174,9 @@ internal fun RunningAppsScreen(apps: List<VirtualApp>) {
                     Text(
                         AppLanguage.trCount(
                             slots.size,
-                            "正在运行 ${slots.size} 个容器进程",
-                            "${slots.size} container process running",
-                            "${slots.size} container processes running"
+                            "正在运行 $runningAppCount 个应用 · ${slots.size} 个容器槽位",
+                            "$runningAppCount app · 1 container slot running",
+                            "$runningAppCount apps · ${slots.size} container slots running"
                         ),
                         style = MaterialTheme.typography.titleMedium
                     )

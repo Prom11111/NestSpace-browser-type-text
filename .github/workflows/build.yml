@@ -41,7 +41,12 @@ jobs:
       - name: Install SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-37.0" \
+            "build-tools;36.0.0" \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1"
 
       - name: Resolve version from tag
         if: startsWith(github.ref, 'refs/tags/v')

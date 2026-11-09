@@ -5,19 +5,25 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.coke.nestspace.agent.UserGateManager
 import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.i18n.AppLanguage
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Shows the confirmation / takeover decision that a tool call is waiting on.
- * The same action is also available from a notification, which matters when
- * the user is inside the virtual app instead of the NestSpace UI.
+ * [UserGateManager] posts a notification only while this host is in the
+ * background, avoiding a dialog and notification for the same request.
  */
 @Composable
 fun UserGateHost() {
@@ -25,6 +31,7 @@ fun UserGateHost() {
     val scope = rememberCoroutineScope()
     val confirmation by UserGateManager.confirmation.collectAsState()
     val takeover by UserGateManager.takeover.collectAsState()
+    TrackGateHostVisibility()
 
     confirmation?.let { request ->
         AlertDialog(
@@ -75,7 +82,9 @@ fun UserGateHost() {
                                 if (request.target == UserGateManager.TakeoverTarget.BROWSER) {
                                     UserGateManager.bringTakeoverToFront(context, request)
                                 } else if (ContainerUiClient.bringToFront(context, request.slot) != true) {
-                                    UserGateManager.bringTakeoverToFront(context, request)
+                                    withContext(Dispatchers.IO) {
+                                        UserGateManager.bringTakeoverToFront(context, request)
+                                    }
                                 }
                             }
                         }
@@ -101,5 +110,46 @@ fun UserGateHost() {
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun TrackGateHostVisibility() {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        var registered = false
+
+        fun register() {
+            if (!registered) {
+                registered = true
+                UserGateManager.onGateHostResumed()
+            }
+        }
+
+        fun unregister() {
+            if (registered) {
+                registered = false
+                UserGateManager.onGateHostPaused()
+            }
+        }
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> register()
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP,
+                Lifecycle.Event.ON_DESTROY -> unregister()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            register()
+        }
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            unregister()
+        }
     }
 }

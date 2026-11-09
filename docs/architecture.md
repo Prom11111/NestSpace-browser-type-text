@@ -2,6 +2,8 @@
 
 本文面向想了解实现细节或排查兼容性问题的读者。完整的路线和目标设计见 [技术方案](android-virtual-space-agent-mcp.md)。
 
+单 APK、免 Root 条件下的 Android 兼容运行时升级设计见 [单 APK Android 兼容运行时](single-apk-android-compatibility-runtime.md)。
+
 ## 整体结构
 
 NestSpace 由三部分组成：
@@ -11,6 +13,16 @@ NestSpace 由三部分组成：
 - **控制通道**：容器内的 Binder UI 控制、本地 AI 助手，以及对外的 MCP Server。
 
 容器不是系统级虚拟化；它运行在 NestSpace 自己的进程里，通过 ClassLoader、资源、Context 和系统服务代理来模拟目标应用需要的环境。
+
+## 代码模块
+
+运行时拆分为三个边界明确的 Gradle 模块：
+
+- `runtime-api`：引擎契约、共享模型、Application factory 注册表和宿主 hook。
+- `runtime-core`：APK 与实例存储、Session、Activity Host、进程槽位、Provider、生命周期、Native Facade 和 MCP UI。
+- `runtime-compat`：加固 Application 启动链解析、兼容 Application factory 和版本化兼容 profile。
+
+依赖方向为 `runtime-compat → runtime-core → runtime-api`，`app` 作为控制面同时依赖三者。运行时后端通过 `RuntimePluginLoader` 安装，`app` 不直接调用具体后端实现。
 
 ## 安装与启动
 

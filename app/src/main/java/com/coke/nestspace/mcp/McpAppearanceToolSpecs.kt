@@ -47,8 +47,8 @@ internal fun mcpAppearanceToolSpecs(context: Context): List<ToolSpec> {
 
             ToolSpec(
                 name = "nestspace_slots_set",
-                description = "Set the container slot pool. mode=auto uses the full pool with " +
-                    "memory-pressure eviction; mode=fixed requires limit (1-16).",
+                description = "Set the container slot pool. mode=auto calculates a safe " +
+                    "limit from current memory up to 16; mode=fixed requires limit (1-16).",
                 inputSchema = objectSchema(
                     "mode" to stringProp("auto or fixed"),
                     "limit" to intProp("fixed slot count, 1-16")

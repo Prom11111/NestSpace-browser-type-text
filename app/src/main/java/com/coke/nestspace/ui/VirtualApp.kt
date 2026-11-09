@@ -127,6 +127,7 @@ import com.coke.nestspace.ui.agent.AgentScreen
 import com.coke.nestspace.ui.agent.RunHistoryScreen
 import com.coke.nestspace.ui.agent.UserGateHost
 import com.coke.nestspace.ui.apps.AppManagerScreen
+import com.coke.nestspace.ui.apps.VirtualInstanceDetailScreen
 import com.coke.nestspace.browser.BrowserActivity
 import com.coke.nestspace.browser.BrowserProxyDialog
 import com.coke.nestspace.container.ContainerProcessPool
@@ -165,6 +166,7 @@ private enum class SpacesPage {
     SETTINGS_CONTAINER_ADVANCED,
     SETTINGS_ASSISTANT_ADVANCED,
     APPS,
+    INSTANCE_DETAIL,
     SERVICES,
     APPEARANCE,
     FLOATING_DOT,
@@ -215,6 +217,9 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
     var assistantSettingsFromAssistant by remember { mutableStateOf(false) }
     var permissionsFromAssistant by remember { mutableStateOf(false) }
     var editingLlm by remember { mutableStateOf<LlmConfig?>(null) }
+    var instanceDetailPackage by remember { mutableStateOf("") }
+    var instanceDetailId by remember { mutableStateOf("") }
+    var instanceDetailFromDesktop by remember { mutableStateOf(false) }
     var showBrowserProxyDialog by remember { mutableStateOf(false) }
     val apkMimeTypes = arrayOf(
         "application/vnd.android.package-archive",
@@ -412,6 +417,14 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                 editingLlm = null
                 spacesPage = SpacesPage.MODEL
             }
+            spacesPage == SpacesPage.INSTANCE_DETAIL -> {
+                if (instanceDetailFromDesktop) {
+                    spacesPage = SpacesPage.ROOT
+                    tab = 0
+                } else {
+                    spacesPage = SpacesPage.APPS
+                }
+            }
             spacesPage == SpacesPage.MODEL && modelSettingsFromAssistant -> {
                 modelSettingsFromAssistant = false
                 spacesPage = SpacesPage.ROOT
@@ -499,6 +512,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
             SpacesPage.SETTINGS_ASSISTANT_ADVANCED ->
                 AppLanguage.tr("高级助手工具", "Advanced assistant tools")
             SpacesPage.APPS -> AppLanguage.tr("应用管理", "App management")
+            SpacesPage.INSTANCE_DETAIL -> AppLanguage.tr("实例信息", "Instance info")
             SpacesPage.SERVICES -> AppLanguage.tr("MCP 控制服务", "MCP control service")
             SpacesPage.APPEARANCE -> AppLanguage.tr("外观", "Appearance")
             SpacesPage.FLOATING_DOT -> AppLanguage.tr("悬浮球", "Floating dot")
@@ -586,6 +600,14 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                     loadShortcuts = viewModel::loadAppShortcuts,
                     onOpenRunning = { tab = 3 },
                     onUninstallVirtual = viewModel::uninstallVirtual,
+                    onDeleteVirtualInstance = viewModel::deleteVirtualInstance,
+                    onOpenVirtualInstance = { packageName, instanceId ->
+                        instanceDetailPackage = packageName
+                        instanceDetailId = instanceId
+                        instanceDetailFromDesktop = true
+                        spacesPage = SpacesPage.INSTANCE_DETAIL
+                        tab = 1
+                    },
                     onRemoveSystemApp = viewModel::toggleDesktopSystemApp
                 )
 
@@ -670,8 +692,24 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                         },
                         onMultiOpen = viewModel::multiOpenVirtual,
                         onUninstall = viewModel::uninstallVirtual,
+                        onOpenInstance = { packageName, instanceId ->
+                            instanceDetailPackage = packageName
+                            instanceDetailId = instanceId
+                            instanceDetailFromDesktop = false
+                            spacesPage = SpacesPage.INSTANCE_DETAIL
+                        },
                         onImportApps = viewModel::importHostApps,
                         onRefreshApps = viewModel::refreshApps
+                    )
+
+                    SpacesPage.INSTANCE_DETAIL -> VirtualInstanceDetailScreen(
+                        virtualApps = virtualApps.filter { it.spaceId == "virtual-1" },
+                        packageName = instanceDetailPackage,
+                        instanceId = instanceDetailId,
+                        onLaunch = { packageName, instanceId ->
+                            viewModel.launchVirtual(packageName, instanceId)
+                        },
+                        onClearData = viewModel::clearVirtualInstanceData
                     )
 
                     SpacesPage.SERVICES -> ServicesDetailScreen(

@@ -12,6 +12,16 @@ NestSpace consists of three parts:
 
 The container is not system-level virtualization; it runs inside NestSpace's own process and simulates the environment the target app needs through ClassLoader, resources, Context, and system service proxies.
 
+## Code modules
+
+The runtime is split into three Gradle modules with explicit boundaries:
+
+- `runtime-api`: engine contracts, shared models, the Application factory registry, and host hooks.
+- `runtime-core`: APK and instance storage, sessions, Activity hosts, process slots, Providers, lifecycle handling, the native facade, and MCP UI support.
+- `runtime-compat`: hardened Application bootstrap resolution, the compatible Application factory, and versioned compatibility profiles.
+
+The dependency direction is `runtime-compat → runtime-core → runtime-api`, while `app` is the control plane and depends on all three. Runtime backends are installed through `RuntimePluginLoader`; `app` does not call backend implementations directly.
+
 ## Installation and launch
 
 ### Installation

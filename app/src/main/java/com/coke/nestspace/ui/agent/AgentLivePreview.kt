@@ -1,7 +1,6 @@
 package com.coke.nestspace.ui.agent
 
 import android.graphics.BitmapFactory
-import android.util.Base64
 import com.coke.nestspace.i18n.AppLanguage
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -61,7 +60,7 @@ internal fun LivePreviewCard(
     onOpen: () -> Unit,
     onClose: () -> Unit
 ) {
-    val bitmap = rememberLiveBitmap(frame.base64, sampleSize = 2)
+    val bitmap = rememberLiveBitmap(frame.jpegBytes, sampleSize = 2)
     Surface(
         modifier = modifier
             .width(112.dp)
@@ -242,7 +241,7 @@ private fun BrowserPreview(url: String, modifier: Modifier = Modifier) {
 @Composable
 internal fun LivePreviewDialog(frame: LivePreview.Frame, onDismiss: () -> Unit) {
     val isBrowser = frame.kind == LivePreview.KIND_BROWSER
-    val bitmap = rememberLiveBitmap(frame.base64)
+    val bitmap = rememberLiveBitmap(frame.jpegBytes)
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = if (isBrowser) RectangleShape else RoundedCornerShape(16.dp),
@@ -325,18 +324,22 @@ internal fun LivePreviewDialog(frame: LivePreview.Frame, onDismiss: () -> Unit) 
 
 @Composable
 private fun rememberLiveBitmap(
-    base64: String,
+    jpegBytes: ByteArray,
     sampleSize: Int = 1
 ): androidx.compose.ui.graphics.ImageBitmap? {
     val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(
         initialValue = null,
-        key1 = base64
+        key1 = jpegBytes
     ) {
         value = withContext(Dispatchers.Default) {
-            val bytes = runCatching { Base64.decode(base64, Base64.DEFAULT) }
-                .getOrNull() ?: return@withContext null
+            if (jpegBytes.isEmpty()) return@withContext null
             val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+            BitmapFactory.decodeByteArray(
+                jpegBytes,
+                0,
+                jpegBytes.size,
+                options
+            )?.asImageBitmap()
         }
     }
     return bitmap

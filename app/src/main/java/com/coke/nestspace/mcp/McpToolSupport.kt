@@ -367,11 +367,7 @@ internal fun slotsJson(context: Context): JSONObject {
     val auto = mode == ContainerProcessPool.AUTO_SLOT_LIMIT
     return JSONObject()
         .put("mode", if (auto) "auto" else "fixed")
-        .put(
-            "limit",
-            if (auto) ContainerProcessPool.SLOT_COUNT
-            else ContainerProcessPool.slotLimit(context)
-        )
+        .put("limit", ContainerProcessPool.slotLimit(context))
         .put("max", ContainerProcessPool.SLOT_COUNT)
 }
 

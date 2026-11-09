@@ -30,7 +30,7 @@
 
 - **独自開発のアプリレベルのコンテナエンジン**：ホストアプリ内で未インストールの APK を読み込み、PackageManager/ActivityManager/Binder/IO を仮想化し、対象アプリに自分が通常のシステム上で動作していると認識させる。
 - **Java 層の仮想化を優先し、重要な箇所はネイティブフック**：まず `Instrumentation`/`ActivityThread`/`PackageManager`/`ContextImpl` の Java フックで動作させる；Binder/UID/ネイティブファイルパスなどの難所ではネイティブフックを導入する。
-- **単一プロセス MVP → マルチプロセス製品**：まず 1 つのプロセスで簡単な APK を動作させる；安定後にホストが宣言する `:pN` プロセスプールを実装する。
+- **単一プロセス MVP → マルチプロセス製品**：まず 1 つのプロセスで簡単な APK を動作させ、その後ホストが宣言する `:c1..:c16` プロセスプールで複数インスタンスと対象プロセスを実行する。
 - **デュアルチャネル Agent/MCP**：ローカル Agent（アプリ内ループ）+ リモート Agent（MCP）で、同じ `ToolRegistry`、権限、リース、監査を共有する。
 - **AppFunctions ファストパス（任意）**：ホストアプリは AppFunctions をエクスポートできる；コンテナ内 APK の AppFunctions はローカルブリッジ経由で動作する；利用できない場合は UI 自動化にフォールバックする。
 - **VirtualApp の商用ライセンスは利用しない**。VirtualApp はアーキテクチャの参考にとどめ、**クリーンルーム実装とし、その GPL コードはコピーしない**。
@@ -89,7 +89,7 @@
 3. **バックグラウンドからの Activity 起動**：Android 10+ ではバックグラウンド起動が制限される；仮想アプリをホストのバックグラウンドから起動するとブロックされる。フォアグラウンドサービス/通知/ユーザー操作によるトリガーが必要である。
 4. **通知/Job/Provider**：システムはパッケージ名/UID で帰属を判断する；これらを仮想化するのは Activity よりはるかに難しく、多くのアプリのバックグラウンド機能は劣化する。
 5. **Keystore/署名/Play Integrity**：同じ UID では Keystore alias が競合する；署名検証/完全性検証は高い確率で失敗する。
-6. **プロセスモデル**：`app_process` 子プロセスは phantom process killer に kill される；ホストが宣言する `:pN` プロセスプールの方が安定するが、プロセス再利用/メモリ/クラッシュ分離を処理する必要がある。
+6. **プロセスモデル**：`app_process` 子プロセスは phantom process killer に kill される；ホストが宣言する `:c1..:c16` プロセスプールの方が安定し、プロセス再利用、メモリ、クラッシュ分離を明示的に処理する。
 7. **16 KB / split APK**：インストーラーとネイティブライブラリの読み込みの両方で適応が必要である。
 8. **長期的な保守**：これは「ミニ Android ランタイム」であり、通常のアプリ機能ではない；AOSP を継続的に追跡する必要がある。
 
@@ -174,9 +174,9 @@
 - 欠点：対象アプリのクラッシュがホストを巻き込む；マルチインスタンスが 1 つのプロセスを共有する；メモリ負荷が大きい。
 - 適する用途：実現可能性の検証、簡単なアプリ。
 
-**フェーズ B：ホストが宣言する `:pN` プロセスプール（製品版）**
+**フェーズ B：ホストが宣言する `:c1..:c16` プロセスプール（製品版）**
 
-- ホストの `AndroidManifest.xml` に一連のプロセス（`:p0`、`:p1`、…）を宣言し、各プロセスに `StubActivity`/`VClientService` を宣言する。
+- ホストの `AndroidManifest.xml` に `:c1..:c16` のスロットプロセスを宣言し、各プロセスに `StubActivity`/`VClientService` を宣言する。
 - 仮想アプリを起動するとき、空いているプロセスを選択し、そのプロセス内の `StubActivity` を起動する；システムは通常の app プロセスと `ActivityThread` を作成する。
 - そのプロセス内でコンテナフックを初期化し、対象 APK を読み込み、対象 Activity を実行する。
 - 利点：通常の app プロセスであるため phantom process killer の影響を受けない；クラッシュ分離；マルチインスタンスを並列実行できる。
@@ -187,7 +187,7 @@
 **プロセス割り当て戦略：**
 
 - 仮想空間ごとに 1 プロセス；またはインスタンスごとに 1 プロセス；またはメモリ/フォアグラウンド状態に応じて動的に割り当てる。
-- プロセスプールはデフォルトで 2–4 個（デバイスのメモリに応じて調整）。
+- プロセスプールの上限はデバイスのメモリから自動計算し、最大 16 個とする。固定モードではユーザーが選んだ 1〜16 の値を使用する。
 - フォアグラウンドのインスタンスは優先的に独占；バックグラウンドのインスタンスはプロセスを再利用できる。
 - プロセスがクラッシュしたら dirty とマークし、クリーンアップしてから再利用する。
 
@@ -206,7 +206,7 @@
 │  └───────┬────────┘                                              │
 │          │ IPC (Binder/AIDL)                                     │
 │  ┌───────▼─────────────────────────────────────────────────────┐  │
-│  │ Client process :p0 (normal app process)                     │  │
+│  │ Client process :c1 (normal app process)                      │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │  │
 │  │  │ VClient      │  │ HookManager  │  │ Target Activity  │   │  │
 │  │  │ (ActivityThread)│ │ Java/Native │  │ (target APK)     │   │  │
@@ -215,7 +215,7 @@
 │  └─────────────────────────────────────────────────────────────┘  │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ Client process :p1 ... :pN (same structure)                 │ │
+│  │ Client processes :c1 ... :c16 (same structure)              │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -367,9 +367,9 @@ interface AndroidAdapter {
 - Activity ライフサイクルはホストが転送する：onCreate/onStart/onRestart/onResume/onPause/onStop/onDestroy、および `onActivityResult`（リフレクションで対象 Activity の protected メソッドを呼び出す）。
 - 未実装：IntentFilter/暗黙的 Intent の解決、`onNewIntent` の singleTop/CLEAR_TOP セマンティクス、Activity options/トランジション、`requestPermissions` の token マッピング、最近のタスクでの対象名/アイコン表示。
 - 実アプリ互換性の補足（MuMu / Android 15 で検証）：
-  - 対象 APK が AndroidX を同梱している場合がある（高徳地図（AMap）がそうである）。`DexClassLoader` はデフォルトで parent-first であり、対象クラスがホストの AndroidX にリンクされ、フィールド欠落（`ViewCompat.a`）が発生する。`ContainerClassLoader` を child-first に変更し、まず対象 dex を検索し、次にホスト/システムにフォールバックする。
-  - AMap の `PageSupportActivity.attachBaseContext` は `createConfigurationContext` を呼び出して locale を処理する；元の実装はホストのリソースを返していた。`ContainerContext` は現在、対象 APK の AssetManager + 新しい Configuration で Resources を再構築し、対象のパッケージ名/ClassLoader/ディレクトリを保持する ContextWrapper を返す。
-  - 高徳地図は依然として `ICloudConfigService` が空であることと AMS の `Permission Denial` で停止しており、Service/Provider/Binder 仮想化が必要である。
+  - 対象 APK が AndroidX を同梱している場合がある。`DexClassLoader` はデフォルトで parent-first であり、対象クラスがホストの AndroidX にリンクされ、フィールド欠落が発生する。`ContainerClassLoader` を child-first に変更し、まず対象 dex を検索し、次にホスト/システムにフォールバックする。
+  - 対象 Activity の `attachBaseContext` は `createConfigurationContext` を呼び出して locale を処理する場合がある；元の実装はホストのリソースを返していた。`ContainerContext` は現在、対象 APK の AssetManager + 新しい Configuration で Resources を再構築し、対象のパッケージ名、ClassLoader、ディレクトリを保持する ContextWrapper を返す。
+  - 対象アプリはシステムサービスバインディング、Provider、Binder の仮想化に依存する場合がある。未対応時は個別アプリ向けの起動特例ではなく、明確な診断を出力する。
 
 **実装済み：コンテナ内 Service / Provider（Stage C-lite+）**
 
@@ -385,14 +385,14 @@ interface AndroidAdapter {
   - Provider 権限、プロセス分離、`FileProvider` の PackageManager meta-data クエリは仮想化されていない。
 **実装済み：Stage C-D（2026-11-04）**
 
-- プロセスモデル：`ContainerProcessPool` は各 `package@instance` を `:c1..:c4` のいずれかのコンテナスロットに固定する；スロットプロセスを再利用する前に強制 kill して終了を待機し、`ContainerSessions` はプロセス内で 2 つ目の session を拒否する。対象 Java の未捕捉例外は `TargetCrashGuard` が握りつぶしてクラッシュマークを書き込む；ネイティブクラッシュ/`System.exit` はスロットプロセスのみを kill し、メインプロセスと他のインスタンスは影響を受けない。次回の `space_launch` は `restarted_after_crash`/`crash_reason` を返す。
+- プロセスモデル：`ContainerProcessPool` は各 `package@instance` を `:c1..:c16` のいずれかのコンテナスロットに固定する；スロットプロセスを再利用する前に強制 kill して終了を待機し、`ContainerSessions` はプロセス内で 2 つ目の session を拒否する。対象 Java の未捕捉例外は `TargetCrashGuard` が握りつぶしてクラッシュマークを書き込む；ネイティブクラッシュ/`System.exit` はスロットプロセスのみを kill し、メインプロセスと他のインスタンスは影響を受けない。次回の `space_launch` は `restarted_after_crash`/`crash_reason` を返す。
 - JobScheduler：`ContainerContext.getSystemService(JOB_SCHEDULER_SERVICE)` は `ContainerJobScheduler` を返す；対象の `JobService` は対象の ClassLoader でインスタンス化し、`onCreate`/`onStartJob`/`onStopJob` を駆動し、最小遅延、周期、バックオフ、ネットワーク/充電/低バッテリー/アイドル制約をサポートする（判定不能な制約は満たされたものとして処理する）。プロセス存続中のみ有効。
 - 通知：`INotificationManager` プロキシはパッケージ名をホストのパッケージに変更し、tag/channel/group に仮想パッケージのプレフィックスを追加し、small icon を bitmap に再描画し、対象の PendingIntent をホストの `ContainerLaunchProxyActivity` 中継アクティビティに差し替える；channel クエリ結果からはプレフィックスを除去する。
 - ブロードキャストブリッジ：対象の静的/動的 Receiver の action はホストに登録される；システムの sticky/通常ブロードキャストはコンテナに注入され、対象が送出した自身のスコープ外のブロードキャストはローカルに配信した後、引き続きホストへ送信され、ループバック防止用の origin extra が付与される。
 - 権限：`checkSelfPermission`/`checkPermission`/`enforce*`/PackageManager の権限クエリは仮想権限テーブルを参照する；`ContainerPackageManager.buildRequestPermissionsIntent`/`getPermissionControllerPackageName` を書き換え、隠しメソッド `Context.getPermissionRequestState` を宣言することで、`requestPermissions` をコンテナが引き継げるようにする。ホストが宣言した権限は実際のシステムダイアログを表示し、結果はパッケージごとに永続化される；MCP の `space_permissions` は list/grant/revoke をサポートする。
 - 完全な VPMS：`VirtualPackageRegistry` は `state.json` から軽量インデックスを構築し、必要に応じて同じ仮想空間内の他の APK を解析する；`getInstalledPackages`/`getInstalledApplications`、明示的コンポーネント、暗黙的 Intent、`resolve*`/`query*`、ラベル/アイコン/Resources/起動 Intent/署名/権限宣言は、いずれも仮想アプリ間でカバーされる。他のアプリは安定した合成 UID を使用する。
-  - パフォーマンス制約：一覧/ラベル/UID/署名は軽量インデックスを使用する；パッケージ未指定の暗黙的 Intent ではすべての仮想アプリをスキャンせず、明示的なパッケージ/コンポーネントのクエリ時のみ対応する APK を解析する。そうしないと、知乎（Zhihu）の起動時に網易雲音楽（NetEase Cloud Music）の 100MB+ APK を解析してメインスレッドをブロックしてしまう。
-- 互換性制約：`WindowManager` 動的プロキシは網易雲音楽でのみ有効化する（Toast のパッケージ名書き換え）。グローバルプロキシは知乎のネイティブ SDK が JNI に渡してしまい、CheckJNI が `invalid jobject` を報告してコンテナプロセスを abort する。
+  - パフォーマンス制約：一覧/ラベル/UID/署名は軽量インデックスを使用する；パッケージ未指定の暗黙的 Intent ではすべての仮想アプリをスキャンせず、明示的なパッケージ/コンポーネントのクエリ時のみ対応する APK を解析する。そうしないと、リソースの多い対象アプリの起動中に別の大容量 APK を解析してメインスレッドをブロックしてしまう。
+- 互換性制約：`WindowManager` 動的プロキシは、Toast のパッケージ名書き換えが必要な対象コンテキストでのみ有効化する。グローバルプロキシは対象のネイティブ SDK が JNI に渡す可能性があり、CheckJNI が `invalid jobject` を報告してコンテナプロセスを abort する。
 - マルチインスタンス `.so` 分離：同じパッケージの異なるインスタンスには異なるコンテナスロットを割り当てる；ネイティブライブラリはインスタンスディレクトリごとに抽出する；スロットプロセスの再利用時は先に古いプロセスを kill し、同名 `.so` と JNI グローバル状態の混用を避ける。
 
 **その他のコンポーネント：**
@@ -426,7 +426,7 @@ interface AndroidAdapter {
 
 **Application：**
 
-- `LoadedApk.makeApplication` を呼び出す、または手動で `Instrumentation.newApplication` を呼び出す。
+- `runtime-compat` の `CompatApplicationFactory` で対象 Application を作成し、通常・Tinker・ApplicationLike の起動チェーンを処理します。
 - `attachBaseContext(targetContext)` → `onCreate()`。
 - 対象アプリの `ContentProvider` 初期化順序を模擬する（`installContentProviders`）。
 
@@ -498,9 +498,9 @@ interface AndroidAdapter {
 
 ### 3.8 プロセスモデル / phantom process
 
-- ホストが宣言する `:pN` プロセスを使用し、`app_process` 子プロセスは使用しない。
-- `StubActivity`/`VClientService` を `:pN` に宣言し、起動時にシステムが通常の app プロセスを作成する。
-- プロセスプールのサイズはデバイスのメモリに応じる：ローエンド 1–2、ハイエンド 3–4。
+- ホストが宣言する `:c1..:c16` スロットプロセスを使用し、`app_process` 子プロセスは使用しない。
+- `StubActivity`/`VClientService` を `:c1..:c16` に宣言し、起動時にシステムが通常の app プロセスを作成する。
+- スロット上限はデバイスのメモリから自動計算し、最大 16 個とする。固定モードではユーザーが選んだ 1〜16 の値を使用する。
 - プロセス再利用前のクリーンアップ：対象 Activity/Service、ClassLoader、Resources、静的状態、ファイルロック。
 - プロセスクラッシュ：dirty とマークして再起動する；ホスト UI に「空间已重启」（仮想空間が再起動されました）を表示する。
 - フォアグラウンドサービスによる維持：ホストのメインプロセス + 現在の仮想空間プロセス；すべてのプロセスを常駐させない。
@@ -516,13 +516,15 @@ interface AndroidAdapter {
 - JNI：対象アプリの `System.loadLibrary` と `RegisterNatives` は通常、対象の ClassLoader 下で動作する；グローバル JNI 状態の衝突に注意する。
 - 同じプロセスに 2 つのバージョン非互換の同じ `.so` を読み込まない（マルチインスタンスで衝突する可能性がある）；必要に応じてプロセス分離する。
 
-現在の実装（Stage B+）：
+現在の実装（Stage C-D）：
 
 - `ApkInspector` は base/split 内の `lib/<abi>/*.so` をスキャンし、利用可能な ABI の集合を取得する。
 - `NativeLibs` は `Build.SUPPORTED_ABIS` に従って最初に一致するものを選択し、その ABI の `.so` をフラットに `vspace/data/<pkg>/<instance>/native-libs` へ抽出し、stamp キャッシュで毎回の起動時の重複コピーを避ける。
 - `DexClassLoader(dexPath, codeCache, nativeLibsDir, parent)`、および `ApplicationInfo.nativeLibraryDir` を設定する。
 - インストールは ABI を理由に失敗しない；起動前にチェックし、一致する ABI がなければ `ABI_MISMATCH` を返し、デバイス/アプリの ABI を示す。arm64-only APK は x86_64 エミュレーターではここで停止する。
-- 未実装：16 KB `p_align` チェック、`dlopen`/`System.load` フック、マルチインスタンスの同名 `.so` 分離。
+- `dlopen`/`android_dlopen_ext` フックは、新しく読み込まれたモジュールを増分スキャンキューへ送る。
+- 同じパッケージの異なるインスタンスは異なるスロットを使用する。スロット再利用前に旧プロセスを終了するため、同名 `.so` と JNI グローバル状態は混在しない。
+- 汎用 ELF `p_align` の事前チェックはまだ強制ゲートではない；16 KB 互換性はビルド設定、デバイステスト、実行時診断でカバーする。
 
 ### 3.10 バックグラウンド / Job / Provider / WebView
 
@@ -646,7 +648,7 @@ interface AndroidAdapter {
 - 記録：`(action, snapshot_hash, timestamp, result)`。
 - 生成：安定したシーケンスをアサーション付きの YAML/JSON スクリプトに変換する。
 - 再生：各ステップで前提条件をチェックする；満たさない場合は Agent にフォールバックする。
-- スキルライブラリ：アプリごとに整理する（例：`wechat.send_message`、`settings.open_wifi`）。
+- スキルライブラリ：アプリごとに整理する（例：`app.send_message`、`settings.open_wifi`）。
 - スキルはトークンコストを下げる鍵である：よくあるタスクはスクリプト+検証で処理し、大規模モデルを使わない。
 
 ### 4.6 Android 17 Advanced Protection Mode（AAPM）
@@ -1034,7 +1036,7 @@ Android 16+ の AppFunctions は「システムレベルのツール登録」で
                 │                              │
 ┌───────────────▼──────────────────────────────▼───────────────┐
 │ Infrastructure                                               │
-│  Host-declared :pN processes | MCP Server | Local Agent      │
+│  Host-declared :c1..:c16     | MCP Server | Local Agent      │
 │  AccessibilityService / MediaProjection / Shizuku            │
 │  Room / DataStore / WorkManager                              │
 └──────────────────────────────────────────────────────────────┘
@@ -1060,7 +1062,7 @@ app/
     engine/resources/    # Resources/AssetManager
     engine/binder/       # Binder/UID 仮想化
     engine/io/           # データディレクトリのリダイレクト
-    engine/process/      # :pN プロセスプール、VClientService
+    engine/process/      # :c1..:c16 プロセスプール、VClientService
     engine/hooks/        # Java/ネイティブフック、バージョン適応
     fastpath/            # AppFunctions 検出、ホストエクスポート、コンテナ内ローカルブリッジ
     feature/spaces/      # Compose UI: 仮想空間一覧、アプリグリッド
@@ -1154,7 +1156,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 5. `service/McpForegroundService.kt`：フォアグラウンドサービス + 通知 + token。
 6. `core/agent/`：ローカル Agent の骨格（`ClaudeAdapter` または偽モデル）で、同じ ToolRegistry を再利用する。
 7. `engine/` + `container/`：Stage A/B の単一プロセスコンテナ、インストーラー、マルチインスタンス、インスタンスデータディレクトリは実装済み（第 7 節参照）。
-8. 次のステップ：プロセスプール、ネイティブライブラリ、Binder/UID、Provider/通知/Job、Android 9+ 適応。
+8. プロセスプール、ネイティブライブラリ、Binder/UID、Provider/通知/Job、Android 7.1–17 適応は実装済み；今後はバックグラウンド起動、システム側の実 UID 境界、より広い汎用互換サンプルに重点を置く。
 
 ---
 
@@ -1165,8 +1167,8 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 | **S0 制御レイヤー + デュアルチャネル骨格** | まず「制御」を独立したレイヤーにする | ToolRegistry、MCP Server、ローカル Agent 骨格、Shizuku/アクセシビリティ、リース/承認、軌跡 | リモート MCP とローカル Agent の両方がインストール済みアプリを制御して 3 種類のタスクを完了できる；ツール動作が一致する |
 | **A 単一プロセス最小コンテナ** ✅ 検証済み | 簡単な APK を 1 つ動作させる | AXML/リソース解析、ClassLoader、Resources、StubActivity、Instrumentation/ActivityThread フック、Context ラッピング | ネイティブ/GMS なしの簡単な APK がホストプロセスで起動し UI を表示できる（API 25 エミュレーターで検証済み） |
 | **B インストーラー + マルチインスタンス** ✅ 検証済み（API 25 / API 36） | インストールでき、複数インスタンスを実行できる | split APK、署名検証、`REQUIRE_SECURE_ENV`、IO リダイレクト、VPMS 一覧/起動、インスタンスデータディレクトリ | 簡単なアプリをインストール、起動、マルチインスタンス化できる；データが互いに汚染されない（testapp + Android 16 で検証済み；base+合成 split は検証済み、実際の config split リソース overlay は検証待ち） |
-| **C プロセスプール + ネイティブ** | クラッシュ分離、ネイティブアプリ | `:pN` プロセスプール、VClientService、ネイティブライブラリの抽出/読み込み、16 KB、Binder/UID Java フック | 5 つのアプリが独立プロセスで動作；ネイティブライブラリが正常；16 KB デバイスにインストール可能 |
-| **D バックグラウンド/システム機能** | 主要アプリが利用可能 | 通知、静的 Receiver、Job/Alarm の部分代理、Provider、WebView プロセス分離、Android 15–17 適応 | 対象アプリ 10 個中 8 個が起動；コアフロー 10 個中 7 個；致命的クラッシュなし |
+| **C プロセスプール + ネイティブ** ✅ 実装済み | クラッシュ分離、ネイティブアプリ | `:c1..:c16` プロセスプール、VClientService、ネイティブライブラリの抽出/読み込み、16 KB テスト、Binder/UID Java フック | 対象は独立プロセスで動作；ネイティブライブラリが正常；16 KB デバイスでは明確な診断とともにインストール可能 |
+| **D バックグラウンド/システム機能** ✅ 主要部分実装済み | 主要アプリが利用可能 | 通知、静的 Receiver、Job/Alarm の部分代理、Provider、WebView プロセス分離、Android 15–17 適応 | 通知、ブロードキャスト、Provider、権限、一般的なバックグラウンドコンポーネントが利用可能；システムによる終了後の完全な Job/Alarm 起動は制限付き |
 | **E Agent 自律性 + セキュリティ** | リリース可能 | オンデバイス/クラウドモデル、スキルライブラリ、検証/リトライ、人手引き継ぎ、監査、マスキング、MCP 認証 | よくあるタスクの成功率が基準を満たす；セキュリティレビュー通過 |
 | **F AppFunctions ファストパス** | 任意の高速化 | ホストの `@AppFunction` エクスポート、コンテナ APK メタデータ解析、コンテナ内ローカル実行、権限検出、UI フォールバック | ホストツールをシステム Agent が呼び出せる；コンテナ内 AppFunctions を実行できる；利用不可時は UI にフォールバック |
 
@@ -1178,8 +1180,8 @@ Android 7.1.1 x86 エミュレーターで検証（testapp APK は未インス�
 - ✅ 対象リソースが有効：`@string`、`@layout` が正常に解析され、ボタンをタップすると TextView が対象文字列に更新される。
 - ✅ タップ/レンダリングでクラッシュ、黒画面、ANR が発生しない。
 - ✅ 対象 `Application` の `attachBaseContext`/`onCreate` は Stage B で接続済み（testapp で検証）。
-- ⏳ 対象の `getPackageName()` は対象パッケージ名を返す；`getPackageManager()` のクエリは依然としてホスト PM であり、Stage C/D の VPMS に残されている。
-- ⏳ API 25 のみ検証済み；Android 9+ の hidden API 制限が `Activity.attach` / `AssetManager.addAssetPath` を妨げる可能性があり、バージョンごとの適応が必要。
+- ✅ 対象の `getPackageName()` と PackageManager クエリは仮想パッケージインデックスから返され、仮想アプリ間の VPMS クエリにも対応する。
+- ✅ Android 9+ の hidden API は HiddenApiBypass で処理する。現在の検証対象は Android 7.1、15、16、17。
 
 ### 7.2 Stage B の主要な受け入れ確認
 
@@ -1197,21 +1199,21 @@ Android 7.1.1 x86 エミュレーターで検証：
 - ✅ Android 16（API 36）で再テスト：デスクトップ、コンテナ、マルチインスタンス、インスタンスデータ分離が正常。
 - ✅ Android 14+ の書き込み可能 dex 制限：インストール後の APK を読み取り専用にしても、`DexClassLoader` が正常に読み込める。
 - ✅ Android 9+ hidden API：HiddenApiBypass 6.2 を導入し、`Activity.attach` などのリフレクションが利用可能；例外を適用しないと `Activity.attach not found`。
-- ⏳ Android 17（API 37）エミュレーターはこのマシンの SurfaceFlinger がクラッシュし（`hasReadColorBufferDma`）、PackageManager/ActivityManager も再起動したため、デバイスレベルの検証を完了できなかった；実機または正常なグラフィックススタックのエミュレーターが必要。
-- ⏳ `3 つの簡単なアプリ` の互換性サンプルはまだ不足している（現在は testapp + マルチインスタンスで検証）；Stage C 前にさらに APK サンプルを追加することを推奨。
-- ⏳ 単一プロセス、入口 Activity のみ；`startActivity`、Provider、Binder/UID、ネイティブは依然として Stage C/D 待ち。
-- ✅ エンジン内の仮想アプリ一覧/起動（システム PMS/AMS フックではない）とデスクトップ風入口は接続済み；対象 `PackageManager` のクエリは依然としてホスト PM。
+- ✅ Android 17（API 37）と MuMu（Android 15、ARM bridge）は現在の検証マトリクスに含まれる。
+- ✅ 互換性サンプルはマルチインスタンス、明示的 Activity、Provider、WebView、プラグインコンポーネント、ネイティブモジュールをカバーする。
+- ✅ マルチプロセスルーティング、コンポーネントブリッジ、Binder/UID プロキシ、ネイティブ環境を実装済み；単一プロセスの入口 Activity に限定されない。
+- ✅ エンジン内の仮想アプリ一覧/起動（システム PMS/AMS フックではない）、デスクトップ入口、対象 PackageManager の仮想化を統合済み。
 
-実装場所：`engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/MiniContainer.kt`、`ui/VirtualApp.kt`。
+実装場所：`runtime-core` の `engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/ContainerSession.kt`、`container/ContainerProcessPool.kt`、および `app` の `ui/DesktopScreen.kt`。
 
-### 7.3 Stage C の主要な受け入れ確認
+### 7.3 Stage C の主要な受け入れ確認（実装済み）
 
-- 2 つのインスタンスが異なる `:pN` プロセスにあり、クラッシュが互いに影響しない。
+- 2 つのインスタンスが異なる `:c1..:c16` スロットプロセスにあり、クラッシュが互いに影響しない。
 - 対象アプリのネイティブライブラリが読み込める。
-- 16 KB デバイスでアラインされたライブラリが正常；アラインされていないものは明確なエラーを返す。
+- ネイティブライブラリの読み込み結果と診断は、アライン済み、未アライン、ABI 不一致を区別できる；汎用 ELF `p_align` の事前チェックは今後の拡張とする。
 - `Process.myUid`/`Binder.getCallingUid` の Java フックが少なくとも一般的なチェックをカバーする（システム側の UID 偽装は行わない）。
 
-### 7.4 Stage D の主要な受け入れ確認
+### 7.4 Stage D の主要な受け入れ確認（主要部分実装済み）
 
 - 通知が表示できる（または明確に降格する）。
 - 静的 Receiver が受信できる。
@@ -1247,7 +1249,7 @@ Android 7.1.1 x86 エミュレーターで検証：
 
 - 独自開発テスト APK（最小 Activity、Resources、ネイティブライブラリ、split、Service、Receiver）
 - オープンソースの簡単なアプリ（F-Droid の小規模ツール）
-- 微信（WeChat）、支付宝（Alipay）、淘宝（Taobao）、抖音（TikTok）、小紅書（Xiaohongshu）（互換性目標、約束はしない）
+- 一般的なソーシャル、EC、旅行、コンテンツ系アプリのカテゴリ（互換性目標、保証はしない）
 - ゲーム（Unity/UE、Surface/Canvas）
 - Flutter アプリ
 - WebView 主体のアプリ
@@ -1384,7 +1386,7 @@ Android 7.1.1 x86 エミュレーターで検証：
 | Binder/UID | `Binder.getCallingUid`、`Process.myUid`、`UserHandle` | `Binder.execTransact` | システム側 UID は偽装できない |
 | IO | `ContextImpl`、`SharedPreferencesImpl`、`SQLiteDatabase` | `open`/`fopen` | scoped storage |
 | 通知 | `NotificationManager`、`PendingIntent` | — | Android 12 trampoline；Android 13 権限 |
-| プロセス | ホスト `:pN`、`StubActivity`、`VClientService` | — | `app_process` 子プロセスを使用しない |
+| プロセス | ホスト `:c1..:c16`、`StubActivity`、`VClientService` | — | `app_process` 子プロセスを使用しない |
 | ネイティブライブラリ | `System.loadLibrary`、`System.load` | `dlopen`/`android_dlopen_ext` | 16 KB；ABI |
 | WebView | `WebView.setDataDirectorySuffix`（プロセス単位） | — | マルチインスタンスには独立プロセスが必要 |
 

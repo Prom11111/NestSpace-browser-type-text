@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -28,9 +29,9 @@ import java.util.concurrent.atomic.AtomicLong
  * takeover where the user must handle login/captcha/payment themselves.
  *
  * The tool call suspends until the user approves/denies (or finishes the
- * takeover). The same request is shown in the assistant UI and as a
- * high-priority notification, so it is still reachable while a virtual app
- * is in the foreground.
+ * takeover). A visible NestSpace UI gets only the in-app dialog; a
+ * high-priority notification is posted only after that UI moves to the
+ * background, so the request remains reachable without showing both.
  */
 object UserGateManager {
 
@@ -67,6 +68,7 @@ object UserGateManager {
 
     private val ids = AtomicLong(1)
     private val gate = Mutex()
+    private val visibleGateHosts = AtomicInteger(0)
 
     @Volatile
     private var appContext: Context? = null
@@ -102,6 +104,50 @@ object UserGateManager {
             )
         }
     }
+
+    /**
+     * Called while a composable that can present the gate dialog is resumed.
+     * A notification posted while the UI was in the background is removed as
+     * soon as the user returns to the in-app dialog.
+     */
+    fun onGateHostResumed() {
+        if (visibleGateHosts.incrementAndGet() == 1) {
+            cancel(CONFIRM_NOTIFICATION)
+            cancel(TAKEOVER_NOTIFICATION)
+        }
+    }
+
+    /**
+     * When the last gate-capable UI leaves the foreground, move any pending
+     * request back to a notification so it is not hidden behind a container
+     * app. Repeated pause/dispose callbacks are ignored.
+     */
+    fun onGateHostPaused() {
+        val remaining = visibleGateHosts.updateAndGet { count ->
+            (count - 1).coerceAtLeast(0)
+        }
+        if (remaining != 0) return
+        _confirmation.value?.let { request ->
+            notifyConfirmation(
+                request.id,
+                request.title,
+                request.detail,
+                request.confirmLabel,
+                request.dismissLabel
+            )
+        }
+        _takeover.value?.let { request ->
+            notifyTakeover(
+                request.id,
+                request.title,
+                request.detail,
+                request.target,
+                request.tabId
+            )
+        }
+    }
+
+    private fun hasVisibleGateHost(): Boolean = visibleGateHosts.get() > 0
 
     /**
      * Ask before a risky, hard-to-undo action. Returns false when the user
@@ -145,7 +191,9 @@ object UserGateManager {
             confirmLabel = confirmLabel,
             dismissLabel = dismissLabel
         )
-        notifyConfirmation(id, title, detail, confirmLabel, dismissLabel)
+        if (!hasVisibleGateHost()) {
+            notifyConfirmation(id, title, detail, confirmLabel, dismissLabel)
+        }
         return try {
             withTimeoutOrNull(timeoutMs) { deferred.await() } ?: false
         } finally {
@@ -224,7 +272,9 @@ object UserGateManager {
                 tabId = tabId,
                 url = url
             )
-            notifyTakeover(id, title, detail, target, tabId)
+            if (!hasVisibleGateHost()) {
+                notifyTakeover(id, title, detail, target, tabId)
+            }
             return withTimeoutOrNull(timeoutMs) { deferred.await() } ?: TakeoverResult.TIMEOUT
         } finally {
             _takeover.value = null

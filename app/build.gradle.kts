@@ -16,7 +16,7 @@ val tagVersionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull
 //   <abi>[,<abi>] any explicit list of the supported ABIs
 // gradle.properties sets arm64 for IDE/plain builds, and every release
 // variant passes an explicit value; there is no implicit multi-ABI default.
-val supportedHostAbis = listOf("arm64-v8a", "armeabi-v7a", "armeabi", "x86", "x86_64")
+val supportedHostAbis = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 val abiAliases = mapOf("arm64" to "arm64-v8a")
 val hostAbi = providers.gradleProperty("nestspaceHostAbi").orNull
     ?.trim()
@@ -68,6 +68,7 @@ if (requireReleaseSigning && !hasReleaseSigning) {
 
 android {
     namespace = "com.coke.nestspace"
+    ndkVersion = "27.2.12479018"
     compileSdk {
         version = release(37)
     }
@@ -81,7 +82,6 @@ android {
         versionName = tagVersionName ?: "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
         // The arm64 host (the project default; ABI arm64-v8a) omits x86_64
         // native libraries.
         //
@@ -135,9 +135,18 @@ android {
         aidl = true
         buildConfig = true
     }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
 }
 
 dependencies {
+    implementation(project(":runtime-api"))
+    implementation(project(":runtime-core"))
+    implementation(project(":runtime-compat"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

@@ -29,3 +29,4 @@ nav:
       - 从源码构建: building.md
       - nestspace-mcp CLI: cli.md
       - 技术设计: android-virtual-space-agent-mcp.md
+      - 单 APK 兼容运行时: single-apk-android-compatibility-runtime.md

@@ -24,10 +24,16 @@ object RunRecovery {
     private const val CHANNEL_ID = "run_recovery"
     private const val NOTIFICATION_ID = 0x5255
 
-    fun recover(context: Context): List<RunSummary> {
+    fun recover(
+        context: Context,
+        startedBefore: Long = Long.MAX_VALUE
+    ): List<RunSummary> {
         val app = context.applicationContext
         val recovered = runCatching {
-            RunRecordStore.recoverInterrupted(app.filesDir)
+            RunRecordStore.recoverInterrupted(
+                app.filesDir,
+                startedBefore = startedBefore
+            )
         }.onFailure {
             Log.w(TAG, "Cannot recover interrupted runs", it)
         }.getOrDefault(emptyList())

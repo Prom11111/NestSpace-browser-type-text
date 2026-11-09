@@ -202,6 +202,7 @@ docs/      架构、技术方案、MCP 工具参考和知识包文档
 - [MCP 控制服务](docs/mcp.md)
 - [常见问题](docs/troubleshooting.md)
 - [架构与限制](docs/architecture.md)
+- [单 APK 免 Root 兼容运行时设计](docs/single-apk-android-compatibility-runtime.md)
 - [技术方案：应用级容器与 Agent/MCP](docs/android-virtual-space-agent-mcp.md)
 - [MCP 工具参考](docs/mcp-tools.md)
 - [App / 网站知识包](docs/knowledge-packs.md)
