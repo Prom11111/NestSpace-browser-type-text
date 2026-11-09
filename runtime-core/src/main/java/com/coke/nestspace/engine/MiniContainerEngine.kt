@@ -1102,14 +1102,25 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             instance.id,
             targetProcess
         )
-        val slot = ContainerProcessPool.acquire(
-            context,
-            ContainerProcessRouter.slotKey(
-                effectiveApp.packageName,
-                instance.id,
-                targetProcess
+        val slot = try {
+            ContainerProcessPool.acquire(
+                context,
+                ContainerProcessRouter.slotKey(
+                    effectiveApp.packageName,
+                    instance.id,
+                    targetProcess
+                )
             )
-        )
+        } catch (t: Throwable) {
+            Log.w(TAG, "container slot allocation failed", t)
+            return EngineResult.Error(
+                "CONTAINER_SLOT_UNAVAILABLE",
+                AppLanguage.tr(
+                    "容器槽位暂时不可用，请关闭其他运行中的应用后重试。",
+                    "No container slot is available. Close another running app and retry."
+                )
+            )
+        }
         val hostClass = if (launchActivityInfo.launchMode ==
             android.content.pm.ActivityInfo.LAUNCH_SINGLE_INSTANCE
         ) {

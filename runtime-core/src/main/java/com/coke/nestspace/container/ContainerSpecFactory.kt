@@ -6,6 +6,7 @@ import com.coke.nestspace.container.loader.ApkMetadataCache
 
 
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import com.coke.nestspace.container.loader.NativeLibs
@@ -84,13 +85,21 @@ internal object ContainerSpecFactory {
                 )
             )
         }
+        val descriptorActivities = descriptor.activities.toMutableList()
+        val installedLauncherInfo = installed?.launcherActivityInfo
+        if (installedLauncherInfo != null &&
+            descriptorActivities.none { it.name == installedLauncherInfo.name }
+        ) {
+            descriptorActivities += installedLauncherInfo
+        }
         val activity = requestedActivityClass
             ?.takeIf { it.isNotBlank() }
             ?.let { requested ->
-                descriptor.activities.firstOrNull {
+                descriptorActivities.firstOrNull {
                     it.name == requested || it.targetActivity == requested
                 }
             }
+            ?: installedLauncherInfo
             ?: descriptor.activityInfo
             ?: error(AppLanguage.tr("APK 没有入口 Activity", "APK has no launcher activity"))
 
@@ -126,7 +135,7 @@ internal object ContainerSpecFactory {
             splitApkPaths = splitApkPaths,
             launcherActivity = activity.name ?: app.launcherActivity,
             activityInfo = activity,
-            activities = descriptor.activities,
+            activities = descriptorActivities,
             services = descriptor.services,
             providers = descriptor.providers,
             receivers = descriptor.receivers,
@@ -151,6 +160,7 @@ internal object ContainerSpecFactory {
         val baseApkPath: String,
         val splitApkPaths: List<String>,
         val nativeLibraryDir: String?,
+        val launcherActivityInfo: ActivityInfo?,
         val firstInstallTime: Long,
         val lastUpdateTime: Long
     )
@@ -210,11 +220,18 @@ internal object ContainerSpecFactory {
             .orEmpty()
         val nativeLibraryDir = appInfo.nativeLibraryDir
             ?.takeIf { path -> path.isNotBlank() && File(path).isDirectory }
+        val launcherActivityInfo = context.packageManager
+            .getLaunchIntentForPackage(packageName)
+            ?.component
+            ?.let { component ->
+                context.packageManager.getActivityInfo(component, 0)
+            }
         InstalledPackage(
             descriptor = descriptor,
             baseApkPath = baseApkPath,
             splitApkPaths = splitApkPaths,
             nativeLibraryDir = nativeLibraryDir,
+            launcherActivityInfo = launcherActivityInfo,
             firstInstallTime = info.firstInstallTime,
             lastUpdateTime = info.lastUpdateTime
         )

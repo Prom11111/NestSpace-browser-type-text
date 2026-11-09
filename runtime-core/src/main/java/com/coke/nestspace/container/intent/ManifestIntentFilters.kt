@@ -22,6 +22,7 @@ object ManifestIntentFilters {
         val packageName: String,
         val activities: Map<String, List<ContainerIntentFilter>>,
         val activityAliases: Map<String, String>,
+        val activityEnabled: Map<String, Boolean>,
         val services: Map<String, List<ContainerIntentFilter>>,
         val receivers: Map<String, List<ContainerIntentFilter>>
     )
@@ -48,6 +49,7 @@ object ManifestIntentFilters {
 
         val activities = linkedMapOf<String, MutableList<ContainerIntentFilter>>()
         val activityAliases = linkedMapOf<String, String>()
+        val activityEnabled = linkedMapOf<String, Boolean>()
         val services = linkedMapOf<String, MutableList<ContainerIntentFilter>>()
         val receivers = linkedMapOf<String, MutableList<ContainerIntentFilter>>()
         var packageName = ""
@@ -55,6 +57,7 @@ object ManifestIntentFilters {
         var componentName: String? = null
         var componentMap: MutableMap<String, MutableList<ContainerIntentFilter>>? = null
         var activityAliasTarget: String? = null
+        var componentEnabled = true
         var current: ContainerIntentFilter? = null
 
         try {
@@ -70,6 +73,11 @@ object ManifestIntentFilters {
                             "activity", "activity-alias" -> if (inApplication) {
                                 componentMap = activities
                                 componentName = normalize(packageName, attr(xml, "name"))
+                                componentEnabled = xml.getAttributeBooleanValue(
+                                    ANDROID_NS,
+                                    "enabled",
+                                    true
+                                )
                                 activityAliasTarget = if (xml.name == "activity-alias") {
                                     normalize(packageName, attr(xml, "targetActivity"))
                                 } else {
@@ -122,13 +130,26 @@ object ManifestIntentFilters {
                                 if (alias != null && target != null) {
                                     activityAliases[alias] = target
                                 }
+                                alias?.let {
+                                    activityEnabled[it] = componentEnabled
+                                }
                                 componentName = null
                                 componentMap = null
                                 activityAliasTarget = null
+                                componentEnabled = true
                             }
-                            "activity", "service", "receiver" -> {
+                            "activity" -> {
+                                componentName?.let {
+                                    activityEnabled[it] = componentEnabled
+                                }
                                 componentName = null
                                 componentMap = null
+                                componentEnabled = true
+                            }
+                            "service", "receiver" -> {
+                                componentName = null
+                                componentMap = null
+                                componentEnabled = true
                             }
                             "application" -> inApplication = false
                         }
@@ -146,13 +167,15 @@ object ManifestIntentFilters {
             packageName = packageName,
             activities = activities,
             activityAliases = activityAliases,
+            activityEnabled = activityEnabled,
             services = services,
             receivers = receivers
         ).also {
             Log.d(
                 TAG,
                 "parse done: pkg=$packageName activities=${activities.size} " +
-                    "aliases=${activityAliases.size} services=${services.size} " +
+                "aliases=${activityAliases.size} disabledActivities=" +
+                    "${activityEnabled.count { !it.value }} services=${services.size} " +
                     "receivers=${receivers.size}"
             )
         }
@@ -249,6 +272,6 @@ object ManifestIntentFilters {
 
     private fun empty(apkPath: String): Parsed {
         Log.w(TAG, "no manifest filters available for $apkPath")
-        return Parsed("", emptyMap(), emptyMap(), emptyMap(), emptyMap())
+        return Parsed("", emptyMap(), emptyMap(), emptyMap(), emptyMap(), emptyMap())
     }
 }

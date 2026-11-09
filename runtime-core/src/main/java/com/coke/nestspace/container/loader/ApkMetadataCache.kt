@@ -23,7 +23,7 @@ import java.io.File
 internal object ApkMetadataCache {
 
     private const val TAG = "ApkMetadataCache"
-    private const val CACHE_SCHEMA_VERSION = 2
+    private const val CACHE_SCHEMA_VERSION = 3
     private const val CACHE_FILE = "apk-descriptor-v1.bin"
     private const val MAX_CACHE_BYTES = 64 * 1024 * 1024
 

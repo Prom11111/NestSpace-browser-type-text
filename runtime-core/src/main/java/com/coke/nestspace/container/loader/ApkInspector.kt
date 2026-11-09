@@ -106,27 +106,7 @@ object ApkInspector {
                 }
             }
         }
-        val enabledActivities = activityInfos.filter { it.enabled }
-        val launcherName = filters.activities.entries.firstOrNull { (_, componentFilters) ->
-            componentFilters.any { filter ->
-                filter.hasAction(Intent.ACTION_MAIN) &&
-                    filter.hasCategory(Intent.CATEGORY_LAUNCHER)
-            }
-        }?.key
-        val launcher = launcherName?.let { alias ->
-            enabledActivities.firstOrNull { it.name == alias }
-                ?: filters.activityAliases[alias]?.let { target ->
-                    enabledActivities.firstOrNull { it.name == target }?.let { targetInfo ->
-                        ActivityInfo(targetInfo).apply {
-                            name = alias
-                            targetActivity = target
-                        }
-                    }
-                }
-        }
-        val activity = launcher
-            ?: enabledActivities.firstOrNull { it.exported }
-            ?: enabledActivities.firstOrNull()
+        val activity = selectLauncherActivity(activityInfos, filters)
 
         if (requireLauncher && activity == null) {
             error(
@@ -146,7 +126,7 @@ object ApkInspector {
             apkPath = apkPath,
             packageName = info.packageName,
             label = label,
-            launcherActivity = launcherName ?: activity?.name,
+            launcherActivity = activity?.name,
             activityInfo = activity,
             activities = activityInfos,
             services = info.services?.filter { !it.name.isNullOrBlank() }.orEmpty(),
@@ -172,6 +152,39 @@ object ApkInspector {
             requiresSecureEnv = requiresSecureEnv(appInfo),
             nativeAbis = nativeAbis(apkPath)
         )
+    }
+
+    internal fun selectLauncherActivity(
+        activityInfos: List<ActivityInfo>,
+        filters: ManifestIntentFilters.Parsed
+    ): ActivityInfo? {
+        val enabledActivities = activityInfos.filter {
+            it.enabled && filters.activityEnabled[it.name] != false
+        }
+        val launcher = filters.activities.entries.asSequence()
+            .filter { (name, _) -> filters.activityEnabled[name] != false }
+            .filter { (_, componentFilters) ->
+                componentFilters.any { filter ->
+                    filter.hasAction(Intent.ACTION_MAIN) &&
+                        filter.hasCategory(Intent.CATEGORY_LAUNCHER)
+                }
+            }
+            .mapNotNull { (name, _) ->
+                enabledActivities.firstOrNull { it.name == name }
+                    ?: filters.activityAliases[name]?.let { target ->
+                        enabledActivities.firstOrNull { it.name == target }
+                            ?.let { targetInfo ->
+                                ActivityInfo(targetInfo).apply {
+                                    this.name = name
+                                    targetActivity = target
+                                }
+                            }
+                    }
+            }
+            .firstOrNull()
+        return launcher
+            ?: enabledActivities.firstOrNull { it.exported }
+            ?: enabledActivities.firstOrNull()
     }
 
     @Suppress("DEPRECATION")

@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Process
 import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -366,6 +368,7 @@ object ContainerProcessPool {
         evictBackgroundForMemory(context, limit, protectedSlot)
         val preferredSlot = readPersistedSlot(context, key) ?: -1
         val waitDeadline = SystemClock.uptimeMillis() + KILL_WAIT_LIMIT_MS
+        val excludedSlots = mutableSetOf<Int>()
 
         while (true) {
             when (
@@ -374,7 +377,8 @@ object ContainerProcessPool {
                     limit = limit,
                     protectedSlot = protectedSlot,
                     preferredSlot = preferredSlot,
-                    retainedSlots = retainedSlots()
+                    retainedSlots = retainedSlots(),
+                    excludedSlots = excludedSlots
                 )
             ) {
                 is ContainerSlotState.AcquirePlan.Existing -> {
@@ -393,7 +397,13 @@ object ContainerProcessPool {
                     val stopped = killSlotProcess(context, lease.slot)
                     if (!stopped) {
                         slotState.abortAcquire(lease)
-                        error("container slot ${lease.slot} is still alive after kill")
+                        excludedSlots += lease.slot
+                        Log.w(
+                            TAG,
+                            "slot ${lease.slot} still alive after kill; " +
+                                "trying another slot for $key"
+                        )
+                        continue
                     }
                     lease.previousKey?.let { removeSessionState(context, it) }
                     if (!slotState.commitAcquire(lease)) {
@@ -841,7 +851,27 @@ object ContainerProcessPool {
                 break
             }
         }
-        val stopped = !sameUidPidExists(pid)
+        var stopped = !sameUidPidExists(pid)
+        if (!stopped) {
+            runCatching {
+                Os.kill(pid, OsConstants.SIGKILL)
+            }.onFailure {
+                Log.w(TAG, "second kill for $processName (pid=$pid) failed", it)
+            }
+            val retryDeadline = SystemClock.uptimeMillis() + KILL_TIMEOUT_MS / 2
+            while (SystemClock.uptimeMillis() < retryDeadline) {
+                if (!sameUidPidExists(pid)) {
+                    stopped = true
+                    break
+                }
+                try {
+                    Thread.sleep(50)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+        }
         if (stopped) pssCache.remove(pid)
         if (!stopped) Log.w(TAG, "process $processName is still alive after kill")
         return stopped

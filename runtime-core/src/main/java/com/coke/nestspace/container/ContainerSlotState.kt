@@ -60,10 +60,12 @@ internal class ContainerSlotState(
         limit: Int,
         protectedSlot: Int,
         preferredSlot: Int,
-        retainedSlots: Set<Int>
+        retainedSlots: Set<Int>,
+        excludedSlots: Set<Int> = emptySet()
     ): AcquirePlan = synchronized(monitor) {
         val existing = assignments[key]
         if (existing != null) {
+            if (existing in excludedSlots) return@synchronized AcquirePlan.Full
             if (states[existing] != SlotState.LIVE) return@synchronized AcquirePlan.Wait
             if (existing < limit || existing == protectedSlot || existing == activeSlot) {
                 lastAcquiredSlot = existing
@@ -81,10 +83,12 @@ internal class ContainerSlotState(
         val candidate = preferredSlot.takeIf { slot ->
             slot in 0 until limit &&
                 slot != protectedSlot &&
+                slot !in excludedSlots &&
                 states[slot] == SlotState.FREE &&
                 owners[slot] == null
         } ?: (0 until limit).firstOrNull { slot ->
             slot != protectedSlot &&
+                slot !in excludedSlots &&
                 states[slot] == SlotState.FREE &&
                 owners[slot] == null
         } ?: firstEvictionCandidate(
@@ -92,15 +96,18 @@ internal class ContainerSlotState(
             limit = limit,
             protectedSlot = protectedSlot,
             retainedSlots = retainedSlots,
-            subprocessOnly = true
+            subprocessOnly = true,
+            excludedSlots = excludedSlots
         ) ?: firstEvictionCandidate(
             key = key,
             limit = limit,
             protectedSlot = protectedSlot,
             retainedSlots = retainedSlots,
-            subprocessOnly = false
+            subprocessOnly = false,
+            excludedSlots = excludedSlots
         ) ?: (0 until limit).firstOrNull { slot ->
             slot != protectedSlot &&
+                slot !in excludedSlots &&
                 states[slot] == SlotState.KILLING &&
                 reservations[slot] == null
         } ?: return@synchronized if (reservations.any { it != null }) {
@@ -367,11 +374,13 @@ internal class ContainerSlotState(
         limit: Int,
         protectedSlot: Int,
         retainedSlots: Set<Int>,
-        subprocessOnly: Boolean
+        subprocessOnly: Boolean,
+        excludedSlots: Set<Int>
     ): Int? = assignments.entries.firstOrNull { (candidateKey, slot) ->
         candidateKey != key &&
             slot < limit &&
             slot != protectedSlot &&
+            slot !in excludedSlots &&
             slot != activeSlot &&
             slot !in retainedSlots &&
             states[slot] == SlotState.LIVE &&

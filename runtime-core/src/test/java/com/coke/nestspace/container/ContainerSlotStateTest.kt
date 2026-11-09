@@ -123,6 +123,25 @@ class ContainerSlotStateTest {
         assertEquals(ContainerSlotState.SlotState.LIVE, state.stateOf(0))
     }
 
+    @Test
+    fun excludedSlotsAreNotChosenAgainDuringAcquireRetry() {
+        val state = ContainerSlotState(slotCount = 2)
+        commitFresh(state, "first@instance-1", limit = 2, expectedSlot = 0)
+        commitFresh(state, "second@instance-1", limit = 2, expectedSlot = 1)
+
+        val plan = state.planAcquire(
+            key = "third@instance-1",
+            limit = 2,
+            protectedSlot = -1,
+            preferredSlot = 0,
+            retainedSlots = emptySet(),
+            excludedSlots = setOf(0)
+        ) as ContainerSlotState.AcquirePlan.Reuse
+
+        assertEquals(1, plan.lease.slot)
+        assertEquals("second@instance-1", plan.lease.previousKey)
+    }
+
     private fun commitFresh(
         state: ContainerSlotState,
         key: String,
