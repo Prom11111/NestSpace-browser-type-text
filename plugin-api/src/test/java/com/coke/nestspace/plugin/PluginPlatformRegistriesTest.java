@@ -279,7 +279,8 @@ public class PluginPlatformRegistriesTest {
                 return CompletableFuture.completedFuture(
                     new RuntimeProxyContribution(
                         "proxy",
-                        context.getFingerprint(),
+                        context.getPackageName(),
+                        context.getVersionCode(),
                         "Proxy",
                         "{}"
                     )

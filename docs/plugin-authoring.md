@@ -54,8 +54,8 @@ Android View，以及完整的插件设置页面。
 第三类是接入外部服务。宿主提供 HTTP、SSE、WebSocket、通知、文件选择、分享、
 剪贴板、后台任务和事件总线，插件不需要自己持有 Android `Activity`。
 
-第四类是处理特定运行环境。插件可以按不透明运行指纹选择启动策略，也可以使用
-`runtime-plugin-api` 为目标 APK 提供版本和类名哈希绑定的运行时代理。
+第四类是处理特定运行环境。插件可以按目标包名和版本选择启动策略，也可以使用
+`runtime-plugin-api` 为目标 APK 提供版本和类名绑定的运行时代理。
 
 ## 2. 插件如何被加载
 
@@ -153,7 +153,7 @@ namespace 和 Java 包名是否一致。宿主日志中的 `PluginSourceLoader` 
   "version": "1.0.0",
   "publisher": "Example Studio",
   "description": "Example NestSpace plugin",
-  "api_version": 1,
+  "api_version": 2,
   "min_host_version": "1.0.0",
   "entry_class": "com.example.hello.HelloPlugin",
   "priority": 100,
@@ -191,7 +191,7 @@ Manifest 字段速查：
 | `version` | 是 | 插件版本 |
 | `publisher` | 否 | 发布者 |
 | `description` | 否 | 插件介绍 |
-| `api_version` | 是 | 当前固定为 `1` |
+| `api_version` | 是 | 当前固定为 `2` |
 | `min_host_version` | 否 | 最低宿主版本 |
 | `entry_class` | 是 | Java 入口类完整类名 |
 | `priority` | 否 | Hook 排序，数字越大越先执行 |
@@ -874,7 +874,8 @@ public final class HelloProvider implements PluginLlmProvider {
 
 运行时代理处理的是目标 APK 的运行差异。
 
-`RuntimeProxyPlugin` 只负责返回启动策略。策略使用宿主计算的不透明 SHA-256 指纹。
+`RuntimeProxyPlugin` 只负责返回启动策略。策略直接使用目标包名和 `versionCode`；
+直接传 `long` 时是精确匹配，需要兼容升级时可改用 `RuntimeVersionMatcher`。
 
 ```java
 public final class HelloRuntimePlugin implements RuntimeProxyPlugin {
@@ -888,16 +889,37 @@ public final class HelloRuntimePlugin implements RuntimeProxyPlugin {
     public List<RuntimeLaunchPolicy> launchPolicies() {
         return List.of(new RuntimeLaunchPolicy(
             "hello-host-fallback",
-            OPAQUE_FINGERPRINT,
+            "com.example.target",
+            12345L,
             RuntimeLaunchMode.HOST_FALLBACK,
-            "Use the installed host application for this fingerprint"
+            "Use the installed host application for this target version"
         ));
     }
 }
 ```
 
+版本模糊匹配示例：
+
+```java
+new RuntimeLaunchPolicy(
+    "hello-container",
+    "com.example.target",
+    RuntimeVersionMatcher.glob("74*"),
+    RuntimeLaunchMode.CONTAINER,
+    "Match the 74xxxx version series"
+);
+```
+
+支持的匹配方式：
+
+- `RuntimeVersionMatcher.exact(code)`：精确匹配；
+- `RuntimeVersionMatcher.glob("74*")`：十进制 `versionCode` 通配符匹配；
+- `RuntimeVersionMatcher.prefix("74")`：按十进制前缀匹配；
+- `RuntimeVersionMatcher.range(min, max)`：闭区间匹配；
+- `RuntimeVersionMatcher.anyVersion()`：忽略版本，仅依赖包名和类名条件。
+
 `CONTAINER` 继续普通容器路径，`HOST_FALLBACK` 启动宿主已安装的对应应用，`BLOCKED`
-拒绝启动。精确指纹只能由一个插件声明，冲突会被宿主拒绝。
+拒绝启动。同一包名下相互重叠的版本策略只能由一个插件声明，冲突会被宿主拒绝。
 
 | 模式 | 行为 | 适用情况 |
 | --- | --- | --- |
@@ -918,10 +940,9 @@ RuntimeCompatibilityProfiles.register(
 );
 ```
 
-对应地在 `onDetach` 中反注册。Profile 可以检查版本号，使用
-`RuntimeApkClassIndex.classNames(spec.getApkPaths())` 对目标 DEX 类名做哈希匹配，
-并通过 `RuntimePluginRuntime.withContainerClassLoader` 在正确的 ClassLoader scope 中
-执行 Hook。
+对应地在 `onDetach` 中反注册。Profile 可以检查包名和版本号，使用
+`RuntimeApkClassIndex.classNames(spec.getApkPaths())` 直接校验目标 DEX 类名，并通过
+`RuntimePluginRuntime.withContainerClassLoader` 在正确的 ClassLoader scope 中执行 Hook。
 
 一个最小 Profile 骨架如下：
 
@@ -933,15 +954,14 @@ public final class ExampleRuntimeProfile
         RuntimeCompatLaunchSpec spec,
         ClassLoader loader
     ) {
-        if (spec.getVersionCode() != EXPECTED_VERSION_CODE) {
+        if (!TARGET_PACKAGE_NAME.equals(spec.getPackageName()) ||
+            !TARGET_VERSION_MATCHER.matches(spec.getVersionCode())) {
             return null;
         }
-        Set<String> hashes = RuntimeApkClassIndex.classNames(
+        Set<String> classes = new HashSet<>(RuntimeApkClassIndex.classNames(
             spec.getApkPaths()
-        ).stream()
-            .map(ExampleRuntimeProfile::sha256)
-            .collect(Collectors.toSet());
-        return hashes.containsAll(REQUIRED_CLASS_HASHES)
+        ));
+        return classes.containsAll(REQUIRED_CLASS_NAMES)
             ? new ExampleRuntimeProfile()
             : null;
     }
@@ -958,13 +978,13 @@ public final class ExampleRuntimeProfile
         Context context,
         Application application
     ) {
-        // 只在目标版本和类名哈希都匹配后执行。
+        // 只在目标包名、版本和完整类名列表都匹配后执行。
     }
 }
 ```
 
-目标专用类名只应在插件源码中以哈希常量或构建生成数据出现，不应打印到通用日志。
-通用 Tinker、AppLike、Application attach 和系统服务代理仍然属于
+插件可以使用可直接阅读的完整包名和类名作为匹配条件，也可以通过构建步骤生成这些
+常量。通用 Tinker、AppLike、Application attach 和系统服务代理仍然属于
 `runtime-core`/`runtime-compat`，不能因为单个应用适配而修改核心分支。
 
 ## 14. 调试开发中的插件
@@ -1000,7 +1020,7 @@ Capability。网络 Host 被拒绝，说明 `host_permissions` 缺失。设置�
 必须切回主线程。页面关闭后不能继续使用保存的 Activity Context。工具 View 不能依赖
 只在第一次创建时存在的状态，因为列表滚动和重新组合可能重新创建它。
 
-运行时代理的问题应先确认指纹是否命中，再检查版本号和类名哈希。类名哈希命中但版本号
+运行时代理的问题应先确认包名和版本是否命中，再检查完整类名列表。类名命中但版本号
 不匹配时，Profile 应返回 `null`，而不是强行安装 Hook。只有目标确实存在运行时差异时
 才增加代理逻辑，不能把正常应用也引入全局 Hook。
 
@@ -1035,7 +1055,7 @@ Capability。网络 Host 被拒绝，说明 `host_permissions` 缺失。设置�
 `settings()` 命名空间重新读取。
 
 涉及运行时代理时，先证明问题确实来自目标运行时。能用通用容器能力解决的内容放回
-容器层；只有目标版本、类名哈希或运行时结构可以决定的行为才放进插件。这样插件才是
+容器层；只有目标包名、版本、类名或运行时结构可以决定的行为才放进插件。这样插件才是
 可插拔的扩展，而不是另一套主程序。
 
 第一次实现插件时，建议先复制
@@ -1143,14 +1163,14 @@ Agent 与 Hook：
 
 运行时代理：
 
-- [ ] 启动策略使用不透明 SHA-256 指纹。
-- [ ] Profile 同时校验版本号和类名哈希。
+- [ ] 启动策略使用目标包名和精确或明确的模糊 `versionCode`。
+- [ ] Profile 同时校验包名、版本匹配器和完整类名列表。
 - [ ] 不匹配时返回 `null`。
 
 发布：
 
 - [ ] 版本号已更新。
 - [ ] 分享包和导出包都包含 `manifest.json` 与 `classes.dex`。
-- [ ] 调试 Host、测试密钥和测试指纹没有进入正式包。
+- [ ] 调试 Host、测试密钥和测试目标版本没有进入正式包。
 - [ ] 安装、重启恢复、卸载和重新安装都已验证。
 - [ ] 发布签名和信任策略已确认。

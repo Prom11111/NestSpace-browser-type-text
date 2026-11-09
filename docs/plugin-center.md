@@ -8,11 +8,11 @@
 
 1. 第三方向 AI 助手接入自己的工具和问答能力。
 2. 第三方在 Agent 请求、提示词和工具展示阶段增加定制逻辑。
-3. 特定目标应用的运行时差异通过指纹策略或运行时代理解决。
+3. 特定目标应用的运行时差异通过包名、版本和类名策略或运行时代理解决。
 4. 新增扩展不需要修改 NestSpace 主工程并重新发布整个 APK。
 
 插件的“兼容”是执行结果，不是核心接口名称。公共抽象使用
-`RuntimeProxy`、`RuntimeProxyPlugin` 和运行指纹。
+`RuntimeProxy`、`RuntimeProxyPlugin`、目标包名和版本。
 
 ## 1. 当前状态
 
@@ -21,7 +21,7 @@
 | 独立 `plugin-api` | 已实现 | 纯 Java Android Library，不依赖 Compose、Kotlin 或 `app` |
 | Manifest 注册解析 | 已实现 | Chrome 风格 `manifest.json`、权限和 Host 校验 |
 | 插件描述符与能力 | 已实现 | API 版本、版本号、优先级、Capability |
-| 运行指纹 | 已实现 | 宿主统一计算 SHA-256，不向插件提供可读匹配条件 |
+| 运行目标匹配 | 已实现 | 插件直接使用包名、`versionCode` 和类名 |
 | 通用容器兼容层 | 已实现 | Tinker/AppLike、Application attach 和系统服务代理始终在核心运行层 |
 | 目标兼容插件 | 已支持 | 目标专用策略由独立插件模块提供 |
 | Agent 提示 Hook | 已实现 | 注入独立的插件提示区块 |
@@ -87,7 +87,7 @@ Kotlin 只用于 NestSpace 内部实现和适配。
 
 | Capability | 能力 |
 | --- | --- |
-| `RUNTIME_LAUNCH_POLICY` | 根据运行指纹选择启动策略 |
+| `RUNTIME_LAUNCH_POLICY` | 根据目标包名和版本选择启动策略 |
 | `AGENT_PROMPT` | 贡献 Agent 提示词 |
 | `AGENT_QUESTION` | 在模型前处理问答 |
 | `AGENT_MODEL_REQUEST` | 检查或修改模型请求 |
@@ -113,7 +113,7 @@ Kotlin 只用于 NestSpace 内部实现和适配。
 | `WEBSOCKET` | 建立受控 `ws`/`wss` 会话并收发消息 |
 | `ANDROID_APIS` | 使用受控 Android API 门面 |
 | `STORAGE` | 读写插件私有文件 |
-| `RUNTIME_PROXY` | 按不透明指纹贡献运行时代理描述 |
+| `RUNTIME_PROXY` | 按目标包名和版本贡献运行时代理描述 |
 
 后续能力计划：
 
@@ -131,7 +131,8 @@ Kotlin 只用于 NestSpace 内部实现和适配。
 - 工具展示 Hook 不修改模型收到的 `ToolResult`。
 - Agent 提示 Hook 不能覆盖宿主安全规则和权限确认。
 - 模型请求 Hook 能读取系统提示，因此属于高权限能力。
-- 启动策略匹配使用宿主提供的运行指纹；目标专用 Profile 可以使用启动描述中公开的信息。
+- 启动策略匹配使用目标包名和 `versionCode`；目标专用 Profile 可以使用启动描述中
+  公开的包名、版本、APK 和类名信息。
 - Android API 门面属于高权限能力，默认不授予。
 - 工具展示 View 和插件设置 View 获得短生命周期、受控的 Android `Context`；插件仍不能
   直接获得宿主 Application 或任意 Activity。
@@ -267,30 +268,22 @@ PluginDescriptor descriptor = new PluginDescriptor(
 
 ### 4.2 API 版本
 
-`PluginDescriptor.API_VERSION` 当前为 `1`。
+`PluginDescriptor.API_VERSION` 当前为 `2`。版本 `2` 的运行时代理直接使用目标包名和
+`versionCode`，不再接受 SHA-256 运行指纹。
 
 - 新增默认方法：兼容；
 - 新增枚举值：宿主必须安全处理未知值；
 - 新增接口：兼容；
 - 修改方法签名或删除方法：需要新的大版本。
 
-## 5. 运行指纹与启动策略
+## 5. 运行目标与启动策略
 
-### 5.1 指纹计算
+### 5.1 匹配条件
 
-宿主计算：
-
-```text
-SHA-256(
-  "nestspace-runtime-v1\n" +
-  packageName + "\n" +
-  versionCode + "\n" +
-  signatureSha256
-)
-```
-
-宿主为运行身份计算 64 位十六进制 SHA-256 指纹，插件通过 `RuntimeProxyPlugin`
-返回对应策略。
+宿主把目标包名、`versionCode` 和 Android API 放入 `RuntimeProxyContext`。插件通过
+`RuntimeProxyPlugin` 返回同一包名和版本对应的策略。包名直接使用 Android manifest
+中的值，不再转换为哈希指纹。版本默认精确匹配，也可以使用 glob、前缀、区间或任意
+版本匹配。
 
 ### 5.2 接口
 
@@ -303,14 +296,16 @@ public interface RuntimeProxyPlugin {
 public final class RuntimeLaunchPolicy {
     public RuntimeLaunchPolicy(
         String id,
-        String fingerprint,
+        String packageName,
+        long versionCode,
         RuntimeLaunchMode mode,
         String reason
     );
 
     public RuntimeLaunchPolicy(
         String id,
-        String fingerprint,
+        String packageName,
+        RuntimeVersionMatcher versionMatcher,
         RuntimeLaunchMode mode,
         String reason,
         int minAndroidApi,
@@ -327,11 +322,10 @@ public final class RuntimeLaunchPolicy {
 
 ### 5.3 冲突处理
 
-- 宿主负责计算指纹。
 - 插件只返回策略。
-- 同一指纹只能由一个插件声明。
-- 重复指纹会被 `RuntimeProxyPlugins.install()` 拒绝。
-- 多个可用插件按优先级排序，但精确指纹不允许冲突。
+- 同一个包名下相互重叠的版本范围只能由一个插件声明。
+- 重复目标策略会被 `RuntimeProxyPlugins.install()` 拒绝。
+- 多个可用插件按优先级排序，但完全相同目标版本不允许冲突。
 
 ### 5.4 宿主兼容模式限制
 
@@ -1187,7 +1181,7 @@ example.nestplugin
   "version": "1.2.0",
   "publisher": "Example Studio",
   "description": "Adds custom Agent tools and settings.",
-  "api_version": 1,
+  "api_version": 2,
   "min_host_version": "1.5.0",
   "entry_class": "com.example.ai.tools.AiToolsPlugin",
   "priority": 100,
@@ -1285,7 +1279,7 @@ example.nestplugin
 - `*.example.com` 只匹配其子域，不匹配 `example.com` 本身；
 - 当前 Host 规则只支持 `/*`，不支持按 API 路径做更细粒度授权；
 - 声明 HTTP Host 需要 `network`，声明 WebSocket Host 需要 `websocket`；
-- 目标指纹不写入 Manifest；由插件运行时通过
+- 目标包名和版本不写入 Manifest；支持特定目标的启动策略由插件运行时通过
   `RuntimeProxyPlugin.launchPolicies()` 提供；
 - `entry_class`、图标和页面路径不能使用绝对路径或 `..`；
 - `ui.html_page` 必须是插件包内的相对 `.html` 路径；
@@ -1331,9 +1325,9 @@ Set<String> webSocketHosts = manifest.getWebSocketHosts();
 - `builtin.mcp.tool-bridge`：MCP 工具注入本地 Agent。
 
 通用 Application/Tinker/AppLike 和系统服务兼容是容器核心能力，不能停用。
-目标指纹、版本哈希和专用 Profile 只存在于独立插件模块中，安装后作为第三方
-插件显示，不会混入系统内置列表。工具类模块启停后会立即从 Agent/MCP 工具表
-加入或移除。
+目标包名、版本、完整类名和专用 Profile 只存在于独立插件模块中，安装后作为第三方
+插件显示，不会混入系统内置列表。工具类模块启停后会立即从 Agent/MCP 工具表加入或
+移除。
 
 外部 `.nestplugin` 已可从文件安装。在线市场、自动更新、回滚、详情截图、评分和最近日志
 尚未实现。
@@ -1382,14 +1376,15 @@ public interface RuntimeProxyExtensionProvider {
 
 - `RuntimeCompatLaunchSpec` 的版本、进程、APK 和 Activity 信息；
 - `RuntimeApkClassIndex` 枚举目标 DEX 类名；
-- 不透明类名 SHA-256 哈希；
+- 可直接比较的完整类名；
 - `RuntimePluginRuntime.withContainerClassLoader(...)`；
 - Application attach、创建、目标 Activity 前和首个 Activity Hook 生命周期。
 
 目标专用 Profile 的约束：
 
-- 必须精确匹配运行指纹；
-- `RuntimeProxyContribution` 只携带不透明指纹和参数 JSON；
+- 必须匹配目标包名，并使用精确或明确的模糊版本匹配器；
+- 安装 Hook 前校验所需完整类名；
+- `RuntimeProxyContribution` 携带目标包名、版本和参数 JSON；
 - 必须有独立 API 版本；
 - 容器兼容扩展只能作用于目标槽位；
 - 插件异常不能导致宿主主进程崩溃；
@@ -1522,7 +1517,7 @@ public final class ExamplePlugin implements AgentHookPlugin {
 | 安装器 | 文件安装、验证、DEX 加载、重启恢复、删除 | 发布者签名、信任等级、原子升级和回滚 |
 | 源码插件 | Debug 自动发现、资源隔离、Run/Apply Changes、自动分享包 | IDE 热重载细化和更完整调试工具 |
 | 插件中心 | 应用中心式网格、搜索、分类、详情、长按操作 | 在线市场、更新、评分和截图 |
-| 运行时代理 | 启动策略、Profile、APK 类名哈希、ClassLoader scope | 独立进程、签名、诊断和自动回滚 |
+| 运行时代理 | 启动策略、Profile、APK 类名、ClassLoader scope | 独立进程、签名、诊断和自动回滚 |
 
 ## 15. 必测项
 
@@ -1589,15 +1584,15 @@ public final class ExamplePlugin implements AgentHookPlugin {
 - 未知、重复和可选权限；
 - HTTP 与 WebSocket Host 分类；
 - `*.example.com` 子域边界；
-- 不透明运行指纹；
+- 目标包名、`versionCode` 和完整类名；
 - 图标、设置页和资源路径；
 - Chrome 风格示例 JSON。
 
 ### 运行
 
-- 指纹计算稳定；
+- 包名、精确版本和模糊版本匹配准确；
 - Android API 范围；
-- 重复指纹拒绝；
+- 重复目标策略拒绝；
 - 宿主兼容启动；
 - 宿主应用缺失错误；
 - 插件卸载后新回合不生效。

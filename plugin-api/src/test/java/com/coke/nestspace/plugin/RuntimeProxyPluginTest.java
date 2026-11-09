@@ -10,10 +10,8 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
 
 public class RuntimeProxyPluginTest {
 
@@ -27,52 +25,91 @@ public class RuntimeProxyPluginTest {
     }
 
     @Test
-    public void fingerprintIsDeterministicAndIdentitySpecific() {
-        String first = RuntimeFingerprints.sha256(
-            "identity-a",
-            7,
-            "signature-a"
-        );
-        String same = RuntimeFingerprints.sha256(
-            "identity-a",
-            7,
-            "signature-a"
-        );
-        String other = RuntimeFingerprints.sha256(
-            "identity-a",
-            8,
-            "signature-a"
-        );
-
-        assertEquals(first, same);
-        assertNotEquals(first, other);
-        assertTrue(first.matches("[0-9a-f]{64}"));
-    }
-
-    @Test
-    public void resolvesMatchingPolicy() {
-        String fingerprint = repeat("a", 64);
+    public void resolvesExactPackageAndVersion() {
         install(plugin(
             "test.high",
             10,
-            policy(fingerprint, RuntimeLaunchMode.HOST_FALLBACK)
+            policy(
+                "com.example.target",
+                42,
+                RuntimeLaunchMode.HOST_FALLBACK
+            )
         ));
 
         RuntimeProxyResolution resolution = RuntimeProxyPlugins.resolve(
-            new RuntimeProxyContext(fingerprint, 36)
+            new RuntimeProxyContext("com.example.target", 42, 36)
         );
         assertEquals("test.high", resolution.getPluginId());
+        assertEquals("com.example.target", resolution.getPackageName());
+        assertEquals(42, resolution.getMatchedVersionCode());
         assertEquals(RuntimeLaunchMode.HOST_FALLBACK, resolution.getMode());
     }
 
     @Test
+    public void exactPolicyDoesNotMatchDifferentPackageOrVersion() {
+        install(plugin(
+            "test.exact",
+            0,
+            policy(
+                "com.example.target",
+                42,
+                RuntimeLaunchMode.CONTAINER
+            )
+        ));
+
+        assertNull(
+            RuntimeProxyPlugins.resolve(
+                new RuntimeProxyContext("com.example.other", 42, 36)
+            )
+        );
+        assertNull(
+            RuntimeProxyPlugins.resolve(
+                new RuntimeProxyContext("com.example.target", 43, 36)
+            )
+        );
+    }
+
+    @Test
+    public void supportsFuzzyVersionCodeMatching() {
+        install(plugin(
+            "test.fuzzy",
+            0,
+            new RuntimeLaunchPolicy(
+                "policy",
+                "com.example.target",
+                RuntimeVersionMatcher.glob("74*"),
+                RuntimeLaunchMode.CONTAINER,
+                "test fuzzy policy"
+            )
+        ));
+
+        assertEquals(
+            "test.fuzzy",
+            RuntimeProxyPlugins.resolve(
+                new RuntimeProxyContext("com.example.target", 74_332, 36)
+            ).getPluginId()
+        );
+        assertEquals(
+            74_333,
+            RuntimeProxyPlugins.resolve(
+                new RuntimeProxyContext("com.example.target", 74_333, 36)
+            ).getMatchedVersionCode()
+        );
+        assertNull(
+            RuntimeProxyPlugins.resolve(
+                new RuntimeProxyContext("com.example.target", 75_000, 36)
+            )
+        );
+    }
+
+    @Test
     public void respectsAndroidApiWindow() {
-        String fingerprint = repeat("b", 64);
         install(plugin(
             "test.window",
             0,
             policy(
-                fingerprint,
+                "com.example.window",
+                7,
                 RuntimeLaunchMode.HOST_FALLBACK,
                 30,
                 34
@@ -81,36 +118,45 @@ public class RuntimeProxyPluginTest {
 
         assertNull(
             RuntimeProxyPlugins.resolve(
-                new RuntimeProxyContext(fingerprint, 29)
+                new RuntimeProxyContext("com.example.window", 7, 29)
             )
         );
         assertEquals(
             "test.window",
             RuntimeProxyPlugins.resolve(
-                new RuntimeProxyContext(fingerprint, 34)
+                new RuntimeProxyContext("com.example.window", 7, 34)
             ).getPluginId()
         );
         assertNull(
             RuntimeProxyPlugins.resolve(
-                new RuntimeProxyContext(fingerprint, 35)
+                new RuntimeProxyContext("com.example.window", 7, 35)
             )
         );
     }
 
     @Test
-    public void rejectsDuplicateFingerprintOwnership() {
-        String fingerprint = repeat("c", 64);
+    public void rejectsDuplicateTargetOwnership() {
         install(plugin(
             "test.owner-a",
             0,
-            policy(fingerprint, RuntimeLaunchMode.CONTAINER)
+            policy(
+                "com.example.shared",
+                99,
+                RuntimeLaunchMode.CONTAINER
+            )
         ));
 
         assertThrows(IllegalArgumentException.class, () ->
             RuntimeProxyPlugins.install(plugin(
                 "test.owner-b",
                 0,
-                policy(fingerprint, RuntimeLaunchMode.HOST_FALLBACK)
+                new RuntimeLaunchPolicy(
+                    "policy",
+                    "com.example.shared",
+                    RuntimeVersionMatcher.glob("99*"),
+                    RuntimeLaunchMode.HOST_FALLBACK,
+                    "overlapping fuzzy policy"
+                )
             ))
         );
     }
@@ -147,33 +193,34 @@ public class RuntimeProxyPluginTest {
     }
 
     private static RuntimeLaunchPolicy policy(
-        String fingerprint,
+        String packageName,
+        long versionCode,
         RuntimeLaunchMode mode
     ) {
-        return policy(fingerprint, mode, 24, Integer.MAX_VALUE);
+        return policy(
+            packageName,
+            versionCode,
+            mode,
+            24,
+            Integer.MAX_VALUE
+        );
     }
 
     private static RuntimeLaunchPolicy policy(
-        String fingerprint,
+        String packageName,
+        long versionCode,
         RuntimeLaunchMode mode,
         int minApi,
         int maxApi
     ) {
         return new RuntimeLaunchPolicy(
             "policy",
-            fingerprint,
+            packageName,
+            versionCode,
             mode,
             "test policy",
             minApi,
             maxApi
         );
-    }
-
-    private static String repeat(String value, int count) {
-        StringBuilder result = new StringBuilder(value.length() * count);
-        for (int index = 0; index < count; index++) {
-            result.append(value);
-        }
-        return result.toString();
     }
 }

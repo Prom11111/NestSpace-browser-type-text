@@ -122,7 +122,7 @@ class PluginRuntimeManagerTest {
               "id": "${pluginDescriptor.id}",
               "name": "Runtime manager",
               "version": "1",
-              "api_version": 1,
+              "api_version": 2,
               "entry_class": "test.Plugin",
               "permissions": ["agent_tools", "commands", "llm_providers"]
             }

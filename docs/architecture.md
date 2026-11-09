@@ -32,8 +32,8 @@ NestSpace 由四部分组成：
 
 依赖方向为 `runtime-compat → runtime-core → runtime-api`；`runtime-core` 同时依赖
 `plugin-api` 和 `runtime-plugin-api`，`app` 作为控制面依赖全部模块。通用兼容后端
-通过 `RuntimePluginLoader` 安装；目标版本、类名哈希和专用 Profile 放在独立插件模块，
-不进入通用容器代码。
+通过 `RuntimePluginLoader` 安装；目标包名、版本、完整类名和专用 Profile 放在独立插件
+模块，不进入通用容器代码。
 
 ## 安装与启动
 

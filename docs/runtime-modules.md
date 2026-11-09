@@ -36,8 +36,8 @@ NestSpace 的运行时由通用容器、Java-first 公共 SDK、运行时代理 
 
 `runtime-plugin-api` 是目标运行时代理的稳定 Java 边界。它向插件提供只读启动描述、
 Application/Activity 生命周期 Hook、APK 类名索引和受控 ClassLoader scope。插件可以
-使用版本号和不透明类名哈希确定 Profile，但通用 Tinker/AppLike/Application attach 逻辑
-仍属于运行时核心。
+使用目标包名、精确或模糊版本匹配器和完整类名确定 Profile，但通用
+Tinker/AppLike/Application attach 逻辑仍属于运行时核心。
 
 `runtime-api` 保存容器引擎共享契约、数据模型、Application factory 注册表和宿主 hook。
 `runtime-core` 负责 APK 与实例存储、Session、Activity Host、进程槽位、Provider、
@@ -56,7 +56,7 @@ Debug 构建通过 `debugImplementation` 自动加入 `example-plugin/plugin` �
 安装包插件由 `PluginPackageInstaller` 解压、校验 manifest 和大小限制，再通过
 `DexClassLoader` 加载。源码插件优先于同 ID 的外部安装包，避免开发和旧安装包重复注册。
 
-目标指纹、版本号、类名哈希和专用 Profile 可以由独立插件模块维护。
+目标包名、版本匹配器、完整类名和专用 Profile 可以由独立插件模块维护。
 
 相关文档：
 

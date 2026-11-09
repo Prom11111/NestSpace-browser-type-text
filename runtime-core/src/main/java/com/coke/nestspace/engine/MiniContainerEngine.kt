@@ -32,7 +32,6 @@ import com.coke.nestspace.data.AppShortcut
 import com.coke.nestspace.data.LaunchInfo
 import com.coke.nestspace.data.VirtualApp
 import com.coke.nestspace.data.VirtualInstance
-import com.coke.nestspace.plugin.RuntimeFingerprints
 import com.coke.nestspace.plugin.RuntimeLaunchMode
 import com.coke.nestspace.plugin.RuntimeProxyExtensions
 import com.coke.nestspace.plugin.RuntimeProxyContext
@@ -232,14 +231,10 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                         AppLanguage.tr("找不到实例 $instanceId", "Instance $instanceId not found")
                     )
             }
-            val fingerprint = RuntimeFingerprints.sha256(
-                app.packageName,
-                app.versionCode,
-                app.signatureSha256
-            )
             RuntimeProxyPlugins.resolve(
                 RuntimeProxyContext(
-                    fingerprint,
+                    app.packageName,
+                    app.versionCode,
                     Build.VERSION.SDK_INT
                 )
             )?.let { policy ->
@@ -260,7 +255,8 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             }
             RuntimeProxyExtensions.resolve(
                 RuntimeProxyContext(
-                    fingerprint,
+                    app.packageName,
+                    app.versionCode,
                     Build.VERSION.SDK_INT
                 )
             )?.let { extension ->

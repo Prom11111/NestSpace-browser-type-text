@@ -18,7 +18,7 @@ public class PluginManifestParserTest {
                 + "\"version\":\"1.2.0\","
                 + "\"description\":\"Example plugin\","
                 + "\"publisher\":\"Example\","
-                + "\"api_version\":1,"
+                + "\"api_version\":2,"
                 + "\"min_host_version\":\"1.5.0\","
                 + "\"entry_class\":\"com.example.tools.Plugin\","
                 + "\"priority\":20,"
@@ -137,7 +137,7 @@ public class PluginManifestParserTest {
             + "\"id\":\"com.example.tools\","
             + "\"name\":\"Example tools\","
             + "\"version\":\"1.2.0\","
-            + "\"api_version\":1,"
+            + "\"api_version\":2,"
             + "\"entry_class\":\"com.example.tools.Plugin\""
             + (extra.isEmpty() ? "" : "," + extra)
             + "}";

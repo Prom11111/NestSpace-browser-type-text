@@ -73,8 +73,11 @@ public final class RuntimeProxyExtensions {
                 // A broken runtime extension must not affect the host.
             }
             if (contribution != null &&
-                contribution.getFingerprint().equals(
-                    context.getFingerprint()
+                contribution.getPackageName().equals(
+                    context.getPackageName()
+                ) &&
+                contribution.getVersionMatcher().matches(
+                    context.getVersionCode()
                 )
             ) {
                 return contribution;

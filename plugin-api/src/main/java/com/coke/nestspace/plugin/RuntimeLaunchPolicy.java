@@ -8,10 +8,13 @@ import java.util.regex.Pattern;
  */
 public final class RuntimeLaunchPolicy {
 
-    private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
+    private static final Pattern PACKAGE_NAME = Pattern.compile(
+        "[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"
+    );
 
     private final String id;
-    private final String fingerprint;
+    private final String packageName;
+    private final RuntimeVersionMatcher versionMatcher;
     private final RuntimeLaunchMode mode;
     private final String reason;
     private final int minAndroidApi;
@@ -19,30 +22,83 @@ public final class RuntimeLaunchPolicy {
 
     public RuntimeLaunchPolicy(
         String id,
-        String fingerprint,
+        String packageName,
+        long versionCode,
         RuntimeLaunchMode mode,
         String reason
     ) {
-        this(id, fingerprint, mode, reason, 24, Integer.MAX_VALUE);
+        this(
+            id,
+            packageName,
+            RuntimeVersionMatcher.exact(versionCode),
+            mode,
+            reason
+        );
     }
 
     public RuntimeLaunchPolicy(
         String id,
-        String fingerprint,
+        String packageName,
+        RuntimeVersionMatcher versionMatcher,
+        RuntimeLaunchMode mode,
+        String reason
+    ) {
+        this(
+            id,
+            packageName,
+            versionMatcher,
+            mode,
+            reason,
+            24,
+            Integer.MAX_VALUE
+        );
+    }
+
+    public RuntimeLaunchPolicy(
+        String id,
+        String packageName,
+        long versionCode,
+        RuntimeLaunchMode mode,
+        String reason,
+        int minAndroidApi,
+        int maxAndroidApi
+    ) {
+        this(
+            id,
+            packageName,
+            RuntimeVersionMatcher.exact(versionCode),
+            mode,
+            reason,
+            minAndroidApi,
+            maxAndroidApi
+        );
+    }
+
+    public RuntimeLaunchPolicy(
+        String id,
+        String packageName,
+        RuntimeVersionMatcher versionMatcher,
         RuntimeLaunchMode mode,
         String reason,
         int minAndroidApi,
         int maxAndroidApi
     ) {
         this.id = Objects.requireNonNull(id, "id").trim();
-        this.fingerprint = Objects.requireNonNull(fingerprint, "fingerprint").trim();
+        this.packageName = Objects.requireNonNull(
+            packageName,
+            "packageName"
+        ).trim();
+        this.versionMatcher = Objects.requireNonNull(
+            versionMatcher,
+            "versionMatcher"
+        );
         this.mode = Objects.requireNonNull(mode, "mode");
         this.reason = Objects.requireNonNull(reason, "reason").trim();
         this.minAndroidApi = minAndroidApi;
         this.maxAndroidApi = maxAndroidApi;
-        if (!SHA256.matcher(this.fingerprint).matches()) {
+        if (!PACKAGE_NAME.matcher(this.packageName).matches()) {
             throw new IllegalArgumentException(
-                "fingerprint must be a lowercase SHA-256 value"
+                "packageName must be a valid Android package name"
             );
         }
         if (minAndroidApi > maxAndroidApi) {
@@ -54,8 +110,20 @@ public final class RuntimeLaunchPolicy {
         return id;
     }
 
-    public String getFingerprint() {
-        return fingerprint;
+    public String getPackageName() {
+        return packageName;
+    }
+
+    public RuntimeVersionMatcher getVersionMatcher() {
+        return versionMatcher;
+    }
+
+    public long getMinVersionCode() {
+        return versionMatcher.getMinVersionCode();
+    }
+
+    public long getMaxVersionCode() {
+        return versionMatcher.getMaxVersionCode();
     }
 
     public RuntimeLaunchMode getMode() {
@@ -75,8 +143,14 @@ public final class RuntimeLaunchPolicy {
     }
 
     public boolean matches(RuntimeProxyContext context) {
-        return fingerprint.equals(context.getFingerprint())
+        return packageName.equals(context.getPackageName())
+            && versionMatcher.matches(context.getVersionCode())
             && context.getAndroidApi() >= minAndroidApi
             && context.getAndroidApi() <= maxAndroidApi;
+    }
+
+    boolean overlaps(RuntimeLaunchPolicy other) {
+        return packageName.equals(other.packageName) &&
+            versionMatcher.mayOverlap(other.versionMatcher);
     }
 }

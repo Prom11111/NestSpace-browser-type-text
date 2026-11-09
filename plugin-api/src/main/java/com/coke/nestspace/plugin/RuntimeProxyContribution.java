@@ -5,7 +5,8 @@ import java.util.Objects;
 public final class RuntimeProxyContribution {
 
     private final String id;
-    private final String fingerprint;
+    private final String packageName;
+    private final RuntimeVersionMatcher versionMatcher;
     private final String displayName;
     private final String parametersJson;
     private final RuntimeLaunchMode mode;
@@ -13,13 +14,15 @@ public final class RuntimeProxyContribution {
 
     public RuntimeProxyContribution(
         String id,
-        String fingerprint,
+        String packageName,
+        long versionCode,
         String displayName,
         String parametersJson
     ) {
         this(
             id,
-            fingerprint,
+            packageName,
+            RuntimeVersionMatcher.exact(versionCode),
             displayName,
             parametersJson,
             RuntimeLaunchMode.CONTAINER,
@@ -29,17 +32,40 @@ public final class RuntimeProxyContribution {
 
     public RuntimeProxyContribution(
         String id,
-        String fingerprint,
+        String packageName,
+        RuntimeVersionMatcher versionMatcher,
+        String displayName,
+        String parametersJson
+    ) {
+        this(
+            id,
+            packageName,
+            versionMatcher,
+            displayName,
+            parametersJson,
+            RuntimeLaunchMode.CONTAINER,
+            displayName
+        );
+    }
+
+    public RuntimeProxyContribution(
+        String id,
+        String packageName,
+        RuntimeVersionMatcher versionMatcher,
         String displayName,
         String parametersJson,
         RuntimeLaunchMode mode,
         String reason
     ) {
         this.id = Objects.requireNonNull(id, "id").trim();
-        this.fingerprint = Objects.requireNonNull(
-            fingerprint,
-            "fingerprint"
+        this.packageName = Objects.requireNonNull(
+            packageName,
+            "packageName"
         ).trim();
+        this.versionMatcher = Objects.requireNonNull(
+            versionMatcher,
+            "versionMatcher"
+        );
         this.displayName = displayName == null ? "" : displayName.trim();
         this.parametersJson = parametersJson == null ||
             parametersJson.isBlank()
@@ -54,9 +80,9 @@ public final class RuntimeProxyContribution {
                 "invalid runtime proxy contribution id"
             );
         }
-        if (!this.fingerprint.matches("[0-9a-f]{64}")) {
+        if (this.packageName.isEmpty()) {
             throw new IllegalArgumentException(
-                "runtime proxy fingerprint must be SHA-256"
+                "runtime proxy target must have a package and version"
             );
         }
         if (this.displayName.isEmpty()) {
@@ -70,8 +96,20 @@ public final class RuntimeProxyContribution {
         return id;
     }
 
-    public String getFingerprint() {
-        return fingerprint;
+    public String getPackageName() {
+        return packageName;
+    }
+
+    public RuntimeVersionMatcher getVersionMatcher() {
+        return versionMatcher;
+    }
+
+    public long getMinVersionCode() {
+        return versionMatcher.getMinVersionCode();
+    }
+
+    public long getMaxVersionCode() {
+        return versionMatcher.getMaxVersionCode();
     }
 
     public String getDisplayName() {

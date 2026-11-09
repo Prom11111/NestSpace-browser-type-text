@@ -73,6 +73,7 @@ import com.coke.nestspace.plugin.PluginWebSocketRequest;
 import com.coke.nestspace.plugin.RuntimeLaunchMode;
 import com.coke.nestspace.plugin.RuntimeLaunchPolicy;
 import com.coke.nestspace.plugin.RuntimeProxyPlugin;
+import com.coke.nestspace.plugin.RuntimeVersionMatcher;
 
 import org.json.JSONObject;
 
@@ -103,8 +104,8 @@ public final class RuntimeDemoPlugin implements
     private static final String TOOL_ID = "runtime_demo";
     private static final String TOOL_NAME =
         AgentToolPlugins.qualify(PLUGIN_ID, TOOL_ID);
-    private static final String DEMO_FINGERPRINT =
-        "0000000000000000000000000000000000000000000000000000000000000000";
+    private static final String DEMO_PACKAGE_NAME = "com.example.target";
+    private static final String DEMO_VERSION_GLOB = "1*";
 
     private static final PluginDescriptor DESCRIPTOR = new PluginDescriptor(
         PLUGIN_ID,
@@ -223,7 +224,8 @@ public final class RuntimeDemoPlugin implements
         return Collections.singletonList(
             new RuntimeLaunchPolicy(
                 "demo-container-policy",
-                DEMO_FINGERPRINT,
+                DEMO_PACKAGE_NAME,
+                RuntimeVersionMatcher.glob(DEMO_VERSION_GLOB),
                 RuntimeLaunchMode.CONTAINER,
                 "Runtime demo: keep the normal container launch path"
             )

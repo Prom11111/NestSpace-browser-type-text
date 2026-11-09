@@ -3,12 +3,10 @@ package com.coke.nestspace.plugin;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * Process-local catalog for runtime proxy plugins.
@@ -31,21 +29,22 @@ public final class RuntimeProxyPlugins {
         List<RuntimeLaunchPolicy> policies = validatePolicies(plugin);
 
         synchronized (LOCK) {
-            Set<String> claimed = new HashSet<>();
+            List<RuntimeLaunchPolicy> claimed = new ArrayList<>();
             for (RuntimeProxyPlugin current : PLUGINS.values()) {
                 if (current.getDescriptor().getId().equals(descriptor.getId())) {
                     continue;
                 }
                 for (RuntimeLaunchPolicy policy : current.launchPolicies()) {
-                    claimed.add(policy.getFingerprint());
+                    claimed.add(policy);
                 }
             }
             for (RuntimeLaunchPolicy policy : policies) {
-                if (claimed.contains(policy.getFingerprint())) {
+                if (claimed.stream().anyMatch(policy::overlaps)) {
                     throw new IllegalArgumentException(
-                        "duplicate runtime fingerprint policy"
+                        "duplicate runtime target policy"
                     );
                 }
+                claimed.add(policy);
             }
             PLUGINS.put(descriptor.getId(), plugin);
         }
@@ -93,7 +92,9 @@ public final class RuntimeProxyPlugins {
                         descriptor.getId(),
                         descriptor.getVersion(),
                         policy.getId(),
-                        policy.getFingerprint(),
+                        policy.getPackageName(),
+                        policy.getVersionMatcher(),
+                        context.getVersionCode(),
                         policy.getMode(),
                         policy.getReason()
                     );
@@ -129,12 +130,13 @@ public final class RuntimeProxyPlugins {
     ) {
         List<RuntimeLaunchPolicy> policies =
             Objects.requireNonNull(plugin.launchPolicies(), "policies");
-        Set<String> fingerprints = new HashSet<>();
         for (RuntimeLaunchPolicy policy : policies) {
             Objects.requireNonNull(policy, "policy");
-            if (!fingerprints.add(policy.getFingerprint())) {
+            if (policies.stream().anyMatch(other ->
+                other != policy && policy.overlaps(other)
+            )) {
                 throw new IllegalArgumentException(
-                    "plugin contains duplicate runtime fingerprints"
+                    "plugin contains duplicate runtime target policies"
                 );
             }
         }

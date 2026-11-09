@@ -10,7 +10,7 @@ import java.util.Set;
  */
 public final class PluginDescriptor {
 
-    public static final int API_VERSION = 1;
+    public static final int API_VERSION = 2;
 
     private final String id;
     private final String name;

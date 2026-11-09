@@ -37,7 +37,7 @@ internal sealed interface ApplicationBootstrap {
     ) : ApplicationBootstrap
 
     data class UnsupportedHardenedApplication(
-        val fingerprint: String,
+        val className: String,
         val reason: String
     ) : ApplicationBootstrap
 

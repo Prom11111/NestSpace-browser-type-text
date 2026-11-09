@@ -44,7 +44,7 @@ assets/plugins-dev/com.example.runtime.demo/
 
 因此多个插件可以同时包含同名 `manifest.json`、`icons/` 和 `pages/`。Debug
 启动时，宿主先加载源码插件，再恢复外部 `.nestplugin`；同 ID 的外部包会被遮蔽，
-避免重复注册和运行指纹冲突。
+避免重复注册和目标启动策略冲突。
 
 开发自己的插件时，复制 `example-plugin/plugin` 到 `dev-plugins/my-plugin`，
 然后修改 Manifest ID、Gradle namespace、Java 包名和入口类。完整说明见

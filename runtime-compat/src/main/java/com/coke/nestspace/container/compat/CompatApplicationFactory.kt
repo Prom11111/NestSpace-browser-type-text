@@ -78,7 +78,7 @@ object CompatApplicationFactory : RuntimeApplicationFactory {
             }
             is ApplicationBootstrap.UnsupportedHardenedApplication ->
                 error(
-                    "unsupported hardened Application ${bootstrap.fingerprint}: " +
+                    "unsupported hardened Application ${bootstrap.className}: " +
                         bootstrap.reason
                 )
             ApplicationBootstrap.ManifestApplication ->
