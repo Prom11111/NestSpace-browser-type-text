@@ -78,25 +78,32 @@ internal object TargetLifecycle {
 
     fun postCreate(target: Activity, instrumentation: Instrumentation?, state: Bundle?) {
         if (instrumentation == null) return
+        val method = cachedMethod(
+            MethodKey(
+                purpose = "postCreate",
+                owner = Instrumentation::class.java,
+                name = "callActivityOnPostCreate",
+                parameterTypes = listOf(Activity::class.java, Bundle::class.java)
+            )
+        ) {
+            Instrumentation::class.java.getDeclaredMethod(
+                "callActivityOnPostCreate",
+                Activity::class.java,
+                Bundle::class.java
+            )
+        }
+        if (method == null) {
+            postCreateFallback(target, state)
+            return
+        }
+        // Method.invoke returns null for a void method. Do not treat that as a
+        // resolution failure and retry the target callback. Activities that
+        // install a view wrapper in onPostCreate can create a parent cycle
+        // when that callback runs twice.
         runCatching {
-            cachedMethod(
-                MethodKey(
-                    purpose = "postCreate",
-                    owner = Instrumentation::class.java,
-                    name = "callActivityOnPostCreate",
-                    parameterTypes = listOf(Activity::class.java, Bundle::class.java)
-                )
-            ) {
-                Instrumentation::class.java.getDeclaredMethod(
-                    "callActivityOnPostCreate",
-                    Activity::class.java,
-                    Bundle::class.java
-                )
-            }?.invoke(instrumentation, target, state)
-                ?: error("Instrumentation.callActivityOnPostCreate unavailable")
+            method.invoke(instrumentation, target, state)
         }.onFailure {
             Log.w(TAG, "onPostCreate failed", it)
-            postCreateFallback(target, state)
         }
     }
 
