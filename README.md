@@ -183,7 +183,7 @@ testapp/build/outputs/apk/secure/testapp-secure.apk
 app/       Android 主应用：容器、桌面、AI 助手、浏览器、MCP
 plugin-api/ Java 优先的外部插件 SDK
 runtime-plugin-api/ 稳定的运行时代理 Java API
-example-plugin/ 功能完整的非加固插件示例
+example-plugin/ 功能完整的插件示例
 dev-plugins/ Debug 源码插件自动发现目录
 testapp/   验证容器能力的示例 APK
 tools/     nestspace-mcp CLI（零依赖 Python）
