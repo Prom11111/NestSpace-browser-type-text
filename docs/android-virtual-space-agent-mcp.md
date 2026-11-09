@@ -383,7 +383,7 @@ interface AndroidAdapter {
   - Provider 权限、进程隔离、`FileProvider` 的 PackageManager meta-data 查询未虚拟化。
 **已实现：Stage C-D（2026-11-04）**
 
-- 进程模型：`ContainerProcessPool` 把每个 `package@instance` 固定到 `:c1..:c16` 之一；slot 复用前强制 kill 并等待退出，`ContainerSessions` 在进程内拒绝第二个 session。目标 Java 未捕获异常由 `TargetCrashGuard` 吞掉并写崩溃标记；native crash/`System.exit` 只杀死 slot，主进程与其它实例不受影响。下次 `space_launch` 返回 `restarted_after_crash`/`crash_reason`。
+- 进程模型：`ContainerProcessPool` 把每个 `package@instance` 固定到 `:c1..:c16` 之一；slot 复用前强制 kill 并等待退出，`ContainerSessions` 在进程内拒绝第二个 session。目标后台线程的未捕获异常由 `TargetCrashGuard` 记录；目标主线程未捕获异常按 Android 的正常致命语义写入崩溃标记并结束该 slot，避免半初始化页面继续运行后把容器拖成无响应；native crash/`System.exit` 同样只杀死 slot，主进程与其它实例不受影响。下次 `space_launch` 返回 `restarted_after_crash`/`crash_reason`。
 - JobScheduler：`ContainerContext.getSystemService(JOB_SCHEDULER_SERVICE)` 返回 `ContainerJobScheduler`；目标 `JobService` 用目标 ClassLoader 实例化，驱动 `onCreate`/`onStartJob`/`onStopJob`，支持最小延迟、周期、退避和网络/充电/低电量/空闲约束（无法判断的约束按满足处理）。进程存活期间有效。
 - 通知：`INotificationManager` 代理把包名改成宿主包，tag/channel/group 加虚拟包前缀，small icon 重绘为 bitmap，目标 PendingIntent 换成宿主 `ContainerLaunchProxyActivity` 跳板；channel 查询结果去掉前缀。
 - 广播桥接：目标静态/动态 Receiver 的 action 会注册到宿主；系统 sticky/普通广播注入容器，目标发出的非自身作用域广播在本地分发后继续发给宿主，并带 origin extra 防回环。

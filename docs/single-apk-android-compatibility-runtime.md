@@ -896,6 +896,10 @@ StageAActivity 显示 LaunchLoadingView
 
 当前实现：部分完成。`AndroidStartupCoordinator` 已接管 Embedded ApplicationLike、进程 Application、Provider、`Application.onCreate`、兼容初始化器、宿主桥和崩溃保护的阶段执行与计时；首个 Activity 的调度和打开也有独立节点。Coordinator 会在阶段执行前发出 `phaseStarted`，结束后发出带 outcome、duration 和 failure 的结果，`ContainerLaunchProgress` 据此驱动启动页。`LaunchLoadingView` 在独立 SurfaceView 渲染线程读取阶段快照，因此主线程被目标初始化阻塞时仍能更新真实阶段文案与进度。固定 2.5 秒 settle 已移除，Coordinator 完成后直接将首个 Activity 排入下一轮主线程调度。已有 Session 只重新打开 Activity 时，不重跑 Application 和 Provider，而是推进到首 Activity 阶段。
 
+目标主线程上的未捕获异常会记录崩溃标记并结束该槽位进程，不再被静默吞掉后继续运行；
+后台目标线程的可隔离异常仍由 `TargetCrashGuard` 记录并继续容器。这样单个目标的半初始化
+状态不会拖垮其他实例，下一次启动会通过进程池的崩溃恢复流程重新创建槽位。
+
 启动页只覆盖容器初始化。目标 App 自己的 Splash、网络、图片、WebView 和首屏内容加载没有统一 Framework 回调，不能声称已经由容器精确观测；详见 13.1.4。目标业务初始化仍可由用户安装的版本化 `RuntimeCompatibilityProfile` 插件补齐，不再编译进通用容器。
 
 交付：

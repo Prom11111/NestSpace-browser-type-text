@@ -4,6 +4,8 @@ import com.coke.nestspace.container.loader.ContainerClassLoader
 
 
 import android.content.Context
+import android.os.Looper
+import android.os.Process
 import android.util.Log
 
 /**
@@ -72,6 +74,22 @@ object TargetCrashGuard {
                         throwable
                     )
                     recordCrash(thread, throwable)
+                    if (TargetCrashContainment.shouldTerminate(
+                            thread,
+                            Looper.getMainLooper().thread
+                        )
+                    ) {
+                        // Main-thread exceptions are fatal under normal Android
+                        // lifecycle rules. Keeping the slot alive after one
+                        // leaves a half-initialized UI that can later freeze
+                        // the whole container. Record the marker and let the
+                        // process pool restart this slot on the next launch.
+                        Log.e(
+                            TAG,
+                            "terminating target slot after main-thread crash"
+                        )
+                        Process.killProcess(Process.myPid())
+                    }
                 } else {
                     hostHandler?.uncaughtException(thread, throwable)
                 }
@@ -127,4 +145,9 @@ object TargetCrashGuard {
         }
         return false
     }
+}
+
+internal object TargetCrashContainment {
+    fun shouldTerminate(thread: Thread, mainThread: Thread): Boolean =
+        thread === mainThread
 }
