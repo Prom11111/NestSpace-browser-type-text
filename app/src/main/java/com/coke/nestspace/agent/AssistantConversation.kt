@@ -444,10 +444,6 @@ object AssistantConversation {
                     usedSkills.forEach { store.recordOutcome(it, success) }
                 }
             }
-            // Keep the completed task visible for a short grace period. Any
-            // later mirror operation resets the timer; otherwise the panel and
-            // its target process close together.
-            HeadlessMirrorWindow.scheduleAutoClose()
             advanceAfterRun(app, onFinished, outcome, answer)
         }
     }
@@ -641,6 +637,11 @@ object AssistantConversation {
                 next.parentTaskId,
                 next.onFinished
             )
+        } else {
+            // Start the grace period only after the whole assistant task has
+            // finished. Tool completion is not task completion, and a queued
+            // follow-up must be able to use the existing mirror.
+            HeadlessMirrorWindow.scheduleAutoClose()
         }
     }
 

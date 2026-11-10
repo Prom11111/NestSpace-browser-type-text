@@ -248,15 +248,6 @@ class ToolRegistry(
             }
             if (result.ok) {
                 OperationTaskRegistry.succeed(task.id, result.text)
-                if (task.parentTaskId == null &&
-                    name in mirrorAutoCloseTools &&
-                    ContainerDisplayMode.parse(
-                        args.optString("display_mode"),
-                        ContainerDisplayMode.AUTO
-                    ) == ContainerDisplayMode.MIRROR
-                ) {
-                    HeadlessMirrorWindow.scheduleAutoClose()
-                }
             } else {
                 OperationTaskRegistry.fail(
                     task.id,
@@ -753,10 +744,6 @@ class ToolRegistry(
             "task_wait",
             "task_cancel",
             "task_list"
-        )
-        val mirrorAutoCloseTools = setOf(
-            "space_launch",
-            "space_multi_open"
         )
     }
 }

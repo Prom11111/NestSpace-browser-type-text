@@ -55,6 +55,32 @@ class BrowserActivity : ComponentActivity() {
         }
     }
 
+    override fun startActivity(intent: Intent) {
+        if (routeWebIntentInside(this, intent)) return
+        super.startActivity(intent)
+    }
+
+    override fun startActivity(intent: Intent, options: Bundle?) {
+        if (routeWebIntentInside(this, intent)) return
+        super.startActivity(intent, options)
+    }
+
+    @Deprecated("Deprecated in Android")
+    override fun startActivityForResult(intent: Intent, requestCode: Int) {
+        if (routeWebIntentInside(this, intent)) return
+        super.startActivityForResult(intent, requestCode)
+    }
+
+    @Deprecated("Deprecated in Android")
+    override fun startActivityForResult(
+        intent: Intent,
+        requestCode: Int,
+        options: Bundle?
+    ) {
+        if (routeWebIntentInside(this, intent)) return
+        super.startActivityForResult(intent, requestCode, options)
+    }
+
     override fun onResume() {
         super.onResume()
         mainHandler.removeCallbacks(clearContainerSurface)

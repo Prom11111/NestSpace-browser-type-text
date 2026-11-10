@@ -3,9 +3,11 @@ package com.coke.nestspace
 import android.app.Application
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import com.coke.nestspace.agent.UserGateManager
 import com.coke.nestspace.assistant.FloatingDotOverlay
 import com.coke.nestspace.browser.BrowserActivity
+import com.coke.nestspace.browser.routeWebIntentInside
 import com.coke.nestspace.container.ContainerProcessPool
 import com.coke.nestspace.container.ContainerSessions
 import com.coke.nestspace.container.identity.HostIdentity
@@ -22,6 +24,16 @@ import java.io.File
  * preloading are dispatched by [NestSpaceDeferredStartup].
  */
 class NestSpaceApp : Application() {
+    override fun startActivity(intent: Intent) {
+        if (routeWebIntentInside(this, intent)) return
+        super.startActivity(intent)
+    }
+
+    override fun startActivity(intent: Intent, options: Bundle?) {
+        if (routeWebIntentInside(this, intent)) return
+        super.startActivity(intent, options)
+    }
+
 
     override fun onCreate() {
         super.onCreate()

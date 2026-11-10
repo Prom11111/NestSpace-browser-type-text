@@ -1,7 +1,9 @@
 package com.coke.nestspace.browser
 
 import android.content.Intent
+import android.content.Context
 import android.net.Uri
+import android.util.Log
 
 /**
  * Resolve an app navigation intent to a URL that can be rendered by the
@@ -26,4 +28,21 @@ internal fun webUrlFromUri(uri: Uri?): String? {
         fallbackUri.scheme.equals("http", true) ||
             fallbackUri.scheme.equals("https", true)
     }
+}
+
+/**
+ * Last-resort guard for WebView/provider code that bypasses WebViewClient and
+ * launches an external ACTION_VIEW intent from an Application or Activity
+ * context. Route web URLs back into the built-in browser.
+ */
+internal fun routeWebIntentInside(context: Context, intent: Intent): Boolean {
+    if (intent.component?.className == BrowserActivity::class.java.name) return false
+    val url = webUrlFromViewIntent(intent) ?: return false
+    Log.d("BrowserIntent", "redirected external web ACTION_VIEW into built-in browser")
+    context.startActivity(
+        Intent(context, BrowserActivity::class.java)
+            .putExtra(BrowserActivity.EXTRA_URL, url)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
+    return true
 }

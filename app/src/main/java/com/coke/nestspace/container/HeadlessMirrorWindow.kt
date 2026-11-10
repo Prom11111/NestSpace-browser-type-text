@@ -199,12 +199,13 @@ object HeadlessMirrorWindow {
     fun scheduleAutoClose(delayMs: Long = 10_000L) {
         main.post {
             cancelAutoClose()
-            if (usingOffscreenDisplay || overlay == null || activeSlot < 0) return@post
+            if (usingOffscreenDisplay) return@post
             val token = Any()
             autoCloseToken = token
             main.postDelayed({
                 if (autoCloseToken === token) {
                     autoCloseToken = null
+                    Log.d(TAG, "auto-closing finished mirror task")
                     closeAndStopTarget()
                 }
             }, delayMs.coerceAtLeast(0L))
