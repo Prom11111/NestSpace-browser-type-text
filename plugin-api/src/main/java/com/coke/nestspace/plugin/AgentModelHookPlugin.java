@@ -2,9 +2,7 @@ package com.coke.nestspace.plugin;
 
 import java.util.concurrent.CompletableFuture;
 
-public interface AgentModelHookPlugin {
-
-    PluginDescriptor getDescriptor();
+public interface AgentModelHookPlugin extends PluginMetadata {
 
     default CompletableFuture<AgentModelRequestDecision> beforeRequestAsync(
         AgentModelRequestContext context

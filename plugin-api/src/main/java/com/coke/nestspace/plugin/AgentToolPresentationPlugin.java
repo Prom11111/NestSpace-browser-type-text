@@ -2,9 +2,7 @@ package com.coke.nestspace.plugin;
 
 import java.util.concurrent.CompletableFuture;
 
-public interface AgentToolPresentationPlugin {
-
-    PluginDescriptor getDescriptor();
+public interface AgentToolPresentationPlugin extends PluginMetadata {
 
     default CompletableFuture<AgentToolPresentation> presentAsync(
         AgentToolPresentationContext context

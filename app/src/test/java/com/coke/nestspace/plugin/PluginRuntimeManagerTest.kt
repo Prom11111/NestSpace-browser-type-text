@@ -7,7 +7,6 @@ import com.coke.nestspace.runtime.plugin.RuntimeProfiles
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.EnumSet
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
@@ -17,10 +16,12 @@ class PluginRuntimeManagerTest {
     @Test
     fun attachesAndDetachesEveryDeclaredProvider() {
         val plugin = TestPlugin()
-        val context = FakeContext(plugin.getDescriptor())
+        val context = FakeContext()
+        val descriptor = context.descriptor
 
         PluginRuntimeManager.attach(plugin, context)
         assertTrue(plugin.attached.get())
+        assertTrue(plugin.getDescriptor() === descriptor)
         assertTrue(AgentToolPlugins.snapshot().any {
             it.descriptor.id == plugin.getDescriptor().id
         })
@@ -58,21 +59,6 @@ class PluginRuntimeManagerTest {
         RuntimeProfileProvider {
         val attached = AtomicBoolean()
         val detached = AtomicBoolean()
-        private val pluginDescriptor = PluginDescriptor(
-            "test.runtime.manager",
-            "Runtime manager",
-            "1",
-            PluginDescriptor.API_VERSION,
-            0,
-            EnumSet.of(
-                PluginCapability.AGENT_TOOLS,
-                PluginCapability.COMMANDS,
-                PluginCapability.LLM_PROVIDERS,
-                PluginCapability.RUNTIME_HOOKS
-            )
-        )
-
-        override fun getDescriptor(): PluginDescriptor = pluginDescriptor
 
         override fun onAttach(context: PluginContext) {
             attached.set(true)
@@ -125,14 +111,12 @@ class PluginRuntimeManagerTest {
         }
     }
 
-    private class FakeContext(
-        private val pluginDescriptor: PluginDescriptor
-    ) : PluginContext {
+    private class FakeContext : PluginContext {
         private val manifest = PluginManifestParser.parse(
             """
             {
               "manifest_version": 1,
-              "id": "${pluginDescriptor.id}",
+              "id": "test.runtime.manager",
               "name": "Runtime manager",
               "version": "1",
               "api_version": 1,
@@ -142,8 +126,8 @@ class PluginRuntimeManagerTest {
             """.trimIndent()
         )
 
-        override fun getPluginId(): String = pluginDescriptor.id
-        override fun getDescriptor(): PluginDescriptor = pluginDescriptor
+        override fun getPluginId(): String = manifest.id
+        override fun getDescriptor(): PluginDescriptor = manifest.descriptor
         override fun getManifest(): PluginManifest = manifest
         override fun getHostVersion(): String = "1"
         override fun getLocale(): Locale = Locale.ENGLISH

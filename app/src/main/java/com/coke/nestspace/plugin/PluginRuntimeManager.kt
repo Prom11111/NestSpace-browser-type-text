@@ -1,6 +1,7 @@
 package com.coke.nestspace.plugin
 
 import com.coke.nestspace.speech.SpeechGateway
+import com.coke.nestspace.plugin.PluginMetadataRegistry
 import com.coke.nestspace.runtime.plugin.RuntimeProfileProvider
 import com.coke.nestspace.runtime.plugin.RuntimeProfiles
 
@@ -13,11 +14,8 @@ import com.coke.nestspace.runtime.plugin.RuntimeProfiles
 internal object PluginRuntimeManager {
 
     fun attach(plugin: Any, context: PluginContext) {
-        val descriptor = if (plugin is PluginLifecycle) {
-            context.descriptor
-        } else {
-            descriptorOf(plugin)
-        }
+        val descriptor = context.descriptor
+        PluginMetadataRegistry.bind(plugin, descriptor)
         try {
             if (plugin is PluginLifecycle) plugin.onAttach(context)
             if (plugin is RuntimeProxyPlugin) {
@@ -91,20 +89,6 @@ internal object PluginRuntimeManager {
         if (context is AutoCloseable) {
             runCatching(context::close)
         }
-    }
-
-    private fun descriptorOf(plugin: Any): PluginDescriptor = when (plugin) {
-        is RuntimeProxyPlugin -> plugin.descriptor
-        is RuntimeProfileProvider -> plugin.descriptor
-        is AgentHookPlugin -> plugin.descriptor
-        is AgentModelHookPlugin -> plugin.descriptor
-        is AgentToolProvider -> plugin.descriptor
-        is AgentToolHookPlugin -> plugin.descriptor
-        is AgentToolPresentationPlugin -> plugin.descriptor
-        is PluginCommandProvider -> plugin.descriptor
-        is PluginUiProvider -> plugin.descriptor
-        is PluginLlmProvider -> plugin.descriptor
-        is PluginSpeechProvider -> plugin.descriptor
-        else -> error("plugin does not expose a descriptor")
+        PluginMetadataRegistry.unbind(plugin)
     }
 }

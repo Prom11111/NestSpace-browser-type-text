@@ -192,7 +192,7 @@ Manifest 字段速查：
 | `version` | 是 | 插件版本 |
 | `publisher` | 否 | 发布者 |
 | `description` | 否 | 插件介绍 |
-| `api_version` | 是 | 当前固定为 `2` |
+| `api_version` | 是 | 当前固定为 `1` |
 | `min_host_version` | 否 | 最低宿主版本 |
 | `entry_class` | 是 | Java 入口类完整类名 |
 | `priority` | 否 | Hook 排序，数字越大越先执行 |
@@ -298,6 +298,11 @@ public final class HelloPlugin implements PluginLifecycle {
 能力声明遵循最小化原则。一个只提供工具和设置页的插件不需要文件、剪贴板或 Android
 门面权限。权限越少，安装页越容易理解，插件异常时的影响面也越小。
 
+插件 ID、名称、版本、优先级和权限只在插件根目录的 `manifest.json` 中声明。宿主解析
+Manifest 后，会在调用 `onAttach()` 前把只读的 `PluginDescriptor` 注入插件实例。
+Java 入口类不要创建第二份描述符或 `EnumSet<PluginCapability>`。插件需要读取元数据时，
+直接调用 `getDescriptor()`；Provider 接口通过 `PluginMetadata` 提供这个默认实现。
+
 ## 6. 编写第一个 Agent 工具
 
 Agent 工具是最常见的插件功能。入口类实现 `AgentToolProvider`，描述工具列表，并在
@@ -309,7 +314,6 @@ package com.example.hello;
 import com.coke.nestspace.plugin.*;
 import org.json.JSONObject;
 
-import java.util.EnumSet;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -317,23 +321,7 @@ public final class HelloPlugin implements
     PluginLifecycle,
     AgentToolProvider {
 
-    private static final String ID = "com.example.hello";
-
-    private static final PluginDescriptor DESCRIPTOR = new PluginDescriptor(
-        ID,
-        "Hello Plugin",
-        "1.0.0",
-        PluginDescriptor.API_VERSION,
-        100,
-        EnumSet.of(PluginCapability.AGENT_TOOLS)
-    );
-
     private PluginContext context;
-
-    @Override
-    public PluginDescriptor getDescriptor() {
-        return DESCRIPTOR;
-    }
 
     @Override
     public void onAttach(PluginContext context) {
@@ -907,11 +895,6 @@ public final class HelloProvider implements PluginLlmProvider {
 public final class HelloSpeechProvider implements PluginSpeechProvider {
 
     @Override
-    public PluginDescriptor getDescriptor() {
-        return DESCRIPTOR;
-    }
-
-    @Override
     public String getProviderId() {
         return "hello-speech";
     }
@@ -965,11 +948,6 @@ Provider 返回的音频必须是单声道或双声道、16-bit little-endian PC
 public final class HelloRuntimePlugin implements RuntimeProxyPlugin {
 
     @Override
-    public PluginDescriptor getDescriptor() {
-        return DESCRIPTOR;
-    }
-
-    @Override
     public List<RuntimeLaunchPolicy> launchPolicies() {
         return List.of(new RuntimeLaunchPolicy(
             "hello-host-fallback",
@@ -1017,11 +995,6 @@ new RuntimeLaunchPolicy(
 ```java
 public final class HelloRuntimeProfileProvider
     implements RuntimeProfileProvider {
-
-    @Override
-    public PluginDescriptor getDescriptor() {
-        return DESCRIPTOR;
-    }
 
     @Override
     public RuntimeProfile resolve(
@@ -1141,7 +1114,8 @@ consumer keep rules、声明式设置 Schema、工具 View 和运行时代理入
 | `RuntimeProfileProvider` | 目标 Application / Activity Hook | `runtime_hooks` |
 
 可以只实现其中一个接口，也可以在一个入口类中组合多个接口。组合时应保证所有接口使用
-同一个 `PluginDescriptor` 和插件 ID。
+同一个 `manifest.json`。宿主在附加插件时统一注入 Manifest Descriptor，Java 代码不
+声明权限、优先级或另一份插件 ID。
 
 ## 附录 B：示例地图
 

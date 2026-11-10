@@ -6,9 +6,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Contributes executable tools to the local Agent.
  */
-public interface AgentToolProvider {
-
-    PluginDescriptor getDescriptor();
+public interface AgentToolProvider extends PluginMetadata {
 
     CompletableFuture<List<PluginToolSpec>> listToolsAsync();
 

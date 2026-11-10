@@ -241,27 +241,23 @@ Debug 源码插件
 
 ### 4.1 描述符
 
+插件描述符唯一来源是插件根目录的 `manifest.json`。宿主解析后生成只读的
+`PluginDescriptor`，并在调用 `onAttach()` 前注入插件实例：
+
 ```java
-PluginDescriptor descriptor = new PluginDescriptor(
-    "example.plugin",
-    "Example plugin",
-    "1.2.0",
-    PluginDescriptor.API_VERSION,
-    100,
-    EnumSet.of(PluginCapability.AGENT_PROMPT)
-);
+PluginDescriptor descriptor = context.getDescriptor();
 ```
 
 规则：
 
-- `id` 全局唯一；
-- `apiVersion` 必须等于宿主支持的主版本；
-- `priority` 越大越先执行；
-- 插件可以在同一描述符下实现多个 Java Hook 接口。
+- `id`、`name`、`version`、`priority` 只写在 `manifest.json`；
+- `permissions`、`optional_permissions` 只写在 `manifest.json`；
+- Java 入口类不再构造 `PluginDescriptor`，也不声明 `PluginCapability` 集合；
+- 一个入口类可以在同一份 Manifest 下实现多个 Java Hook 接口。
 
 ### 4.2 API 版本
 
-`PluginDescriptor.API_VERSION` 当前为 `2`。版本 `2` 的运行时代理直接使用目标包名和
+`PluginDescriptor.API_VERSION` 当前为 `1`。运行时代理直接使用目标包名和
 `versionCode`，不再接受 SHA-256 运行指纹。
 
 - 新增默认方法：兼容；
@@ -282,7 +278,6 @@ PluginDescriptor descriptor = new PluginDescriptor(
 
 ```java
 public interface RuntimeProxyPlugin {
-    PluginDescriptor getDescriptor();
     List<RuntimeLaunchPolicy> launchPolicies();
 }
 
@@ -362,8 +357,6 @@ AGENT_TOOL_PRESENTATION Hook
 
 ```java
 public interface AgentHookPlugin {
-    PluginDescriptor getDescriptor();
-
     default List<AgentPromptContribution> promptContributions(
         AgentPromptContext context
     ) {
@@ -420,8 +413,6 @@ public interface AgentHookPlugin {
 
 ```java
 public interface AgentModelHookPlugin {
-    PluginDescriptor getDescriptor();
-
     default CompletableFuture<AgentModelRequestDecision> beforeRequestAsync(
         AgentModelRequestContext context
     ) {
@@ -467,8 +458,6 @@ AgentModelRequestDecision.block(message);
 
 ```java
 public interface AgentToolPresentationPlugin {
-    PluginDescriptor getDescriptor();
-
     default CompletableFuture<AgentToolPresentation> presentAsync(
         AgentToolPresentationContext context
     ) {
@@ -877,7 +866,6 @@ String settings = storage.readText("settings.json", 64 * 1024).get();
 
 ```java
 public interface AgentToolProvider {
-    PluginDescriptor getDescriptor();
     CompletableFuture<List<PluginToolSpec>> listToolsAsync();
     CompletableFuture<PluginToolResult> invokeAsync(PluginToolCall call);
 }
@@ -1260,7 +1248,7 @@ example.nestplugin
 | --- | --- | --- |
 | `manifest_version` | 相同 | 注册格式版本，当前为 `1` |
 | `name`、`version`、`description` | 相同 | 插件展示和升级信息 |
-| `permissions` | 相同位置 | 映射到 Java `PluginCapability` |
+| `permissions` | 相同位置 | 宿主据此生成插件能力和注册表 |
 | `optional_permissions` | 相同位置 | 运行时按需申请 |
 | `host_permissions` | 相同位置 | HTTP、SSE 和 WebSocket 域名范围 |
 | `icons` | 相同位置 | 优先使用 `128`，否则使用 `48` |
@@ -1271,7 +1259,7 @@ example.nestplugin
 字段规则：
 
 - `manifest_version` 必须为 `1`；
-- `api_version` 必须等于 `PluginDescriptor.API_VERSION`；
+- `api_version` 必须等于宿主当前 API 主版本 `1`；
 - `id` 为 3–128 位小写字母、数字、`.`、`_` 或 `-`；
 - `entry_class` 必须是合法 Java 二进制类名；
 - `version`、`min_host_version` 只用于兼容判断，不参与指纹计算；
@@ -1380,11 +1368,6 @@ Manifest `contributes` 指向的文件已有解析器：
 ```java
 public final class ExampleRuntime implements RuntimeProfileProvider {
     @Override
-    public PluginDescriptor getDescriptor() {
-        return DESCRIPTOR;
-    }
-
-    @Override
     public RuntimeProfile resolve(
         RuntimeLaunchSpec spec,
         ClassLoader loader
@@ -1484,23 +1467,6 @@ example-plugin/
 
 ```java
 public final class ExamplePlugin implements AgentHookPlugin {
-    private static final PluginDescriptor DESCRIPTOR = new PluginDescriptor(
-        "example.agent",
-        "Example Agent plugin",
-        "1.0.0",
-        PluginDescriptor.API_VERSION,
-        100,
-        EnumSet.of(
-            PluginCapability.AGENT_PROMPT,
-            PluginCapability.AGENT_QUESTION
-        )
-    );
-
-    @Override
-    public PluginDescriptor getDescriptor() {
-        return DESCRIPTOR;
-    }
-
     @Override
     public CompletableFuture<AgentQuestionResult> answerAsync(
         AgentQuestionContext context

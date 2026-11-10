@@ -4,9 +4,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
-public interface PluginLlmProvider {
-
-    PluginDescriptor getDescriptor();
+public interface PluginLlmProvider extends PluginMetadata {
 
     String getProviderId();
 

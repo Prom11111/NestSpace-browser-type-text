@@ -5,9 +5,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Observes or guards every Agent tool invocation.
  */
-public interface AgentToolHookPlugin {
-
-    PluginDescriptor getDescriptor();
+public interface AgentToolHookPlugin extends PluginMetadata {
 
     default CompletableFuture<AgentToolCallDecision> beforeToolCallAsync(
         AgentToolCallContext context

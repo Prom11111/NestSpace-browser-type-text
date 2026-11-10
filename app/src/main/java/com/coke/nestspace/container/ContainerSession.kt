@@ -1772,12 +1772,19 @@ class ContainerSession private constructor(
             // package and abort with NameNotFoundException.
             publishVirtualIdentity(activityThread, context)
             TargetWebViewIdentityHook.install(context)
+            val runtimeSpec = spec.toRuntimeApplicationSpec()
             val runtimeProfile = RuntimeProfiles.resolve(
-                spec.toRuntimeApplicationSpec(),
+                runtimeSpec,
                 loader
             )
+            Log.d(
+                TAG,
+                "runtime profile resolved=${runtimeProfile?.id ?: "none"} " +
+                    "package=${runtimeSpec.getPackageName()} " +
+                    "version=${runtimeSpec.getVersionCode()}"
+            )
             runtimeProfile?.beforeApplicationAttach(
-                spec.toRuntimeApplicationSpec(),
+                runtimeSpec,
                 loader,
                 context
             )

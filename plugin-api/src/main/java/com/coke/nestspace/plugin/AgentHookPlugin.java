@@ -7,9 +7,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Optional Java extension point for prompt context and direct Q&A.
  */
-public interface AgentHookPlugin {
-
-    PluginDescriptor getDescriptor();
+public interface AgentHookPlugin extends PluginMetadata {
 
     default List<AgentPromptContribution> promptContributions(
         AgentPromptContext context

@@ -24,13 +24,11 @@ import com.coke.nestspace.plugin.AgentToolProvider;
 import com.coke.nestspace.plugin.AgentToolResultContext;
 import com.coke.nestspace.plugin.AgentToolPlugins;
 import com.coke.nestspace.plugin.AgentToolViewFactory;
-import com.coke.nestspace.plugin.PluginCapability;
 import com.coke.nestspace.plugin.PluginCommandCall;
 import com.coke.nestspace.plugin.PluginCommandProvider;
 import com.coke.nestspace.plugin.PluginCommandResult;
 import com.coke.nestspace.plugin.PluginCommandSpec;
 import com.coke.nestspace.plugin.PluginContext;
-import com.coke.nestspace.plugin.PluginDescriptor;
 import com.coke.nestspace.plugin.PluginEvent;
 import com.coke.nestspace.plugin.PluginEventApi;
 import com.coke.nestspace.plugin.PluginEventListener;
@@ -78,7 +76,6 @@ import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
@@ -107,47 +104,8 @@ public final class RuntimeDemoPlugin implements
     private static final String DEMO_PACKAGE_NAME = "com.example.target";
     private static final String DEMO_VERSION_GLOB = "1*";
 
-    private static final PluginDescriptor DESCRIPTOR = new PluginDescriptor(
-        PLUGIN_ID,
-        "Runtime Demo Plugin",
-        "1.0.0",
-        PluginDescriptor.API_VERSION,
-        100,
-        EnumSet.of(
-            PluginCapability.AGENT_PROMPT,
-            PluginCapability.AGENT_QUESTION,
-            PluginCapability.AGENT_TOOLS,
-            PluginCapability.AGENT_TOOL_HOOKS,
-            PluginCapability.AGENT_TOOL_PRESENTATION,
-            PluginCapability.LLM_PROVIDERS,
-            PluginCapability.COMMANDS,
-            PluginCapability.TASKS,
-            PluginCapability.EVENTS,
-            PluginCapability.SETTINGS,
-            PluginCapability.SECRETS,
-            PluginCapability.CACHE,
-            PluginCapability.DATABASE,
-            PluginCapability.FILE_PICKER,
-            PluginCapability.FILE_EXPORT,
-            PluginCapability.SHARE,
-            PluginCapability.CLIPBOARD,
-            PluginCapability.UI_PAGES,
-            PluginCapability.UI_RENDERERS,
-            PluginCapability.NOTIFICATIONS,
-            PluginCapability.NETWORK,
-            PluginCapability.WEBSOCKET,
-            PluginCapability.RUNTIME_LAUNCH_POLICY,
-            PluginCapability.RUNTIME_HOOKS
-        )
-    );
-
     private volatile PluginContext context;
     private volatile PluginSubscription eventSubscription;
-
-    @Override
-    public PluginDescriptor getDescriptor() {
-        return DESCRIPTOR;
-    }
 
     @Override
     public void onAttach(PluginContext context) {
@@ -484,7 +442,7 @@ public final class RuntimeDemoPlugin implements
                                 .put("locale", host.getLocale().toLanguageTag())
                                 .put(
                                     "capabilities",
-                                    DESCRIPTOR.getCapabilities().size()
+                                    getDescriptor().getCapabilities().size()
                                 )
                         )
                     );
@@ -585,7 +543,10 @@ public final class RuntimeDemoPlugin implements
                 new JSONObject()
                     .put("plugin", PLUGIN_ID)
                     .put("host", host.getHostVersion())
-                    .put("capabilities", DESCRIPTOR.getCapabilities().size())
+                    .put(
+                        "capabilities",
+                        getDescriptor().getCapabilities().size()
+                    )
                     .toString()
             )
         );

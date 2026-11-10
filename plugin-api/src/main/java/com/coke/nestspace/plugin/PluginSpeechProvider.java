@@ -9,9 +9,7 @@ import java.util.concurrent.CompletableFuture;
  * The provider owns language handling, voice selection and synthesis. The
  * host owns playback, audio focus, queueing and lifecycle cleanup.
  */
-public interface PluginSpeechProvider {
-
-    PluginDescriptor getDescriptor();
+public interface PluginSpeechProvider extends PluginMetadata {
 
     String getProviderId();
 
