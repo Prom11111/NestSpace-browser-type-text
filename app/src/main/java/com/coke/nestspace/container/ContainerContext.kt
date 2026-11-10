@@ -293,6 +293,7 @@ class ContainerContext(
             ) { _, method, _ ->
                 when (method.name) {
                     "getApplicationLocales" -> LocaleList.getEmptyLocaleList()
+                    "getSystemLocales" -> LocaleList.getDefault()
                     "getOverrideLocaleConfig" -> null
                     "setApplicationLocales" -> null
                     else -> defaultServiceValue(method.returnType)
