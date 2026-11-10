@@ -2,6 +2,8 @@ package com.coke.nestspace.plugin;
 
 import org.junit.Test;
 
+import java.util.EnumSet;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -22,11 +24,8 @@ public class PluginManifestParserTest {
                 + "\"min_host_version\":\"1.5.0\","
                 + "\"entry_class\":\"com.example.tools.Plugin\","
                 + "\"priority\":20,"
-                + "\"permissions\":[\"agent_question\",\"agent_tools\","
-                + "\"commands\",\"settings\",\"llm_providers\","
-                + "\"speech_providers\","
-                + "\"ui_pages\",\"ui_renderers\",\"network\","
-                + "\"websocket\",\"storage\"],"
+                + "\"permissions\":[\"agent\",\"automation\","
+                + "\"storage\",\"ui\",\"network\"],"
                 + "\"optional_permissions\":[\"notifications\"],"
                 + "\"host_permissions\":["
                 + "\"https://api.example.com/*\","
@@ -76,6 +75,16 @@ public class PluginManifestParserTest {
         assertTrue(
             manifest.getWebSocketHosts().contains("*.socket.example.com")
         );
+        assertEquals(
+            EnumSet.of(
+                PluginPermission.AGENT,
+                PluginPermission.AUTOMATION,
+                PluginPermission.STORAGE,
+                PluginPermission.UI,
+                PluginPermission.NETWORK
+            ),
+            PluginPermission.groupsFor(manifest.getCapabilities())
+        );
         assertEquals("icons/plugin.png", manifest.getIconPath());
         assertEquals("pages/options.json", manifest.getOptionsPage());
         assertEquals("pages/detail.html", manifest.getHtmlPage());
@@ -94,6 +103,57 @@ public class PluginManifestParserTest {
         assertEquals(
             "chart",
             manifest.getContributions().getRenderers().get(0).getId()
+        );
+    }
+
+    @Test
+    public void acceptsLegacyPermissionsAndRuntimeProxyAlias() {
+        PluginManifest manifest = PluginManifestParser.parse(
+            "{"
+                + "\"manifest_version\":1,"
+                + "\"id\":\"com.example.legacy\","
+                + "\"name\":\"Legacy plugin\","
+                + "\"version\":\"1.0.0\","
+                + "\"api_version\":1,"
+                + "\"entry_class\":\"com.example.legacy.Plugin\","
+                + "\"permissions\":[\"agent_tools\",\"settings\","
+                + "\"runtime_proxy\"]"
+                + "}"
+        );
+
+        assertTrue(
+            manifest.getCapabilities().contains(PluginCapability.AGENT_TOOLS)
+        );
+        assertTrue(
+            manifest.getCapabilities().contains(PluginCapability.SETTINGS)
+        );
+        assertTrue(
+            manifest.getCapabilities().contains(
+                PluginCapability.RUNTIME_LAUNCH_POLICY
+            )
+        );
+    }
+
+    @Test
+    public void deduplicatesOverlappingExpandedPermissions() {
+        PluginManifest manifest = PluginManifestParser.parse(
+            "{"
+                + "\"manifest_version\":1,"
+                + "\"id\":\"com.example.overlap\","
+                + "\"name\":\"Overlap plugin\","
+                + "\"version\":\"1.0.0\","
+                + "\"api_version\":1,"
+                + "\"entry_class\":\"com.example.overlap.Plugin\","
+                + "\"permissions\":[\"agent\",\"agent_tools\","
+                + "\"network\",\"websocket\"]"
+                + "}"
+        );
+
+        assertTrue(
+            manifest.getCapabilities().contains(PluginCapability.AGENT_TOOLS)
+        );
+        assertTrue(
+            manifest.getCapabilities().contains(PluginCapability.WEBSOCKET)
         );
     }
 
@@ -121,7 +181,7 @@ public class PluginManifestParserTest {
         );
         assertThrows(IllegalArgumentException.class, () ->
             PluginManifestParser.parse(manifest(
-                "\"permissions\":[\"network\"],"
+                "\"permissions\":[],"
                     + "\"host_permissions\":[\"wss://example.com/*\"]"
             ))
         );

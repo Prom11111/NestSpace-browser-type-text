@@ -49,6 +49,34 @@ internal object LocalSpeechModelStore {
         val approximateMb: Int
     )
 
+    data class DownloadMetrics(
+        val bytesPerSecond: Long = 0L,
+        val remainingSeconds: Long = -1L
+    ) {
+        fun speedText(): String {
+            if (bytesPerSecond <= 0L) return ""
+            val kb = bytesPerSecond / 1024.0
+            return if (kb < 1024.0) {
+                String.format(Locale.US, "%.0f KB/s", kb)
+            } else {
+                String.format(Locale.US, "%.1f MB/s", kb / 1024.0)
+            }
+        }
+
+        fun remainingText(): String {
+            if (remainingSeconds < 0L) return ""
+            val total = remainingSeconds.coerceAtLeast(0L)
+            val hours = total / 3600L
+            val minutes = total % 3600L / 60L
+            val seconds = total % 60L
+            return if (hours > 0L) {
+                String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+            } else {
+                String.format(Locale.US, "%02d:%02d", minutes, seconds)
+            }
+        }
+    }
+
     private fun buildMirrors(path: String): List<Mirror> = listOf(
         // Hugging Face mirror operated for mainland China users.
         Mirror(
@@ -87,11 +115,16 @@ internal object LocalSpeechModelStore {
     private val manualSources = ConcurrentHashMap<String, String>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _progress = MutableStateFlow<Map<String, Int>>(emptyMap())
+    private val _metrics =
+        MutableStateFlow<Map<String, DownloadMetrics>>(emptyMap())
     private val _source = MutableStateFlow<Map<String, String>>(emptyMap())
     private val _revision = MutableStateFlow(0L)
 
     /** -1 = failed, 0..99 = downloading, 100 = ready. */
     val progress: StateFlow<Map<String, Int>> = _progress
+
+    /** Current transfer speed and estimated remaining time. */
+    val metrics: StateFlow<Map<String, DownloadMetrics>> = _metrics
 
     /** Label of the mirror selected after response-time probing. */
     val source: StateFlow<Map<String, String>> = _source
@@ -110,6 +143,9 @@ internal object LocalSpeechModelStore {
         manualSources[spec.language] = mirror.label
         downloads.remove(spec.language)?.cancel()
         _progress.update { it + (spec.language to 0) }
+        _metrics.update {
+            it + (spec.language to DownloadMetrics())
+        }
         _source.update { it + (spec.language to mirror.label) }
         scope.launch {
             runCatching { ensure(app, spec.language) }
@@ -126,6 +162,7 @@ internal object LocalSpeechModelStore {
         val spec = spec(language)
         modelDir(context, spec.language).deleteRecursively()
         _progress.update { it - spec.language }
+        _metrics.update { it - spec.language }
         _source.update { it - spec.language }
         _revision.update { it + 1 }
     }
@@ -145,6 +182,7 @@ internal object LocalSpeechModelStore {
                     install(app, spec, target)
                     manualSources.remove(spec.language)
                     _progress.update { it + (spec.language to 100) }
+                    _metrics.update { it - spec.language }
                     _revision.update { it + 1 }
                     // Load immediately after a successful download, so the
                     // next voice interaction doesn't wait for model init.
@@ -154,6 +192,7 @@ internal object LocalSpeechModelStore {
                     throw t
                 } catch (t: Throwable) {
                     _progress.update { it + (spec.language to -1) }
+                    _metrics.update { it - spec.language }
                     throw t
                 }
             }
@@ -171,6 +210,9 @@ internal object LocalSpeechModelStore {
         val temp = File(voskRoot, "model-${spec.language}-$downloadId.tmp")
         try {
             _progress.update { it + (spec.language to 0) }
+            _metrics.update {
+                it + (spec.language to DownloadMetrics())
+            }
             val ordered = chooseMirrors(
                 spec,
                 manualSources[spec.language]
@@ -180,8 +222,11 @@ internal object LocalSpeechModelStore {
                 try {
                     Log.i(TAG, "downloading ${spec.language} from ${mirror.label}")
                     _source.update { it + (spec.language to mirror.label) }
-                    download(mirror, zip) { percent ->
+                    download(mirror, zip) { percent, metrics ->
                         _progress.update { it + (spec.language to percent) }
+                        _metrics.update {
+                            it + (spec.language to metrics)
+                        }
                     }
                     lastError = null
                     break
@@ -279,7 +324,11 @@ internal object LocalSpeechModelStore {
         }
     }
 
-    private suspend fun download(mirror: Mirror, zip: File, onProgress: (Int) -> Unit) {
+    private suspend fun download(
+        mirror: Mirror,
+        zip: File,
+        onProgress: (Int, DownloadMetrics) -> Unit
+    ) {
         val connection = (URL(mirror.url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 30_000
             readTimeout = 60_000
@@ -302,6 +351,8 @@ internal object LocalSpeechModelStore {
                     val buffer = ByteArray(64 * 1024)
                     var downloaded = 0L
                     var lastPercent = -1
+                    val startedAt = System.nanoTime()
+                    var lastReportAt = startedAt
                     while (true) {
                         currentCoroutineContext().ensureActive()
                         val read = input.read(buffer)
@@ -321,9 +372,34 @@ internal object LocalSpeechModelStore {
                         } else {
                             0
                         }
-                        if (percent != lastPercent) {
+                        val now = System.nanoTime()
+                        if (percent != lastPercent ||
+                            now - lastReportAt >= METRICS_REPORT_INTERVAL_NS
+                        ) {
+                            val elapsedSeconds =
+                                ((now - startedAt) / 1_000_000_000.0)
+                                    .coerceAtLeast(0.001)
+                            val bytesPerSecond =
+                                (downloaded / elapsedSeconds).toLong()
+                            val remainingSeconds = if (
+                                total > 0 && bytesPerSecond > 0
+                            ) {
+                                val remainingBytes =
+                                    (total - downloaded).coerceAtLeast(0L)
+                                (remainingBytes + bytesPerSecond - 1L) /
+                                    bytesPerSecond
+                            } else {
+                                -1L
+                            }
                             lastPercent = percent
-                            onProgress(percent)
+                            lastReportAt = now
+                            onProgress(
+                                percent,
+                                DownloadMetrics(
+                                    bytesPerSecond = bytesPerSecond,
+                                    remainingSeconds = remainingSeconds
+                                )
+                            )
                         }
                     }
                 }
@@ -380,4 +456,5 @@ internal object LocalSpeechModelStore {
     private const val MAX_EXTRACTED_BYTES = 300L * 1024 * 1024
     private const val PROBE_BYTES = 32 * 1024
     private const val MIRROR_TESTS = 3
+    private const val METRICS_REPORT_INTERVAL_NS = 500_000_000L
 }

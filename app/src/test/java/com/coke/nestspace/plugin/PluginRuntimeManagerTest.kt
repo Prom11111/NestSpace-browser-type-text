@@ -121,7 +121,7 @@ class PluginRuntimeManagerTest {
               "version": "1",
               "api_version": 1,
               "entry_class": "test.Plugin",
-              "permissions": ["agent_tools", "commands", "llm_providers", "runtime_hooks"]
+              "permissions": ["agent", "automation", "runtime"]
             }
             """.trimIndent()
         )

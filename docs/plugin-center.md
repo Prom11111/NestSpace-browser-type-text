@@ -1178,31 +1178,18 @@ example.nestplugin
   "entry_class": "com.example.ai.tools.AiToolsPlugin",
   "priority": 100,
   "permissions": [
-    "agent_prompt",
-    "agent_question",
-    "agent_model_request",
-    "agent_tools",
-    "agent_tool_hooks",
-    "agent_tool_presentation",
-    "commands",
-    "tasks",
-    "events",
-    "settings",
+    "agent",
+    "runtime",
+    "automation",
+    "storage",
     "secrets",
-    "file_picker",
-    "file_export",
-    "share",
-    "clipboard",
-    "ui_pages",
-    "ui_renderers",
-    "llm_providers",
-    "network",
-    "websocket",
-    "storage"
+    "content",
+    "ui",
+    "network"
   ],
   "optional_permissions": [
     "notifications",
-    "android_apis"
+    "device"
   ],
   "host_permissions": [
     "https://api.example.com/*",
@@ -1263,14 +1250,15 @@ example.nestplugin
 - `id` 为 3–128 位小写字母、数字、`.`、`_` 或 `-`；
 - `entry_class` 必须是合法 Java 二进制类名；
 - `version`、`min_host_version` 只用于兼容判断，不参与指纹计算；
-- `permissions` 不区分大小写，支持枚举名或小写形式，例如
-  `AGENT_QUESTION` 和 `agent_question`；
-- 未知或重复权限直接拒绝安装；
+- `permissions` 不区分大小写，新插件使用 `agent`、`runtime`、`automation`、
+  `storage`、`secrets`、`content`、`ui`、`notifications`、`network`、`device`；
+- 旧细粒度权限仍可解析，`runtime_proxy` 兼容为 `runtime_launch_policy`；
+- 未知权限和同一个权限名重复时拒绝安装；权限组与旧细粒度名称展开后重叠时会自动去重；
 - `host_permissions` 支持 `http`、`https`、`ws`、`wss` 和 `*`；
 - 裸域名同时登记到 HTTP 和 WebSocket；
 - `*.example.com` 只匹配其子域，不匹配 `example.com` 本身；
 - 当前 Host 规则只支持 `/*`，不支持按 API 路径做更细粒度授权；
-- 声明 HTTP Host 需要 `network`，声明 WebSocket Host 需要 `websocket`；
+- 声明 HTTP、SSE、WebSocket Host 都需要 `network`；
 - 目标包名和版本不写入 Manifest；支持特定目标的启动策略由插件运行时通过
   `RuntimeProxyPlugin.launchPolicies()` 提供；
 - `entry_class`、图标和页面路径不能使用绝对路径或 `..`；
@@ -1389,31 +1377,20 @@ Profile 可覆盖：
 
 ### 12.1 权限等级
 
-- `AGENT_PROMPT`：中权限；
-- `AGENT_QUESTION`：中权限；
-- `AGENT_TOOL_HOOKS`：高权限，可修改参数或拦截工具；
-- `AGENT_TOOL_PRESENTATION`：高权限；自定义 Android View 会获得短作用域视图 Context；
-- `UI_PAGES`、`UI_RENDERERS`：中权限；
-- `NOTIFICATIONS`：中权限；
-- `SETTINGS`：高权限；只提供声明式 SettingView，不获得 Activity 或 View；
-- `SECRETS`：高权限；
-- `CACHE`：中权限；
-- `DATABASE`：中权限；
-- `FILE_PICKER`、`FILE_EXPORT`：高权限；
-- `SHARE`、`CLIPBOARD`：高权限；
-- `TASKS`：中权限；
-- `EVENTS`：高权限；
-- `COMMANDS`：高权限；
-- `NETWORK`：高权限；
-- `WEBSOCKET`：高权限；
-- `ANDROID_APIS`：高权限；
-- `STORAGE`：中权限；
-- `AGENT_MODEL_REQUEST`：高权限；
-- `AGENT_TOOLS`：高权限；
-- `LLM_PROVIDERS`：高权限；
-- `SPEECH_PROVIDERS`：高权限，可生成音频但只能通过宿主播放；
-- `RUNTIME_HOOKS`：最高权限，可执行目标进程内的版本化 Hook；
+- `agent`：高权限，包含工具、提示、问答、模型请求、工具 Hook、工具展示和模型/语音 Provider；
+- `runtime`：最高权限，包含启动策略和目标进程 Hook；
+- `automation`：高权限，包含命令、托管任务和事件；
+- `storage`：高权限，包含私有文件、设置、缓存和 SQLite；
+- `secrets`：高权限；
+- `content`：高权限，包含文件选择、导出、分享和剪贴板；
+- `ui`：中权限，包含声明式页面和结果 Renderer；
+- `notifications`：中权限；
+- `network`：高权限，包含 HTTP、SSE 和 WebSocket；
+- `device`：高权限，开放受控 Android API 门面；
 - 原生代码：最高权限。
+
+权限组只减少 Manifest 声明数量。宿主内部仍保留细粒度 Capability 校验，因此调用
+具体 Host API 时仍会检查对应能力。
 
 ### 12.2 插件不能获得
 

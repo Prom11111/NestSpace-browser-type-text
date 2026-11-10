@@ -159,11 +159,9 @@ namespace 和 Java 包名是否一致。宿主日志中的 `PluginSourceLoader` 
   "entry_class": "com.example.hello.HelloPlugin",
   "priority": 100,
   "permissions": [
-    "agent_tools",
-    "agent_tool_presentation",
-    "settings",
-    "network",
-    "websocket"
+    "agent",
+    "storage",
+    "network"
   ],
   "host_permissions": [
     "https://api.example.com/*",
@@ -196,8 +194,8 @@ Manifest 字段速查：
 | `min_host_version` | 否 | 最低宿主版本 |
 | `entry_class` | 是 | Java 入口类完整类名 |
 | `priority` | 否 | Hook 排序，数字越大越先执行 |
-| `permissions` | 否 | 必需 Capability |
-| `optional_permissions` | 否 | 可选 Capability |
+| `permissions` | 否 | 必需权限组 |
+| `optional_permissions` | 否 | 可选权限组 |
 | `host_permissions` | 否 | HTTP、SSE、WebSocket 白名单 |
 | `icons` | 否 | 插件图标映射 |
 | `ui.html_page` | 否 | 插件详情 HTML |
@@ -211,41 +209,28 @@ Manifest 字段速查：
 `manifest_version` 和 `api_version` 必须与宿主支持的版本一致。新增默认方法和新增
 Capability 可以保持兼容；删除方法、改变方法签名或更换类型需要提升 API 主版本。
 
-权限名称与 Java Capability 一一对应：
+Manifest 使用 10 个权限组。宿主会把权限组展开成细粒度 Capability，供内部 API
+逐项校验：
 
-| Manifest 权限 | 用途 |
+| Manifest 权限 | 展开后的 Capability |
 | --- | --- |
-| `agent_prompt` | 贡献 Agent 提示词 |
-| `agent_question` | 模型请求前直接处理问答 |
-| `agent_model_request` | 检查或改写模型请求 |
-| `agent_tools` | 提供 Agent 工具 |
-| `agent_tool_hooks` | 调用前改写或阻断工具 |
-| `agent_tool_presentation` | 自定义工具结果展示 |
-| `llm_providers` | 注册模型 Provider |
-| `speech_providers` | 注册语音合成 Provider |
-| `commands` | 注册命令 |
-| `tasks` | 提交托管后台任务 |
-| `events` | 发布和订阅事件 |
-| `settings` | 普通设置和声明式 SettingView |
+| `agent` | Agent 提示词、问答、模型请求、工具、工具 Hook、工具展示、LLM 与语音 Provider |
+| `runtime` | 启动策略和目标 Application / Activity Hook |
+| `automation` | 命令、托管任务和事件 |
+| `storage` | 私有文件、设置、缓存和 SQLite |
 | `secrets` | Keystore 加密密钥 |
-| `cache` | TTL 缓存 |
-| `database` | 私有 SQLite |
-| `file_picker` | 系统文件选择器 |
-| `file_export` | 用户可见文件导出 |
-| `share` | 系统分享面板 |
-| `clipboard` | 剪贴板 |
-| `ui_pages` | 声明式页面 |
-| `ui_renderers` | 结果 Renderer |
+| `content` | 文件选择、文件导出、系统分享和剪贴板 |
+| `ui` | 声明式页面和结果 Renderer |
 | `notifications` | 插件通知 |
-| `network` | HTTP 和 SSE |
-| `websocket` | WebSocket |
-| `android_apis` | 受控 Android API 门面 |
-| `storage` | 插件私有文件 |
-| `runtime_launch_policy` | 启动策略 |
-| `runtime_hooks` | 目标 Application / Activity 深层 Hook |
+| `network` | HTTP、SSE、WebSocket 和网络白名单 |
+| `device` | 受控 Android API 门面 |
 
-`host_permissions` 同时承担网络白名单作用。HTTP 和 SSE 的 Host 需要 `network`，
-`ws`/`wss` 的 Host 需要 `websocket`。插件只能请求白名单内的 Host，不能通过重定向或
+旧 Manifest 中的 `agent_tools`、`settings`、`network`、`websocket` 等细粒度名称仍可
+解析，`runtime_proxy` 作为 `runtime_launch_policy` 的兼容别名处理。新插件应只使用权限组；
+旧 Manifest 同时声明权限组和细粒度名称时会自动去重。
+
+`host_permissions` 同时承担网络白名单作用。HTTP、SSE、`ws` 和 `wss` 的 Host 都由
+`network` 权限组覆盖。插件只能请求白名单内的 Host，不能通过重定向或
 拼接 URL 绕过这一层声明。
 
 `contributes` 中的文件不会自动产生业务行为。宿主会解析工具、命令、设置 Schema 和页面
@@ -255,13 +240,13 @@ Capability 可以保持兼容；删除方法、改变方法签名或更换类型
 
 | 字段 | 文件位置示例 | 对应能力 |
 | --- | --- | --- |
-| `agent_tools` | `contributions/tools.json` | `agent_tools` |
-| `commands` | `contributions/commands.json` | `commands` |
-| `settings` | `contributions/settings.schema.json` | `settings` |
-| `llm_providers` | `contributions/llm.json` | `llm_providers` |
-| `speech_providers` | `contributions/speech.json` | `speech_providers` |
-| `pages` | `pages/overview.json` | `ui_pages` |
-| `result_renderers` | Manifest 内联对象 | `ui_renderers` |
+| `agent_tools` | `contributions/tools.json` | `agent` |
+| `commands` | `contributions/commands.json` | `automation` |
+| `settings` | `contributions/settings.schema.json` | `storage` |
+| `llm_providers` | `contributions/llm.json` | `agent` |
+| `speech_providers` | `contributions/speech.json` | `agent` |
+| `pages` | `pages/overview.json` | `ui` |
+| `result_renderers` | Manifest 内联对象 | `ui` |
 
 贡献文件适合提供静态描述、默认值和页面入口。权限检查、凭据访问和真正的执行逻辑必须
 由 Java 代码完成，不能只靠声明文件实现。
@@ -478,12 +463,12 @@ View 工厂在 UI 线程调用。`PluginToolViewContext.getContext()` 只用于�
 ## 9. 使用声明式 SettingView
 
 插件不创建 Android View。`PluginSettingView` 是纯数据表单，宿主负责渲染、校验、
-保存和重新打开时的回填。Manifest 声明 `settings`，并把
+保存和重新打开时的回填。Manifest 声明 `storage`，并把
 `contributes.settings` 指向表单 Schema：
 
 ```json
 {
-  "permissions": ["settings", "secrets"],
+  "permissions": ["storage", "secrets"],
   "contributes": {
     "settings": "contributions/settings.schema.json"
   }
@@ -575,21 +560,21 @@ Host API 与权限的对应关系如下：
 
 | Host API | 权限 | 典型用途 |
 | --- | --- | --- |
-| `settings()` | `settings` | 插件配置 |
+| `settings()` | `storage` | 插件配置 |
 | `secrets()` | `secrets` | API Key、令牌 |
 | `storage()` | `storage` | 插件私有文件 |
 | `cache()` | `cache` | 可重建的短期数据 |
 | `databases()` | `database` | 查询、索引、事务 |
-| `files()` | `file_picker` / `file_export` | 用户文件 |
+| `files()` | `content` | 用户文件 |
 | `share()` | `share` | 系统分享 |
 | `clipboard()` | `clipboard` | 剪贴板 |
 | `notifications()` | `notifications` | 插件通知 |
 | `tasks()` | `tasks` | 后台任务 |
 | `events()` | `events` | 插件间事件 |
 | `network()` | `network` | HTTP 和 SSE |
-| `webSockets()` | `websocket` | WebSocket |
-| `android()` | `android_apis` | 受控 Android 门面 |
-| `ui()` | `ui_pages` / `ui_renderers` | 页面和 Renderer |
+| `webSockets()` | `network` | WebSocket |
+| `android()` | `device` | 受控 Android 门面 |
+| `ui()` | `ui` | 页面和 Renderer |
 | `llm()` | `llm_providers` | 模型 Provider |
 
 设置适合小型键值配置。读取和写入都是异步 `CompletableFuture`，插件应避免在主线程
@@ -701,7 +686,8 @@ subscription.close();
 
 ## 11. 网络请求、SSE 和 WebSocket
 
-网络能力由 Manifest 的 `network`、`websocket` 和 `host_permissions` 共同控制。
+网络能力由 Manifest 的 `network` 和 `host_permissions` 共同控制；HTTP、SSE 和
+WebSocket 使用同一个网络权限组。
 
 普通 HTTP 请求使用 `PluginHttpRequest`：
 
@@ -794,7 +780,7 @@ public CompletableFuture<List<PluginCommandSpec>> listCommandsAsync() {
 
 ```json
 {
-  "permissions": ["ui_pages", "ui_renderers"],
+  "permissions": ["ui"],
   "contributes": {
     "pages": [
       {
@@ -884,7 +870,7 @@ public final class HelloProvider implements PluginLlmProvider {
 
 ```json
 {
-  "permissions": ["speech_providers"],
+  "permissions": ["agent"],
   "contributes": {
     "speech_providers": "contributions/speech.json"
   }
@@ -1029,16 +1015,16 @@ Activity Hook。Profile 必须同时校验包名、`versionCode` 和需要的关
 常见问题通常来自四处。入口类找不到，说明 Manifest 类名、Java 包名或 keep rules
 不一致。Host API 抛 `UnsupportedOperationException`，说明 Manifest 没声明对应
 Capability。网络 Host 被拒绝，说明 `host_permissions` 缺失。设置页打不开，通常是
-`settings` 权限或 `contributes.settings` Schema 缺失。
+`storage` 权限或 `contributes.settings` Schema 缺失。
 
 | 症状 | 优先检查 |
 | --- | --- |
 | 插件中心没有图标 | 插件 ID、Manifest 路径、源码模块是否被 Debug 构建发现 |
 | `ClassNotFoundException` | `entry_class`、Java 包名、consumer keep rules |
-| 工具没有出现在 Agent 中 | `agent_tools` 权限、`AgentToolProvider`、工具 Schema |
+| 工具没有出现在 Agent 中 | `agent` 权限、`AgentToolProvider`、工具 Schema |
 | Host API 抛异常 | 对应 Capability 是否在 Manifest 声明 |
-| 网络请求被拒绝 | `host_permissions`、HTTP/WebSocket 对应权限 |
-| 设置页打开后显示错误 | `settings` 权限、Schema 路径、字段类型或校验规则 |
+| 网络请求被拒绝 | `network` 权限、`host_permissions` 和 URL 白名单 |
+| 设置页打开后显示错误 | `storage` 权限、Schema 路径、字段类型或校验规则 |
 | 重启后提示恢复失败 | 安装包 Manifest、DEX、入口类和手机存储目录 |
 | 插件分享包无法安装 | 是否包含 `manifest.json` 和有效 `classes.dex` |
 
@@ -1102,16 +1088,16 @@ consumer keep rules、声明式设置 Schema、工具 View 和运行时代理入
 | `PluginLifecycle` | 初始化和释放插件 | 无 |
 | `AgentHookPlugin` | 提示词和直接问答 | `agent_prompt`、`agent_question` |
 | `AgentModelHookPlugin` | 模型请求检查 | `agent_model_request` |
-| `AgentToolProvider` | 提供工具 | `agent_tools` |
+| `AgentToolProvider` | 提供工具 | `agent` |
 | `AgentToolHookPlugin` | 工具前后 Hook | `agent_tool_hooks` |
 | `AgentToolPresentationPlugin` | 工具结果 View | `agent_tool_presentation` |
-| `PluginSettingView` | 导入 Schema 的宿主渲染设置表单 | `settings` |
+| `PluginSettingView` | 导入 Schema 的宿主渲染设置表单 | `storage` |
 | `PluginCommandProvider` | 命令 | `commands` |
-| `PluginUiProvider` | 页面和 Renderer | `ui_pages`、`ui_renderers` |
+| `PluginUiProvider` | 页面和 Renderer | `ui` |
 | `PluginLlmProvider` | 模型 Provider | `llm_providers` |
 | `PluginSpeechProvider` | 文字转 PCM 语音 Provider | `speech_providers` |
-| `RuntimeProxyPlugin` | 启动策略 | `runtime_launch_policy` |
-| `RuntimeProfileProvider` | 目标 Application / Activity Hook | `runtime_hooks` |
+| `RuntimeProxyPlugin` | 启动策略 | `runtime` |
+| `RuntimeProfileProvider` | 目标 Application / Activity Hook | `runtime` |
 
 可以只实现其中一个接口，也可以在一个入口类中组合多个接口。组合时应保证所有接口使用
 同一个 `manifest.json`。宿主在附加插件时统一注入 Manifest Descriptor，Java 代码不

@@ -74,6 +74,7 @@ internal fun FloatingDotDetailScreen() {
     var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var showSpeechSources by remember { mutableStateOf(false) }
     val speechProgress by LocalSpeechModelStore.progress.collectAsState()
+    val speechMetrics by LocalSpeechModelStore.metrics.collectAsState()
     val speechSource by LocalSpeechModelStore.source.collectAsState()
     val modelRevision by LocalSpeechModelStore.revision.collectAsState()
     val settingsRevision by AppSettingsEvents.revision.collectAsState()
@@ -84,6 +85,7 @@ internal fun FloatingDotDetailScreen() {
     val speechSpec = LocalSpeechModelStore.spec(config.speechLanguage)
     val speechPercent = speechProgress[config.speechLanguage]
     val speechDownloading = speechPercent != null && speechPercent in 0..99
+    val speechTransfer = speechMetrics[config.speechLanguage]
     val speechDownloaded = remember(config.speechLanguage, modelRevision) {
         LocalSpeechModelStore.isReady(context, config.speechLanguage)
     }
@@ -351,15 +353,29 @@ internal fun FloatingDotDetailScreen() {
                     ) {
                         Text(
                             AppLanguage.tr(
-                                "当前线路：${speechSource[config.speechLanguage] ?: "测速中…"}",
-                                "Current path: ${speechSource[config.speechLanguage] ?: "testing speed…"}"
-                            ),
+                                "当前线路：${speechSource[config.speechLanguage] ?: "正在选择下载线路中…"}",
+                                "Current line: ${speechSource[config.speechLanguage] ?: "choosing a download line…"}"
+                            ) + buildString {
+                                speechTransfer?.speedText()
+                                    ?.takeIf(String::isNotBlank)
+                                    ?.let { append(" · ").append(it) }
+                                speechTransfer?.remainingText()
+                                    ?.takeIf(String::isNotBlank)
+                                    ?.let {
+                                        append(
+                                            AppLanguage.tr(
+                                                " · 预计剩余时间 $it",
+                                                " · Estimated remaining $it"
+                                            )
+                                        )
+                                    }
+                            },
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
                         TextButton(onClick = { showSpeechSources = true }) {
-                            Text(AppLanguage.tr("切换下载路径", "Change path"))
+                            Text(AppLanguage.tr("切换下载线路", "Switch line"))
                         }
                     }
                 }
@@ -428,7 +444,7 @@ internal fun FloatingDotDetailScreen() {
     if (showSpeechSources) {
         AlertDialog(
             onDismissRequest = { showSpeechSources = false },
-            title = { Text(AppLanguage.tr("切换下载路径", "Change download path")) },
+            title = { Text(AppLanguage.tr("切换下载线路", "Switch download line")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     speechSpec.mirrors.forEach { mirror ->

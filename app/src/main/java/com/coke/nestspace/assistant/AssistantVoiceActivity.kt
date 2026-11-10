@@ -49,7 +49,6 @@ import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
@@ -96,6 +95,7 @@ import com.coke.nestspace.data.LlmConfigStore
 import com.coke.nestspace.ui.ModelSettingsNavigation
 import com.coke.nestspace.ui.agent.UserGateHost
 import com.coke.nestspace.ui.agent.DownloadProgressCard
+import com.coke.nestspace.ui.agent.ModelDisconnectedIcon
 import com.coke.nestspace.data.AgentMessage
 import com.coke.nestspace.ui.markdown.MarkdownBlock
 import com.coke.nestspace.ui.markdown.markdownAnnotatedString
@@ -105,6 +105,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.combine
 import org.json.JSONObject
 import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener as VoskRecognitionListener
@@ -229,12 +230,18 @@ class AssistantVoiceActivity : ComponentActivity() {
         }
 
         lifecycleScope.launch {
-            LocalSpeechModelStore.progress.collect { progress ->
+            combine(
+                LocalSpeechModelStore.progress,
+                LocalSpeechModelStore.metrics
+            ) { progress, metrics ->
+                progress to metrics
+            }.collect { (progress, metrics) ->
                 if (!preparing || showInput) return@collect
                 val percent = progress[speechLanguage] ?: return@collect
                 downloadPercent = percent
                 val spec = LocalSpeechModelStore.spec(speechLanguage)
                 val mirror = LocalSpeechModelStore.source.value[speechLanguage]
+                val transfer = metrics[speechLanguage]
                 status = when {
                     percent < 0 -> AppLanguage.tr(
                         "本地语音模型下载失败，点击键盘输入文字",
@@ -244,18 +251,37 @@ class AssistantVoiceActivity : ComponentActivity() {
                         AppLanguage.tr("正在加载本地语音模型…", "Loading the local speech model…"),
                         "Loading the local speech model…"
                     )
-                    percent == 0 -> AppLanguage.tr(
-                        "正在选择最快的模型服务器…",
-                        "Choosing the fastest model server…"
+                    percent == 0 && mirror == null -> AppLanguage.tr(
+                        "正在选择下载线路中…",
+                        "Choosing a download line…"
                     )
-                    else -> AppLanguage.tr(
-                        "从${mirror ?: "模型服务器"}下载" +
-                            "${spec.displayName}模型 $percent%" +
-                            "（约 ${spec.approximateMb}MB，仅首次）",
-                        "Downloading the ${spec.displayName} model from " +
-                            "${mirror ?: "the model server"} $percent% " +
-                            "(about ${spec.approximateMb} MB, first time only)"
-                    )
+                    else -> {
+                        val speed = transfer?.speedText()
+                            ?.takeIf(String::isNotBlank)
+                        val eta = transfer?.remainingText()
+                            ?.takeIf(String::isNotBlank)
+                        buildString {
+                            append(AppLanguage.tr("线路 ", "Line "))
+                            append(
+                                mirror ?: AppLanguage.tr(
+                                    "模型服务器",
+                                    "model server"
+                                )
+                            )
+                            append(" · $percent%")
+                            speed?.let {
+                                append(" · ").append(it)
+                            }
+                            eta?.let {
+                                append(
+                                    AppLanguage.tr(
+                                        " · 预计剩余时间 $it",
+                                        " · Estimated remaining $it"
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -918,14 +944,15 @@ private fun ModelSetupPrompt(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Icon(
-                Icons.Default.Settings,
-                contentDescription = null,
+            ModelDisconnectedIcon(
                 tint = accent,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(46.dp)
             )
             Text(
-                AppLanguage.tr("请先配置模型", "Configure a model first"),
+                AppLanguage.tr(
+                    "还没有配置大模型",
+                    "No model configured"
+                ),
                 color = Color.White,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
@@ -947,7 +974,10 @@ private fun ModelSetupPrompt(
                 color = accent
             ) {
                 Text(
-                    AppLanguage.tr("去配置", "Configure"),
+                    AppLanguage.tr(
+                        "去配置大模型",
+                        "Configure a model"
+                    ),
                     modifier = Modifier.padding(horizontal = 22.dp, vertical = 9.dp),
                     color = Color.White,
                     style = MaterialTheme.typography.labelLarge,

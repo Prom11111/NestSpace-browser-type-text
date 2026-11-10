@@ -105,6 +105,7 @@ import com.coke.nestspace.plugin.PluginDescriptor
 import com.coke.nestspace.plugin.PluginLlmProviders
 import com.coke.nestspace.plugin.PluginManifest
 import com.coke.nestspace.plugin.PluginPackageInstaller
+import com.coke.nestspace.plugin.PluginPermission
 import com.coke.nestspace.plugin.PluginSourceRegistry
 import com.coke.nestspace.plugin.PluginSourceLoader
 import com.coke.nestspace.plugin.PluginSettingsField
@@ -1231,27 +1232,28 @@ private fun EmptyPluginResults() {
 @OptIn(ExperimentalLayoutApi::class)
 private fun PluginCapabilitySummary(capabilities: Set<PluginCapability>) {
     if (capabilities.isEmpty()) return
+    val permissions = PluginPermission.groupsFor(capabilities).toList()
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        capabilities.take(4).forEach { capability ->
+        permissions.take(4).forEach { permission ->
             AssistChip(
                 onClick = {},
                 label = {
                     Text(
-                        capabilityLabel(capability),
+                        permissionLabel(permission),
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
             )
         }
-        if (capabilities.size > 4) {
+        if (permissions.size > 4) {
             AssistChip(
                 onClick = {},
                 label = {
                     Text(
-                        "+${capabilities.size - 4}",
+                        "+${permissions.size - 4}",
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
@@ -1788,8 +1790,19 @@ private fun PluginDescriptor.toDetail(
     builtin = builtin
 )
 
-private fun capabilityLabel(capability: PluginCapability): String =
-    capability.name.lowercase().replace('_', ' ')
+private fun permissionLabel(permission: PluginPermission): String =
+    when (permission) {
+        PluginPermission.AGENT -> AppLanguage.tr("Agent", "Agent")
+        PluginPermission.RUNTIME -> AppLanguage.tr("运行时", "Runtime")
+        PluginPermission.AUTOMATION -> AppLanguage.tr("自动化", "Automation")
+        PluginPermission.STORAGE -> AppLanguage.tr("存储", "Storage")
+        PluginPermission.SECRETS -> AppLanguage.tr("密钥", "Secrets")
+        PluginPermission.CONTENT -> AppLanguage.tr("内容交互", "Content")
+        PluginPermission.UI -> AppLanguage.tr("界面", "UI")
+        PluginPermission.NOTIFICATIONS -> AppLanguage.tr("通知", "Notifications")
+        PluginPermission.NETWORK -> AppLanguage.tr("网络", "Network")
+        PluginPermission.DEVICE -> AppLanguage.tr("设备能力", "Device")
+    }
 
 private fun categoryLabel(category: PluginCategory): String = when (category) {
     PluginCategory.ALL -> AppLanguage.tr("全部", "All")
@@ -1813,6 +1826,8 @@ private fun PluginManifest.matches(
         append(publisher).append(' ')
         append(description).append(' ')
         capabilities.forEach { append(it.name).append(' ') }
+        PluginPermission.groupsFor(capabilities)
+            .forEach { append(it.id()).append(' ') }
     }.lowercase()
     return (query.isBlank() || haystack.contains(query.trim().lowercase())) &&
         capabilities.matchesCategory(category)
@@ -1830,6 +1845,8 @@ private fun PluginDescriptor.matches(
         append(id).append(' ')
         append(description).append(' ')
         capabilities.forEach { append(it.name).append(' ') }
+        PluginPermission.groupsFor(capabilities)
+            .forEach { append(it.id()).append(' ') }
     }.lowercase()
     return (query.isBlank() || haystack.contains(query.trim().lowercase())) &&
         capabilities.matchesCategory(category)

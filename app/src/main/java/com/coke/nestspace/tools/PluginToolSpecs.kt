@@ -14,6 +14,7 @@ import com.coke.nestspace.plugin.PluginCommandPlugins
 import com.coke.nestspace.plugin.PluginCommandResult
 import com.coke.nestspace.plugin.PluginManifest
 import com.coke.nestspace.plugin.PluginPackageInstaller
+import com.coke.nestspace.plugin.PluginPermission
 import com.coke.nestspace.plugin.PluginFileStore
 import com.coke.nestspace.plugin.PluginSourceRegistry
 import kotlinx.coroutines.Dispatchers
@@ -483,6 +484,13 @@ private fun pluginCatalogJson(context: Context): JSONObject {
                 "capabilities",
                 JSONArray(descriptor.capabilities.map { it.name })
             )
+            .put(
+                "permissions",
+                JSONArray(
+                    PluginPermission.groupsFor(descriptor.capabilities)
+                        .map { it.id() }
+                )
+            )
     }
     return JSONObject().put("plugins", JSONArray(all.values))
 }
@@ -508,6 +516,13 @@ private fun pluginManifestJson(
     .put(
         "capabilities",
         JSONArray(manifest.capabilities.map { it.name })
+    )
+    .put(
+        "permissions",
+        JSONArray(
+            PluginPermission.groupsFor(manifest.capabilities)
+                .map { it.id() }
+        )
     )
     .put("has_html_page", manifest.htmlPage.isNotBlank())
     .put("has_settings_schema", manifest.contributions.settingsPath.isNotBlank())

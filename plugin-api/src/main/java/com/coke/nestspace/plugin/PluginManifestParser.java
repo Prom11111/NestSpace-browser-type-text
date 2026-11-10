@@ -331,28 +331,45 @@ public final class PluginManifestParser {
         String field
     ) {
         Set<PluginCapability> result = EnumSet.noneOf(PluginCapability.class);
+        Set<String> normalizedValues = new LinkedHashSet<>();
         if (array == null) {
             return result;
         }
         for (int index = 0; index < array.length(); index++) {
             String value = array.optString(index, "").trim();
-            PluginCapability capability;
-            try {
-                capability = PluginCapability.valueOf(
-                    value.toUpperCase(Locale.ROOT).replace('-', '_')
-                );
-            } catch (IllegalArgumentException error) {
-                throw new IllegalArgumentException(
-                    field + " contains unknown permission: " + value
-                );
-            }
-            if (!result.add(capability)) {
+            String normalizedValue = value
+                .toUpperCase(Locale.ROOT)
+                .replace('-', '_');
+            if (!normalizedValues.add(normalizedValue)) {
                 throw new IllegalArgumentException(
                     field + " contains duplicate permission: " + value
                 );
             }
+            Set<PluginCapability> expanded = capabilitiesFor(value);
+            if (expanded == null) {
+                throw new IllegalArgumentException(
+                    field + " contains unknown permission: " + value
+                );
+            }
+            for (PluginCapability capability : expanded) {
+                result.add(capability);
+            }
         }
         return result;
+    }
+
+    private static Set<PluginCapability> capabilitiesFor(String value) {
+        PluginPermission permission = PluginPermission.fromId(value);
+        if (permission != null) return permission.capabilities();
+        String normalized = value.toUpperCase(Locale.ROOT).replace('-', '_');
+        if ("RUNTIME_PROXY".equals(normalized)) {
+            return EnumSet.of(PluginCapability.RUNTIME_LAUNCH_POLICY);
+        }
+        try {
+            return EnumSet.of(PluginCapability.valueOf(normalized));
+        } catch (IllegalArgumentException error) {
+            return null;
+        }
     }
 
     private static HostPermissions parseHostPermissions(JSONArray array) {

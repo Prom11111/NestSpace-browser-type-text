@@ -98,12 +98,27 @@ internal fun WelcomeState(
     onSuggestion: (String) -> Unit
 ) {
     if (!configured) {
-        Box(
+        Column(
             modifier = modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
+            ModelDisconnectedIcon(
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(76.dp)
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                AppLanguage.tr(
+                    "还没有配置大模型",
+                    "No model configured"
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(14.dp))
             Button(onClick = onConfigure) {
-                Text(AppLanguage.tr("去配置", "Configure"))
+                Text(AppLanguage.tr("去配置大模型", "Configure a model"))
             }
         }
         return
