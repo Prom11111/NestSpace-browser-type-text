@@ -222,6 +222,7 @@ Capability 可以保持兼容；删除方法、改变方法签名或更换类型
 | `agent_tool_hooks` | 调用前改写或阻断工具 |
 | `agent_tool_presentation` | 自定义工具结果展示 |
 | `llm_providers` | 注册模型 Provider |
+| `speech_providers` | 注册语音合成 Provider |
 | `commands` | 注册命令 |
 | `tasks` | 提交托管后台任务 |
 | `events` | 发布和订阅事件 |
@@ -258,6 +259,7 @@ Capability 可以保持兼容；删除方法、改变方法签名或更换类型
 | `commands` | `contributions/commands.json` | `commands` |
 | `settings` | `contributions/settings.schema.json` | `settings` |
 | `llm_providers` | `contributions/llm.json` | `llm_providers` |
+| `speech_providers` | `contributions/speech.json` | `speech_providers` |
 | `pages` | `pages/overview.json` | `ui_pages` |
 | `result_renderers` | Manifest 内联对象 | `ui_renderers` |
 
@@ -883,6 +885,71 @@ public final class HelloProvider implements PluginLlmProvider {
 }
 ```
 
+### 12.1 语音合成 Provider
+
+插件负责把文字转换成 PCM 语音，宿主负责音频焦点、播放队列、停止和扬声器输出。
+实现 `PluginSpeechProvider`，并在 Manifest 声明 `speech_providers`：
+
+```json
+{
+  "permissions": ["speech_providers"],
+  "contributes": {
+    "speech_providers": "contributions/speech.json"
+  }
+}
+```
+
+```java
+public final class HelloSpeechProvider implements PluginSpeechProvider {
+
+    @Override
+    public PluginDescriptor getDescriptor() {
+        return DESCRIPTOR;
+    }
+
+    @Override
+    public String getProviderId() {
+        return "hello-speech";
+    }
+
+    @Override
+    public String getDisplayName() {
+        return "Hello speech";
+    }
+
+    @Override
+    public CompletableFuture<List<PluginSpeechVoice>> listVoicesAsync() {
+        return CompletableFuture.completedFuture(List.of(
+            new PluginSpeechVoice("default", "Default", "zh-CN", true)
+        ));
+    }
+
+    @Override
+    public CompletableFuture<PluginSpeechAudio> synthesizeAsync(
+        PluginSpeechRequest request
+    ) {
+        return CompletableFuture.supplyAsync(() -> {
+            byte[] pcm16Le = synthesize(request);
+            return new PluginSpeechAudio(
+                pcm16Le,
+                request.getSampleRateHz(),
+                1
+            );
+        });
+    }
+}
+```
+
+Provider 返回的音频必须是单声道或双声道、16-bit little-endian PCM，采样率
+8000–48000 Hz，单次时长不超过 120 秒。宿主提供统一 Agent 工具：
+
+- `speech_speak`：合成并加入宿主播放队列；
+- `speech_stop`：停止当前和排队中的播报；
+- `speech_status`：查看当前 Provider、播放状态和队列长度。
+
+插件不得直接播放音频或自行请求 AudioFocus。Provider 被停用、卸载或 `onDetach()`
+时，宿主会取消合成并停止它产生的播报。
+
 ## 13. 运行时代理
 
 运行时代理处理的是目标 APK 的运行差异。
@@ -1097,6 +1164,7 @@ consumer keep rules、自定义设置 View、工具 View 和运行时代理入�
 | `PluginCommandProvider` | 命令 | `commands` |
 | `PluginUiProvider` | 页面和 Renderer | `ui_pages`、`ui_renderers` |
 | `PluginLlmProvider` | 模型 Provider | `llm_providers` |
+| `PluginSpeechProvider` | 文字转 PCM 语音 Provider | `speech_providers` |
 | `RuntimeProxyPlugin` | 启动策略 | `runtime_launch_policy` |
 | `RuntimeProxyExtensionProvider` | 运行时扩展描述 | `runtime_proxy` |
 

@@ -24,6 +24,7 @@ public class PluginManifestParserTest {
                 + "\"priority\":20,"
                 + "\"permissions\":[\"agent_question\",\"agent_tools\","
                 + "\"commands\",\"settings\",\"llm_providers\","
+                + "\"speech_providers\","
                 + "\"ui_pages\",\"ui_renderers\",\"network\","
                 + "\"websocket\",\"storage\"],"
                 + "\"optional_permissions\":[\"notifications\"],"
@@ -40,6 +41,7 @@ public class PluginManifestParserTest {
                 + "\"commands\":\"commands.json\","
                 + "\"settings\":\"settings.schema.json\","
                 + "\"llm_providers\":\"llm.json\","
+                + "\"speech_providers\":\"speech.json\","
                 + "\"pages\":[{\"id\":\"dashboard\",\"title\":\"Dashboard\","
                 + "\"entry\":\"pages/dashboard.json\"}],"
                 + "\"result_renderers\":[{\"id\":\"chart\","
@@ -82,6 +84,10 @@ public class PluginManifestParserTest {
             manifest.getContributions().getAgentToolsPath()
         );
         assertEquals(
+            "speech.json",
+            manifest.getContributions().getSpeechProvidersPath()
+        );
+        assertEquals(
             "dashboard",
             manifest.getContributions().getPages().get(0).getId()
         );
@@ -117,6 +123,15 @@ public class PluginManifestParserTest {
             PluginManifestParser.parse(manifest(
                 "\"permissions\":[\"network\"],"
                     + "\"host_permissions\":[\"wss://example.com/*\"]"
+            ))
+        );
+    }
+
+    @Test
+    public void speechContributionRequiresCapability() {
+        assertThrows(IllegalArgumentException.class, () ->
+            PluginManifestParser.parse(manifest(
+                "\"contributes\":{\"speech_providers\":\"speech.json\"}"
             ))
         );
     }

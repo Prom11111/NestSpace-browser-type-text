@@ -6,6 +6,7 @@
 -keep class * implements com.coke.nestspace.plugin.PluginCommandProvider { *; }
 -keep class * implements com.coke.nestspace.plugin.PluginUiProvider { *; }
 -keep class * implements com.coke.nestspace.plugin.PluginLlmProvider { *; }
+-keep class * implements com.coke.nestspace.plugin.PluginSpeechProvider { *; }
 -keep class * implements com.coke.nestspace.plugin.AgentHookPlugin { *; }
 -keep class * implements com.coke.nestspace.plugin.AgentModelHookPlugin { *; }
 -keep class * implements com.coke.nestspace.plugin.AgentToolPresentationPlugin { *; }

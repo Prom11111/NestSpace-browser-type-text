@@ -144,6 +144,19 @@ Debug 构建提供，不能通过 MCP 删除；外部插件可以卸载并清理
 
 外部工具不注册进 NestSpace 的 `ToolRegistry`，远程 MCP 客户端看不到也不能直接调用它们。严格权限模式下每次外部工具调用都会确认；标准/宽松/自定义模式按「外部 MCP 工具」权限项处理。Token 使用 Android Keystore 加密保存。
 
+### 语音播报
+
+启用带 `speech_providers` 能力的插件后，统一提供：
+
+| 工具 | 说明 |
+| --- | --- |
+| `speech_speak` | 通过插件合成文字并由宿主播放，可指定 `provider_id`、`voice_id`、`locale`、`rate`、`pitch` 和 `interrupt` |
+| `speech_stop` | 停止当前和排队中的播报 |
+| `speech_status` | 查看当前 Provider、播放状态和队列长度 |
+
+插件只返回 PCM16LE 音频，不支持插件自行播放或请求 AudioFocus。未启用语音 Provider
+时，`speech_speak` 返回 `SPEECH_PROVIDER_UNAVAILABLE`。
+
 ## 会话与限制
 
 - 每个客户端使用独立的 `Mcp-Session-Id`，空闲 30 分钟后回收；未知会话返回 404。

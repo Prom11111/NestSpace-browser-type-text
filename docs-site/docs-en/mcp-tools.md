@@ -119,6 +119,18 @@ For `nestspace_llm_config`'s `save`, omitting `api_key` keeps the original Key, 
 
 External tools are not registered in NestSpace's `ToolRegistry`, so remote MCP clients cannot see or call them directly. In Strict permission mode, every external tool call is confirmed; Standard/Loose/Custom modes handle it according to the **External MCP tools** permission item. The Token is encrypted with the Android Keystore.
 
+## Speech playback
+
+After enabling a plugin with the `speech_providers` capability, NestSpace exposes:
+
+| Tool | Description |
+| --- | --- |
+| `speech_speak` | Synthesizes text through the plugin and lets the host play it; supports `provider_id`, `voice_id`, `locale`, `rate`, `pitch` and `interrupt` |
+| `speech_stop` | Stops the current and queued speech |
+| `speech_status` | Reports the active provider, playback state and queue length |
+
+Plugins return PCM16LE audio only. They cannot start playback or request AudioFocus directly. Without an enabled speech provider, `speech_speak` returns `SPEECH_PROVIDER_UNAVAILABLE`.
+
 ## Sessions and limits
 
 - Each client uses its own `Mcp-Session-Id`, which is reclaimed after 30 minutes of inactivity; unknown sessions return 404.

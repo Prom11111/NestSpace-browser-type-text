@@ -12,6 +12,7 @@ public final class PluginContributions {
     private final String commandsPath;
     private final String settingsPath;
     private final String llmProvidersPath;
+    private final String speechProvidersPath;
     private final List<PluginPageSpec> pages;
     private final List<PluginRendererSpec> renderers;
 
@@ -20,6 +21,7 @@ public final class PluginContributions {
         String commandsPath,
         String settingsPath,
         String llmProvidersPath,
+        String speechProvidersPath,
         List<PluginPageSpec> pages,
         List<PluginRendererSpec> renderers
     ) {
@@ -27,6 +29,7 @@ public final class PluginContributions {
         this.commandsPath = commandsPath;
         this.settingsPath = settingsPath;
         this.llmProvidersPath = llmProvidersPath;
+        this.speechProvidersPath = speechProvidersPath;
         this.pages = pages == null || pages.isEmpty()
             ? Collections.emptyList()
             : Collections.unmodifiableList(pages);
@@ -51,6 +54,10 @@ public final class PluginContributions {
         return llmProvidersPath;
     }
 
+    public String getSpeechProvidersPath() {
+        return speechProvidersPath;
+    }
+
     public List<PluginPageSpec> getPages() {
         return pages;
     }
@@ -64,6 +71,7 @@ public final class PluginContributions {
             commandsPath.isEmpty() &&
             settingsPath.isEmpty() &&
             llmProvidersPath.isEmpty() &&
+            speechProvidersPath.isEmpty() &&
             pages.isEmpty() &&
             renderers.isEmpty();
     }

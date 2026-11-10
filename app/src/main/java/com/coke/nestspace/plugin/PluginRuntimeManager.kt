@@ -1,5 +1,7 @@
 package com.coke.nestspace.plugin
 
+import com.coke.nestspace.speech.SpeechGateway
+
 /**
  * Attaches one instantiated plugin to every Hook registry it implements.
  *
@@ -46,6 +48,9 @@ internal object PluginRuntimeManager {
             if (plugin is PluginLlmProvider) {
                 PluginLlmProviders.install(plugin)
             }
+            if (plugin is PluginSpeechProvider) {
+                PluginSpeechProviders.install(plugin)
+            }
             if (plugin is PluginSettingsViewProvider) {
                 PluginSettingsViewPlugins.install(plugin, context)
             }
@@ -78,6 +83,10 @@ internal object PluginRuntimeManager {
         if (plugin is PluginLlmProvider) {
             PluginLlmProviders.uninstallProvider(plugin.providerId)
         }
+        if (plugin is PluginSpeechProvider) {
+            PluginSpeechProviders.uninstall(plugin.providerId)
+            SpeechGateway.stopProvider(plugin.providerId)
+        }
         if (plugin is PluginLifecycle) {
             runCatching(plugin::onDetach)
         }
@@ -97,6 +106,7 @@ internal object PluginRuntimeManager {
         is PluginCommandProvider -> plugin.descriptor
         is PluginUiProvider -> plugin.descriptor
         is PluginLlmProvider -> plugin.descriptor
+        is PluginSpeechProvider -> plugin.descriptor
         is PluginSettingsViewProvider -> plugin.descriptor
         else -> error("plugin does not expose a descriptor")
     }

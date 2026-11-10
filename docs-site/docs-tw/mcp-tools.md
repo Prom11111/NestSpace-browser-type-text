@@ -119,6 +119,18 @@ NestSpace 內建 Streamable HTTP MCP Server，向本機 AI 助手和遠端 MCP �
 
 外部工具不註冊進 NestSpace 的 `ToolRegistry`，遠端 MCP 用戶端看不到也不能直接呼叫它們。嚴格權限模式下每次外部工具呼叫都會確認；標準/寬鬆/自訂模式依「外部 MCP 工具」權限項目處理。Token 使用 Android Keystore 加密儲存。
 
+## 語音播報
+
+啟用具有 `speech_providers` 能力的插件後，NestSpace 提供：
+
+| 工具 | 說明 |
+| --- | --- |
+| `speech_speak` | 透過插件合成文字並由宿主播放，可指定 `provider_id`、`voice_id`、`locale`、`rate`、`pitch` 和 `interrupt` |
+| `speech_stop` | 停止目前與佇列中的播報 |
+| `speech_status` | 查看目前 Provider、播放狀態與佇列長度 |
+
+插件只回傳 PCM16LE 音訊，不能自行開始播放或請求 AudioFocus。沒有已啟用的語音 Provider 時，`speech_speak` 會回傳 `SPEECH_PROVIDER_UNAVAILABLE`。
+
 ## 工作階段與限制
 
 - 每個用戶端使用獨立的 `Mcp-Session-Id`，閒置 30 分鐘後回收；未知工作階段傳回 404。

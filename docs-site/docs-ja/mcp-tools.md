@@ -119,6 +119,18 @@ NestSpace には Streamable HTTP MCP Server が内蔵されており、ローカ
 
 外部ツールは NestSpace の `ToolRegistry` に登録されず、リモート MCP クライアントからは見えず、直接呼び出すこともできません。厳格権限モードでは外部ツール呼び出しのたびに確認します。標準／緩和／カスタムモードでは「外部 MCP 工具」（外部 MCP ツール）の権限項目に従って処理されます。Token は Android Keystore で暗号化して保存されます。
 
+## 音声読み上げ
+
+`speech_providers` 権限を持つプラグインを有効にすると、NestSpace は次のツールを提供します。
+
+| ツール | 説明 |
+| --- | --- |
+| `speech_speak` | プラグインでテキストを音声合成し、ホストから再生します。`provider_id`、`voice_id`、`locale`、`rate`、`pitch`、`interrupt` を指定できます |
+| `speech_stop` | 現在および待機中の読み上げを停止します |
+| `speech_status` | 現在の Provider、再生状態、待機件数を返します |
+
+プラグインは PCM16LE 音声のみを返します。プラグイン自身が再生を開始したり AudioFocus を要求したりすることはできません。有効な音声 Provider がない場合、`speech_speak` は `SPEECH_PROVIDER_UNAVAILABLE` を返します。
+
 ## セッションと制限
 
 - 各クライアントは独立した `Mcp-Session-Id` を使用し、30 分間アイドル状態が続くと回収されます。不明なセッションには 404 を返します。

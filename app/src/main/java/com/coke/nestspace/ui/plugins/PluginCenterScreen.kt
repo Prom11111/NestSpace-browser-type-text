@@ -111,6 +111,7 @@ import com.coke.nestspace.plugin.PluginSettingsField
 import com.coke.nestspace.plugin.PluginSettingsSchema
 import com.coke.nestspace.plugin.PluginSettingsSchemaParser
 import com.coke.nestspace.plugin.PluginSettingsViewPlugins
+import com.coke.nestspace.plugin.PluginSpeechProviders
 import com.coke.nestspace.plugin.PluginUiPlugins
 import com.coke.nestspace.plugin.RuntimeProxyExtensions
 import com.coke.nestspace.plugin.RuntimeProxyPlugins
@@ -1967,6 +1968,7 @@ private fun Set<PluginCapability>.matchesCategory(
     PluginCategory.AGENT -> any {
         it.name.startsWith("AGENT_") ||
             it == PluginCapability.LLM_PROVIDERS ||
+            it == PluginCapability.SPEECH_PROVIDERS ||
             it == PluginCapability.COMMANDS
     }
     PluginCategory.DISPLAY -> any {
@@ -2006,6 +2008,9 @@ private fun registeredPlugins(): List<PluginDescriptor> {
         result[it.descriptor.id] = it.descriptor
     }
     AgentPlugins.snapshot().forEach {
+        result[it.descriptor.id] = it.descriptor
+    }
+    PluginSpeechProviders.snapshot().forEach {
         result[it.descriptor.id] = it.descriptor
     }
     AgentModelPlugins.snapshot().forEach {

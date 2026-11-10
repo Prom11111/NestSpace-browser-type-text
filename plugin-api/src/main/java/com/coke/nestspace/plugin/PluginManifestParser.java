@@ -180,6 +180,12 @@ public final class PluginManifestParser {
             "contributes.llm_providers"
         );
         requireContributionCapability(
+            !contributions.getSpeechProvidersPath().isEmpty(),
+            capabilities,
+            PluginCapability.SPEECH_PROVIDERS,
+            "contributes.speech_providers"
+        );
+        requireContributionCapability(
             !contributions.getPages().isEmpty(),
             capabilities,
             PluginCapability.UI_PAGES,
@@ -224,6 +230,7 @@ public final class PluginManifestParser {
                 "",
                 "",
                 "",
+                "",
                 Collections.emptyList(),
                 Collections.emptyList()
             );
@@ -233,6 +240,7 @@ public final class PluginManifestParser {
             contributionPath(json, "commands"),
             contributionPath(json, "settings"),
             contributionPath(json, "llm_providers"),
+            contributionPath(json, "speech_providers"),
             parsePages(json.optJSONArray("pages")),
             parseRenderers(json.optJSONArray("result_renderers"))
         );

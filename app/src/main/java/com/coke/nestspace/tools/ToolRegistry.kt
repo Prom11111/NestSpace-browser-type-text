@@ -188,6 +188,7 @@ class ToolRegistry(
             memoryToolSpecs() +
             sessionToolSpecs() +
             pluginToolSpecs() +
+            speechToolSpecs() +
             BrowserTools.create(context)
 
 

@@ -40,6 +40,7 @@
 | 分享与剪贴板 | 已实现 | 文本/文件分享和敏感剪贴板标记 |
 | UI 页面与 Renderer | 部分实现 | 注册表、Manifest 和 JSON 解析已完成，通用 Compose 宿主页待接 |
 | LLM Provider | 已实现 | `plugin://provider-id` 接入模型配置；统一 `executeAsync()`，按用户开关返回流式或完整结果 |
+| Speech Provider | 已实现 | 插件返回 PCM16LE，宿主负责音频焦点、队列、停止和统一 Agent 工具 |
 | 通知 Host API | 已实现 | 插件命名空间、独立渠道、动作和权限检查 |
 | 网络 Host API | 已实现 | HTTP(S)、域名白名单、超时和大小限制 |
 | SSE Host API | 已实现 | HTTP/HTTPS 流式事件、多行 data、事件 ID 和 retry |
@@ -95,6 +96,7 @@ Kotlin 只用于 NestSpace 内部实现和适配。
 | `AGENT_TOOL_HOOKS` | 拦截或观察工具调用 |
 | `AGENT_TOOL_PRESENTATION` | 修改工具调用展示 |
 | `LLM_PROVIDERS` | 注册模型 Provider |
+| `SPEECH_PROVIDERS` | 注册文字转语音 Provider，音频由宿主统一播放 |
 | `COMMANDS` | 注册可执行命令 |
 | `TASKS` | 创建托管后台任务 |
 | `EVENTS` | 订阅和发布插件事件 |
@@ -1095,6 +1097,19 @@ plugin://example-provider
 插件 Provider 自己持有凭据，应通过 `secrets()` 保存。宿主不会把其他模型的 API Key
 传给 Provider。
 
+### 8.14 Speech Provider
+
+`PluginSpeechProvider` 负责插件自己的 TTS 实现，包括音色、语言、文本规整和 PCM
+合成。宿主不内置 TTS，也不在缺少插件时自动回退。
+
+Provider 返回 `PluginSpeechAudio`，其中只允许 PCM16LE 音频数据。宿主统一负责
+AudioFocus、播放队列、停止、缓存和扬声器输出，并通过 `speech_speak`、
+`speech_stop`、`speech_status` 暴露给 Agent 和 MCP。
+
+插件停用或卸载时，宿主会注销 Provider，并取消该 Provider 正在合成和播放的内容。
+云端 TTS 插件除 `speech_providers` 外还需声明 `network`，并使用 `secrets()` 保存
+自己的 API Key。
+
 ## 9. Java SDK 兼容性
 
 ### 9.1 编译要求
@@ -1417,6 +1432,7 @@ public interface RuntimeProxyExtensionProvider {
 - `AGENT_MODEL_REQUEST`：高权限；
 - `AGENT_TOOLS`：高权限；
 - `LLM_PROVIDERS`：高权限；
+- `SPEECH_PROVIDERS`：高权限，可生成音频但只能通过宿主播放；
 - `RUNTIME_PROXY`：高权限；
 - 原生代码：最高权限。
 

@@ -12,6 +12,7 @@ public enum PluginCapability {
     AGENT_TOOL_HOOKS,
     AGENT_TOOL_PRESENTATION,
     LLM_PROVIDERS,
+    SPEECH_PROVIDERS,
     COMMANDS,
     TASKS,
     EVENTS,
