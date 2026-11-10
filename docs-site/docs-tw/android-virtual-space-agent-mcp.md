@@ -426,7 +426,7 @@ interface AndroidAdapter {
 
 **Application：**
 
-- 由 `runtime-compat` 的 `CompatApplicationFactory` 建立目標 Application，並處理一般、Tinker 與 ApplicationLike 啟動鏈。
+- 由 `runtime-core` 的 `TargetApplicationFactory` 建立目標 Application，並處理一般、Tinker 與 ApplicationLike 啟動鏈。
 - `attachBaseContext(targetContext)` → `onCreate()`。
 - 目標應用程式的 `ContentProvider` 初始化順序要模擬（`installContentProviders`）。
 

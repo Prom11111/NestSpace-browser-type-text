@@ -426,7 +426,7 @@ interface AndroidAdapter {
 
 **Application：**
 
-- `runtime-compat` の `CompatApplicationFactory` で対象 Application を作成し、通常・Tinker・ApplicationLike の起動チェーンを処理します。
+- `runtime-core` の `TargetApplicationFactory` で対象 Application を作成し、通常・Tinker・ApplicationLike の起動チェーンを処理します。
 - `attachBaseContext(targetContext)` → `onCreate()`。
 - 対象アプリの `ContentProvider` 初期化順序を模擬する（`installContentProviders`）。
 

@@ -155,8 +155,7 @@ Kotlin 只用于 NestSpace 内部实现和适配。
 ```text
 :plugin-api       纯 Java 对外 SDK
 :runtime-api      共享运行时模型、控制面契约和稳定的运行时代理 Java API
-:runtime-core     容器、Agent 工具、启动编排
-:runtime-compat   通用兼容 Application factory 和 Tinker/AppLike 解析
+:runtime-core     容器、Agent 工具、启动编排、兼容 Application factory 和 Tinker/AppLike 解析
 :app              Compose UI、Agent、插件注册和能力适配
 example-plugin/plugin 随 Debug 宿主编译的完整源码插件
 dev-plugins/      开发者自己的 Debug 源码插件
@@ -168,10 +167,8 @@ dev-plugins/      开发者自己的 Debug 源码插件
 :app
 ├── :plugin-api
 ├── :runtime-api
-├── :runtime-core ──> :plugin-api
-│                   └──> :runtime-api
-└── :runtime-compat ──> :runtime-core
-                    └──> :plugin-api
+└── :runtime-core ──> :plugin-api
+                    └──> :runtime-api
 ```
 
 `plugin-api` 不依赖宿主实现。普通插件编译依赖该模块；需要目标运行时代理时再依赖
@@ -1377,10 +1374,10 @@ public interface RuntimeProxyExtensionProvider {
 }
 ```
 
-插件在 `PluginLifecycle.onAttach()` 中注册 `RuntimeCompatibilityProfileResolver`，
+插件在 `PluginLifecycle.onAttach()` 中注册 `RuntimeProfileResolver`，
 在 `onDetach()` 中反注册。Profile 可以使用：
 
-- `RuntimeCompatLaunchSpec` 的版本、进程、APK 和 Activity 信息；
+- `RuntimeLaunchSpec` 的版本、进程、APK 和 Activity 信息；
 - `RuntimeApkClassIndex` 枚举目标 DEX 类名；
 - 可直接比较的完整类名；
 - `RuntimePluginRuntime.withContainerClassLoader(...)`；

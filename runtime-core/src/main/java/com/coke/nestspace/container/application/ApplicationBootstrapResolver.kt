@@ -1,4 +1,4 @@
-package com.coke.nestspace.container.compat
+package com.coke.nestspace.container.application
 
 import android.app.Application
 import android.content.Intent

@@ -426,7 +426,7 @@ Instead of introducing a `StubActivity0..N` array, `StageAActivity` itself is re
 
 **Application:**
 
-- Create the target Application through `CompatApplicationFactory` in `runtime-compat`, covering the regular, Tinker, and ApplicationLike startup chains.
+- Create the target Application through `TargetApplicationFactory` in `runtime-core`, covering the regular, Tinker, and ApplicationLike startup chains.
 - `attachBaseContext(targetContext)` → `onCreate()`.
 - Simulate the target app's `ContentProvider` initialization order (`installContentProviders`).
 

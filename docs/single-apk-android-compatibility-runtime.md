@@ -19,7 +19,7 @@
 - 显式子进程组件若不在 base APK，会从实例已下载插件中定位包含该类的 APK，并按需统一挂载 DEX、Resources 和当前 ABI 的 native library 目录。
 - 已实现 manifest BroadcastReceiver 的跨进程路由：当前进程只分发本进程 receiver，其他 `android:process` 去重后异步绑定对应槽位；ordered broadcast 暂保持本地语义。
 - 已将 `SpaceStore` 升级为 v2，实例记录包含环境版本、兼容策略和最近探测结果，并兼容 v1 数据。
-- 已将目标业务 Hook 收拢到独立插件模块中的 `RuntimeCompatibilityProfile`。
+- 已将目标业务 Hook 收拢到独立插件模块中的 `RuntimeProfile`。
 - 已将 `FragmentPagerAdapter` 首次布局归一化从版本化 profile 提升为所有目标共用的 AndroidX UI 兼容层。
 - 已对目标 native 模块启用受控 GOT/PLT Hook，覆盖 UID 读取和基础路径 API；宿主/系统库不 patch。
 - `/proc/self/status`、`cmdline`、`maps`、`mountinfo` 已支持只读合成和 fd→虚拟路径映射；property 的 `get/find/read_callback/read/serial` 已读取 Java Build 设备快照；直接 inline syscall 和完整跨进程自动化矩阵仍需继续实现。
@@ -161,7 +161,7 @@ VirtualEnvironment
 | `ProcessIdentitySeedHook` | 预热进程名、账号配置和设备注册迁移缓存 | 进程名、PackageManager、Provider 和注册状态统一环境 | 部分可替换 |
 | `RequestSnapshotHook` | 代理目标业务 API 的安装列表快照 | 让目标自身初始化请求参数，并统一 PackageManager 视图 | 低可替换 |
 | `TargetFragmentPagerHook` | 处理 AndroidX FragmentPagerAdapter 重复 add | 通用的 ViewPager/Fragment 生命周期保护，只在检测到冲突时生效 | 机制可通用化 |
-| `CompatApplicationFactory` | AppComponentFactory、加固 Embedded Application、Tinker/ApplicationLike 启动链 | 已按加固命名空间、类继承和构造参数关系检测，不再绑定单个 App 包名或业务类名 | 基础路径已通用化 |
+| `TargetApplicationFactory` | AppComponentFactory、加固 Embedded Application、Tinker/ApplicationLike 启动链 | 已按加固命名空间、类继承和构造参数关系检测，不再绑定单个 App 包名或业务类名 | 基础路径已通用化 |
 | GMS/WebView/Provider/Job 等桥接 | 宿主系统能力代理 | 通用 Android Framework 服务 facade | 原本就是通用方向 |
 
 通用容器不包含目标 App 包名判断。少量版本兼容逻辑放在中性命名的版本 profile 中，只通过 versionCode 和结构指纹命中，通用层仅看到不透明 profile id；加固应用和 Tinker 解析器只识别框架命名空间、类继承和构造参数关系。
@@ -900,7 +900,7 @@ StageAActivity 显示 LaunchLoadingView
 后台目标线程的可隔离异常仍由 `TargetCrashGuard` 记录并继续容器。这样单个目标的半初始化
 状态不会拖垮其他实例，下一次启动会通过进程池的崩溃恢复流程重新创建槽位。
 
-启动页只覆盖容器初始化。目标 App 自己的 Splash、网络、图片、WebView 和首屏内容加载没有统一 Framework 回调，不能声称已经由容器精确观测；详见 13.1.4。目标业务初始化仍可由用户安装的版本化 `RuntimeCompatibilityProfile` 插件补齐，不再编译进通用容器。
+启动页只覆盖容器初始化。目标 App 自己的 Splash、网络、图片、WebView 和首屏内容加载没有统一 Framework 回调，不能声称已经由容器精确观测；详见 13.1.4。目标业务初始化仍可由用户安装的版本化 `RuntimeProfile` 插件补齐，不再编译进通用容器。
 
 交付：
 

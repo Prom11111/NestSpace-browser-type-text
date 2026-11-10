@@ -945,12 +945,12 @@ new RuntimeLaunchPolicy(
 
 如果需要在目标 Application attach、创建、目标 Activity 启动前安装 Hook，插件还要
 依赖 `runtime-api`，并在 `onAttach` 中注册
-`RuntimeCompatibilityProfileResolver`：
+`RuntimeProfileResolver`：
 
 ```java
 context = host;
 
-RuntimeCompatibilityProfiles.register(
+RuntimeProfiles.register(
     PLUGIN_ID,
     (spec, loader) -> ExampleRuntimeProfile.resolve(spec, loader)
 );
@@ -964,10 +964,10 @@ RuntimeCompatibilityProfiles.register(
 
 ```java
 public final class ExampleRuntimeProfile
-    implements RuntimeCompatibilityProfile {
+    implements RuntimeProfile {
 
-    public static RuntimeCompatibilityProfile resolve(
-        RuntimeCompatLaunchSpec spec,
+    public static RuntimeProfile resolve(
+        RuntimeLaunchSpec spec,
         ClassLoader loader
     ) {
         if (!TARGET_PACKAGE_NAME.equals(spec.getPackageName()) ||
@@ -989,7 +989,7 @@ public final class ExampleRuntimeProfile
 
     @Override
     public void afterApplicationCreated(
-        RuntimeCompatLaunchSpec spec,
+        RuntimeLaunchSpec spec,
         ClassLoader loader,
         Context context,
         Application application
@@ -1001,7 +1001,7 @@ public final class ExampleRuntimeProfile
 
 插件可以使用可直接阅读的完整包名和类名作为匹配条件，也可以通过构建步骤生成这些
 常量。通用 Tinker、AppLike、Application attach 和系统服务代理仍然属于
-`runtime-core`/`runtime-compat`，不能因为单个应用适配而修改核心分支。
+`runtime-core`，不能因为单个应用适配而修改核心分支。
 
 ## 14. 调试开发中的插件
 

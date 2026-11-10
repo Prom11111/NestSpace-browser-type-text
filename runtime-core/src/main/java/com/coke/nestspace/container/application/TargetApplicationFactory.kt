@@ -1,4 +1,4 @@
-package com.coke.nestspace.container.compat
+package com.coke.nestspace.container.application
 
 import android.app.Application
 import android.content.Context
@@ -9,11 +9,11 @@ import com.coke.nestspace.runtime.RuntimeApplicationFactory
 import com.coke.nestspace.runtime.RuntimeApplicationSpec
 
 /**
- * Compatibility Application backend. All hardened-Application detection and
- * manual attach rules live here; the generic container session only invokes
- * this factory through runtime-api.
+ * Target Application construction backend. All hardened-Application detection
+ * and manual attach rules live here; the generic container session only
+ * invokes this factory through runtime-api.
  */
-object CompatApplicationFactory : RuntimeApplicationFactory {
+object TargetApplicationFactory : RuntimeApplicationFactory {
     private const val TAG = "CompatAppFactory"
 
     override fun create(

@@ -8,8 +8,7 @@ NestSpace 的运行时由通用容器、Java-first 公共 SDK、运行时代理 
 :app
 ├── :plugin-api
 ├── :runtime-api
-├── :runtime-core
-└── :runtime-compat
+└── :runtime-core
 
 :dev-plugin-runtime-demo -> example-plugin/plugin
 :dev-plugin-<name>       -> dev-plugins/<name>
@@ -18,13 +17,12 @@ NestSpace 的运行时由通用容器、Java-first 公共 SDK、运行时代理 
 依赖方向：
 
 ```text
-:runtime-compat ──> :runtime-core ──> :runtime-api
-                                  └──> :plugin-api
+:runtime-core ──> :runtime-api
+                └──> :plugin-api
 
 :app ──> :plugin-api
      ├─> :runtime-api
-     ├─> :runtime-core
-     └─> :runtime-compat
+     └─> :runtime-core
 ```
 
 `plugin-api` 是对外 Java SDK。它包含 Manifest、Descriptor、Capability、Agent Hook、
@@ -38,8 +36,8 @@ Tinker/AppLike/Application attach 逻辑仍属于运行时核心。
 
 `runtime-api` 还保存容器引擎共享契约、数据模型、Application factory 注册表和宿主 hook。
 `runtime-core` 负责 APK 与实例存储、Session、Activity Host、进程槽位、Provider、
-生命周期、Native Facade 和 MCP UI。`runtime-compat` 负责通用目标 Application 启动链、
-兼容 Application factory 和 Tinker/AppLike 解析。
+生命周期、Native Facade、MCP UI，以及通用目标 Application 启动链、兼容
+Application factory 和 Tinker/AppLike 解析。
 
 `app` 是控制面，包含 Compose UI、Agent、插件中心、设置 View 宿主、安装器以及 Host API
 适配。它通过 `PluginRuntimeManager` 注册插件，不在 Agent、UI 或容器代码中写目标专用

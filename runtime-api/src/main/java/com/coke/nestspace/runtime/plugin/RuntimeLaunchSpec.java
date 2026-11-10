@@ -8,7 +8,7 @@ import java.util.Objects;
 /**
  * Stable, read-only target launch information exposed to runtime plugins.
  */
-public final class RuntimeCompatLaunchSpec {
+public final class RuntimeLaunchSpec {
 
     private final String sessionId;
     private final String spaceId;
@@ -25,7 +25,7 @@ public final class RuntimeCompatLaunchSpec {
     private final List<String> nativeAbis;
     private final int androidApi;
 
-    private RuntimeCompatLaunchSpec(Builder builder) {
+    private RuntimeLaunchSpec(Builder builder) {
         this.sessionId = builder.sessionId;
         this.spaceId = builder.spaceId;
         this.packageName = builder.packageName;
@@ -197,14 +197,14 @@ public final class RuntimeCompatLaunchSpec {
             return this;
         }
 
-        public RuntimeCompatLaunchSpec build() {
+        public RuntimeLaunchSpec build() {
             if (packageName.isEmpty()) {
                 throw new IllegalArgumentException("packageName is required");
             }
             if (baseApkPath.isEmpty()) {
                 throw new IllegalArgumentException("baseApkPath is required");
             }
-            return new RuntimeCompatLaunchSpec(this);
+            return new RuntimeLaunchSpec(this);
         }
 
         private static String safe(String value) {

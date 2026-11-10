@@ -27,7 +27,6 @@ include(":app")
 include(":plugin-api")
 include(":runtime-api")
 include(":runtime-core")
-include(":runtime-compat")
 include(":testapp")
 
 fun sanitizeProjectName(value: String): String =

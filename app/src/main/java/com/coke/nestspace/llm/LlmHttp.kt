@@ -2,47 +2,58 @@ package com.coke.nestspace.llm
 
 import com.coke.nestspace.i18n.AppLanguage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 class LlmHttpException(message: String) : Exception(message)
 
 object LlmHttp {
 
+    private const val USER_AGENT = "NestSpace/0.4"
+    private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+
+    private val baseClient = OkHttpClient.Builder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .retryOnConnectionFailure(false)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    private val jsonClient = baseClient.newBuilder()
+        .readTimeout(120, TimeUnit.SECONDS)
+        .build()
+
+    private val sseClient = baseClient.newBuilder()
+        .readTimeout(180, TimeUnit.SECONDS)
+        .build()
+
     suspend fun postJson(
         url: String,
         headers: Map<String, String>,
         body: JSONObject
-    ): JSONObject = withContext(Dispatchers.IO) {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            // Do not let HttpURLConnection replay the API key to a redirect
-            // target. A provider that needs a redirect must be configured
-            // with its final URL.
-            instanceFollowRedirects = false
-            connectTimeout = 30_000
-            readTimeout = 120_000
-            doInput = true
-            doOutput = true
-            useCaches = false
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "NestSpace/0.4")
-            headers.forEach { (name, value) -> setRequestProperty(name, value) }
-        }
-
-        try {
-            val payload = body.toString().toByteArray(Charsets.UTF_8)
-            connection.setFixedLengthStreamingMode(payload.size)
-            connection.outputStream.use { it.write(payload) }
-
-            val code = connection.responseCode
+    ): JSONObject {
+        val request = buildRequest(
+            url = url,
+            headers = headers,
+            body = body,
+            accept = "application/json",
+            identityEncoding = false
+        )
+        return executeCall(jsonClient, request) { response ->
+            val code = response.code
             if (code in 300..399) {
                 throw LlmHttpException(
                     AppLanguage.tr(
@@ -52,10 +63,11 @@ object LlmHttp {
                     )
                 )
             }
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.let { readLimited(it) }.orEmpty()
+            val text = response.body
+                ?.let { readLimited(it.byteStream()) }
+                .orEmpty()
 
-            if (code !in 200..299) {
+            if (!response.isSuccessful) {
                 throw LlmHttpException("HTTP $code: ${extractError(text)}")
             }
             if (text.isBlank()) throw LlmHttpException(AppLanguage.tr("接口返回空响应", "The API returned an empty response"))
@@ -68,8 +80,6 @@ object LlmHttp {
                     )
                 )
             }
-        } finally {
-            connection.disconnect()
         }
     }
 
@@ -84,27 +94,16 @@ object LlmHttp {
         headers: Map<String, String>,
         body: JSONObject,
         onData: (String) -> Boolean
-    ) = withContext(Dispatchers.IO) {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            instanceFollowRedirects = false
-            connectTimeout = 30_000
-            readTimeout = 180_000
-            doInput = true
-            doOutput = true
-            useCaches = false
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("Accept", "text/event-stream")
-            setRequestProperty("Accept-Encoding", "identity")
-            setRequestProperty("User-Agent", "NestSpace/0.4")
-            headers.forEach { (name, value) -> setRequestProperty(name, value) }
-        }
-        try {
-            val payload = body.toString().toByteArray(Charsets.UTF_8)
-            connection.setFixedLengthStreamingMode(payload.size)
-            connection.outputStream.use { it.write(payload) }
-
-            val code = connection.responseCode
+    ) {
+        val request = buildRequest(
+            url = url,
+            headers = headers,
+            body = body,
+            accept = "text/event-stream",
+            identityEncoding = true
+        )
+        executeCall(sseClient, request) { response ->
+            val code = response.code
             if (code in 300..399) {
                 throw LlmHttpException(
                     AppLanguage.tr(
@@ -114,21 +113,68 @@ object LlmHttp {
                     )
                 )
             }
-            if (code !in 200..299) {
-                val text = connection.errorStream?.let { readLimited(it) }.orEmpty()
+            if (!response.isSuccessful) {
+                val text = response.body
+                    ?.let { readLimited(it.byteStream()) }
+                    .orEmpty()
                 throw LlmHttpException("HTTP $code: ${extractError(text)}")
             }
-            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    val line = reader.readLine() ?: break
-                    if (!line.startsWith("data:")) continue
-                    val data = line.removePrefix("data:").trim()
-                    if (data.isNotEmpty() && !onData(data)) break
-                }
+            val source = response.body?.source()
+                ?: throw LlmHttpException(
+                    AppLanguage.tr("接口返回空响应", "The API returned an empty response")
+                )
+            while (!source.exhausted()) {
+                currentCoroutineContext().ensureActive()
+                val line = source.readUtf8Line() ?: break
+                if (!line.startsWith("data:")) continue
+                val data = line.removePrefix("data:").trim()
+                if (data.isNotEmpty() && !onData(data)) break
             }
+        }
+    }
+
+    private fun buildRequest(
+        url: String,
+        headers: Map<String, String>,
+        body: JSONObject,
+        accept: String,
+        identityEncoding: Boolean
+    ): Request {
+        val requestBody = body.toString().toRequestBody(JSON_MEDIA_TYPE)
+        return Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .header("Accept", accept)
+            .header("User-Agent", USER_AGENT)
+            .apply {
+                if (identityEncoding) {
+                    header("Accept-Encoding", "identity")
+                }
+                headers.forEach { (name, value) -> header(name, value) }
+            }
+            .build()
+    }
+
+    private suspend fun <T> executeCall(
+        client: OkHttpClient,
+        request: Request,
+        block: suspend (Response) -> T
+    ): T = withContext(Dispatchers.IO) {
+        val call = client.newCall(request)
+        val cancellation = currentCoroutineContext()[Job]
+            ?.invokeOnCompletion { call.cancel() }
+        try {
+            val response = call.execute()
+            try {
+                block(response)
+            } finally {
+                response.close()
+            }
+        } catch (error: IOException) {
+            currentCoroutineContext().ensureActive()
+            throw error
         } finally {
-            connection.disconnect()
+            cancellation?.dispose()
         }
     }
 

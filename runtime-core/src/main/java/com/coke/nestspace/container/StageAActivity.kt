@@ -1944,9 +1944,9 @@ open class StageAActivity : Activity() {
         }
         session.noteFirstActivityScheduled()
         targetRequestParameterHook?.close()
-        targetRequestParameterHook = session.compatibilityProfile
+        targetRequestParameterHook = session.runtimeProfile
             ?.installFirstActivityHooks(
-                session.compatibilitySpec,
+                session.applicationSpec,
                 session.loader,
                 session.context
             )

@@ -29,7 +29,7 @@ interface RuntimeApplicationFactory {
 
 object RuntimeApplicationFactories {
     @Volatile
-    var compat: RuntimeApplicationFactory? = null
+    var target: RuntimeApplicationFactory? = null
 }
 
 interface RuntimePluginInstaller {
@@ -40,14 +40,14 @@ interface RuntimePluginInstaller {
 }
 
 /**
- * The app composition root installs runtime backends by class name so a
- * native-only build can omit the compatibility module entirely.
+ * The app composition root installs runtime backends by class name so the API
+ * module does not need a compile-time dependency on runtime-core.
  */
 object RuntimePluginLoader {
     private val installed = LinkedHashMap<String, RuntimePluginInstaller>()
 
     private val coreInstallers = listOf(
-        "com.coke.nestspace.container.compat.CompatRuntimePlugin"
+        "com.coke.nestspace.container.application.ApplicationRuntimeInstaller"
     )
 
     @Synchronized

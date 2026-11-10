@@ -1,17 +1,17 @@
-package com.coke.nestspace.container.compat
+package com.coke.nestspace.container.application
 
 import com.coke.nestspace.container.ContainerLaunchSpec
-import com.coke.nestspace.runtime.plugin.RuntimeCompatLaunchSpec
+import com.coke.nestspace.runtime.plugin.RuntimeLaunchSpec
 
-internal fun ContainerLaunchSpec.toRuntimeCompatLaunchSpec():
-    RuntimeCompatLaunchSpec {
+internal fun ContainerLaunchSpec.toRuntimeApplicationSpec():
+    RuntimeLaunchSpec {
     val versionCode = if (android.os.Build.VERSION.SDK_INT >= 28) {
         packageInfo.longVersionCode
     } else {
         @Suppress("DEPRECATION")
         packageInfo.versionCode.toLong()
     }
-    return RuntimeCompatLaunchSpec.Builder()
+    return RuntimeLaunchSpec.Builder()
         .sessionId(sessionId)
         .spaceId(spaceId)
         .packageName(packageName)

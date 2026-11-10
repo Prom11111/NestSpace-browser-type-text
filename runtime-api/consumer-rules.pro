@@ -1,2 +1,2 @@
 -keep interface com.coke.nestspace.runtime.plugin.** { *; }
--keep class * implements com.coke.nestspace.runtime.plugin.RuntimeCompatibilityProfile { *; }
+-keep class * implements com.coke.nestspace.runtime.plugin.RuntimeProfile { *; }

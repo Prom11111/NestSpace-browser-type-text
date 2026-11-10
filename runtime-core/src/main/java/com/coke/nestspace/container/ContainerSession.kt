@@ -17,9 +17,9 @@ import com.coke.nestspace.container.loader.PluginClassPathResolver
 import com.coke.nestspace.container.loader.SharedLibraries
 import com.coke.nestspace.container.loader.withContainerClassLoader
 import com.coke.nestspace.container.remote.ContainerProcessBrokerClient
-import com.coke.nestspace.container.compat.toRuntimeCompatLaunchSpec
-import com.coke.nestspace.runtime.plugin.RuntimeCompatibilityProfile
-import com.coke.nestspace.runtime.plugin.RuntimeCompatibilityProfiles
+import com.coke.nestspace.container.application.toRuntimeApplicationSpec
+import com.coke.nestspace.runtime.plugin.RuntimeProfile
+import com.coke.nestspace.runtime.plugin.RuntimeProfiles
 import com.coke.nestspace.container.account.VirtualAccountManager
 import com.coke.nestspace.container.runtime.NativeEnvironmentBridge
 import com.coke.nestspace.container.runtime.AndroidStartupCoordinator
@@ -345,7 +345,7 @@ class ContainerSession private constructor(
     private val activityThread: Any,
     private val hostProcessState: HostProcessState,
     val virtualEnvironment: VirtualEnvironment,
-    internal val compatibilityProfile: RuntimeCompatibilityProfile?,
+    internal val runtimeProfile: RuntimeProfile?,
     private val startupCoordinator: AndroidStartupCoordinator,
     private val environmentValidation: EnvironmentValidation,
     val intents: ContainerIntentResolver,
@@ -354,7 +354,7 @@ class ContainerSession private constructor(
     val virtualPackages: VirtualPackageRegistry
 ) {
     val id: String get() = spec.sessionId
-    internal val compatibilitySpec = spec.toRuntimeCompatLaunchSpec()
+    internal val applicationSpec = spec.toRuntimeApplicationSpec()
 
     /** Run target Activities without keeping the host on screen. */
     @Volatile
@@ -535,8 +535,8 @@ class ContainerSession private constructor(
         }
         refreshNativeHooks()
         startupCoordinator.run(AndroidStartupPhase.APPLICATION_COMPATIBILITY) {
-            compatibilityProfile?.afterApplicationCreated(
-                compatibilitySpec,
+            runtimeProfile?.afterApplicationCreated(
+                applicationSpec,
                 loader,
                 context,
                 application
@@ -556,8 +556,8 @@ class ContainerSession private constructor(
             )
         }
         startupCoordinator.run(AndroidStartupPhase.STARTUP_COMPATIBILITY) {
-            compatibilityProfile?.afterEmbeddedApplicationCreated(
-                compatibilitySpec,
+            runtimeProfile?.afterEmbeddedApplicationCreated(
+                applicationSpec,
                 loader,
                 context,
                 application
@@ -706,7 +706,7 @@ class ContainerSession private constructor(
                 processUid = ContainerIdentity.hostUid(),
                 processPid = android.os.Process.myPid(),
                 headless = headless,
-                compatibilityProfile = compatibilityProfile?.id,
+                compatibilityProfile = runtimeProfile?.id,
                 pathMapProbe = pathMapProbe,
                 externalPathMapProbe = externalPathMapProbe,
                 procViewProbe = procViewProbe,
@@ -929,8 +929,8 @@ class ContainerSession private constructor(
         val activityClass = fallbackActivityClass
             ?: (info.targetActivity?.takeIf { it.isNotBlank() } ?: info.name)
         val targetClass = loader.loadClass(activityClass).asSubclass(Activity::class.java)
-        compatibilityProfile?.beforeTargetActivity(
-            compatibilitySpec,
+        runtimeProfile?.beforeTargetActivity(
+            applicationSpec,
             loader,
             context,
             targetClass
@@ -1773,12 +1773,12 @@ class ContainerSession private constructor(
             // package and abort with NameNotFoundException.
             publishVirtualIdentity(activityThread, context)
             TargetWebViewIdentityHook.install(context)
-            val compatibilityProfile = RuntimeCompatibilityProfiles.resolve(
-                spec.toRuntimeCompatLaunchSpec(),
+            val runtimeProfile = RuntimeProfiles.resolve(
+                spec.toRuntimeApplicationSpec(),
                 loader
             )
-            compatibilityProfile?.beforeApplicationAttach(
-                spec.toRuntimeCompatLaunchSpec(),
+            runtimeProfile?.beforeApplicationAttach(
+                spec.toRuntimeApplicationSpec(),
                 loader,
                 context
             )
@@ -1832,7 +1832,7 @@ class ContainerSession private constructor(
                         activityThread = activityThread,
                         hostProcessState = hostProcessState,
                         virtualEnvironment = virtualEnvironment,
-                        compatibilityProfile = compatibilityProfile,
+                        runtimeProfile = runtimeProfile,
                         startupCoordinator = startupCoordinator,
                         environmentValidation = environmentValidation,
                         intents = intents,
@@ -1944,7 +1944,7 @@ class ContainerSession private constructor(
                 baseApkPath = spec.baseApkPath,
                 splitApkPaths = spec.splitApkPaths
             )
-            val factory = RuntimeApplicationFactories.compat
+            val factory = RuntimeApplicationFactories.target
                 ?: error("No compatibility application runtime installed")
             val application = factory.create(applicationSpec, loader, context)
                 ?: error(

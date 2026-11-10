@@ -167,7 +167,6 @@ dependencies {
     implementation(project(":plugin-api"))
     implementation(project(":runtime-api"))
     implementation(project(":runtime-core"))
-    implementation(project(":runtime-compat"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

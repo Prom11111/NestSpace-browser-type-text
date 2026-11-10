@@ -5,21 +5,21 @@ import android.app.Application;
 import android.content.Context;
 
 /**
- * Version-bound hooks contributed by a runtime compatibility plugin.
+ * Version-bound hooks contributed by a runtime profile plugin.
  */
-public interface RuntimeCompatibilityProfile {
+public interface RuntimeProfile {
 
     String getId();
 
     default void beforeApplicationAttach(
-        RuntimeCompatLaunchSpec spec,
+        RuntimeLaunchSpec spec,
         ClassLoader loader,
         Context context
     ) {
     }
 
     default void afterApplicationCreated(
-        RuntimeCompatLaunchSpec spec,
+        RuntimeLaunchSpec spec,
         ClassLoader loader,
         Context context,
         Application application
@@ -27,7 +27,7 @@ public interface RuntimeCompatibilityProfile {
     }
 
     default void afterEmbeddedApplicationCreated(
-        RuntimeCompatLaunchSpec spec,
+        RuntimeLaunchSpec spec,
         ClassLoader loader,
         Context context,
         Application application
@@ -35,7 +35,7 @@ public interface RuntimeCompatibilityProfile {
     }
 
     default void beforeTargetActivity(
-        RuntimeCompatLaunchSpec spec,
+        RuntimeLaunchSpec spec,
         ClassLoader loader,
         Context context,
         Class<? extends Activity> activityClass
@@ -43,7 +43,7 @@ public interface RuntimeCompatibilityProfile {
     }
 
     default AutoCloseable installFirstActivityHooks(
-        RuntimeCompatLaunchSpec spec,
+        RuntimeLaunchSpec spec,
         ClassLoader loader,
         Context context
     ) {

@@ -6,20 +6,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Process-local registry for runtime compatibility profiles.
+ * Process-local registry for target runtime profiles.
  */
-public final class RuntimeCompatibilityProfiles {
+public final class RuntimeProfiles {
 
     private static final Object LOCK = new Object();
-    private static final Map<String, RuntimeCompatibilityProfileResolver> RESOLVERS =
+    private static final Map<String, RuntimeProfileResolver> RESOLVERS =
         new LinkedHashMap<>();
 
-    private RuntimeCompatibilityProfiles() {
+    private RuntimeProfiles() {
     }
 
     public static void register(
         String pluginId,
-        RuntimeCompatibilityProfileResolver resolver
+        RuntimeProfileResolver resolver
     ) {
         String id = pluginId == null ? "" : pluginId.trim();
         if (id.isEmpty()) {
@@ -39,16 +39,16 @@ public final class RuntimeCompatibilityProfiles {
         }
     }
 
-    public static RuntimeCompatibilityProfile resolve(
-        RuntimeCompatLaunchSpec spec,
+    public static RuntimeProfile resolve(
+        RuntimeLaunchSpec spec,
         ClassLoader loader
     ) {
-        List<RuntimeCompatibilityProfileResolver> ordered;
+        List<RuntimeProfileResolver> ordered;
         synchronized (LOCK) {
             ordered = new ArrayList<>(RESOLVERS.values());
         }
-        for (RuntimeCompatibilityProfileResolver resolver : ordered) {
-            RuntimeCompatibilityProfile profile = resolver.resolve(spec, loader);
+        for (RuntimeProfileResolver resolver : ordered) {
+            RuntimeProfile profile = resolver.resolve(spec, loader);
             if (profile != null) return profile;
         }
         return null;
