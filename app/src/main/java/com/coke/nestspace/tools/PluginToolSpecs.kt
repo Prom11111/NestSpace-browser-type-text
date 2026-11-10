@@ -42,7 +42,7 @@ internal fun ToolRegistry.pluginToolSpecs(): List<ToolSpec> = listOf(
         name = "plugin_manage",
         description = "Manage NestSpace plugins. Actions: install from URL/content URI/" +
             "local path, uninstall external packages, rename, list or change settings, " +
-            "enable/disable built-ins, and list or invoke plugin commands.",
+            "enable/disable plugins, and list or invoke plugin commands.",
         inputSchema = schema(
             "action" to "string",
             "plugin_id" to "string",
@@ -82,7 +82,7 @@ internal fun ToolRegistry.pluginToolSpecs(): List<ToolSpec> = listOf(
             "settings_get" -> pluginSettings(context, args)
             "settings_set" -> setPluginSetting(context, args, ctx)
             "settings_remove" -> removePluginSetting(context, args, ctx)
-            "set_enabled" -> setBuiltInEnabled(context, args, ctx)
+            "set_enabled" -> setPluginEnabled(context, args, ctx)
             "commands" -> pluginCommands(context, args)
             "invoke_command" -> invokePluginCommand(context, args, ctx)
             else -> invalidPluginAction(args.optString("action"))
@@ -342,7 +342,7 @@ private suspend fun removePluginSetting(
     }
 }
 
-private suspend fun setBuiltInEnabled(
+private suspend fun setPluginEnabled(
     context: Context,
     args: JSONObject,
     ctx: ToolContext
@@ -351,12 +351,13 @@ private suspend fun setBuiltInEnabled(
     if (pluginId.isEmpty()) return missingPluginId()
     val builtIn = PluginCenterStore.builtIns(context)
         .firstOrNull { it.descriptor.id == pluginId }
-        ?: return ToolResult(
-            false,
-            "Only built-in plugins can be enabled or disabled",
-            errorCode = "PLUGIN_TOGGLE_UNSUPPORTED"
-        )
-    val enabled = args.optBoolean("enabled", !builtIn.enabled)
+    if (builtIn == null && findPluginManifest(context, pluginId) == null) {
+        return pluginNotFound(pluginId)
+    }
+    val enabled = args.optBoolean(
+        "enabled",
+        !PluginCenterStore.isEnabled(context, pluginId)
+    )
     requirePluginConfirmation(
         context,
         ctx,
@@ -502,8 +503,8 @@ private fun pluginManifestJson(
     .put("description", manifest.description)
     .put("entry_class", manifest.entryClass)
     .put("source", source)
-    .put("enabled", true)
-    .put("toggle_supported", false)
+    .put("enabled", PluginCenterStore.isEnabled(context, manifest.id))
+    .put("toggle_supported", true)
     .put(
         "capabilities",
         JSONArray(manifest.capabilities.map { it.name })

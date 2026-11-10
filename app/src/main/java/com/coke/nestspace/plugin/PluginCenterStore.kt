@@ -131,17 +131,38 @@ internal object PluginCenterStore {
         preferences(context).getBoolean(KEY_ENABLED + pluginId, true)
 
     fun setEnabled(context: Context, pluginId: String, enabled: Boolean) {
+        val builtIn = builtIns(context)
+            .any { it.descriptor.id == pluginId }
+        val sourcePlugin = PluginSourceRegistry.contains(pluginId)
+        val packagePlugin = PluginPackageInstaller.get(context)
+            .contains(pluginId)
+        require(builtIn || sourcePlugin || packagePlugin) {
+            "Plugin cannot be enabled or disabled: $pluginId"
+        }
+        val previous = isEnabled(context, pluginId)
         check(
             preferences(context).edit()
                 .putBoolean(KEY_ENABLED + pluginId, enabled)
                 .commit()
         ) { "plugin state could not be saved" }
-        when (pluginId) {
-            INSTALLATION_GUIDE -> if (enabled) {
-                AgentPlugins.install(InstallationHelpPlugin)
-            } else {
-                AgentPlugins.uninstall(INSTALLATION_GUIDE)
+        runCatching {
+            when {
+                sourcePlugin ->
+                    PluginSourceLoader.setEnabled(context, pluginId, enabled)
+                packagePlugin ->
+                    PluginPackageInstaller.get(context)
+                        .setEnabled(pluginId, enabled)
+                pluginId == INSTALLATION_GUIDE -> if (enabled) {
+                    AgentPlugins.install(InstallationHelpPlugin)
+                } else {
+                    AgentPlugins.uninstall(INSTALLATION_GUIDE)
+                }
             }
+        }.onFailure {
+            preferences(context).edit()
+                .putBoolean(KEY_ENABLED + pluginId, previous)
+                .commit()
+            throw it
         }
         AppSettingsEvents.notifyChanged()
     }

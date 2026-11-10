@@ -50,7 +50,7 @@
 | 自定义页面 | 部分实现 | 声明式页面/Renderer 已可注册，页面宿主 UI 尚未完成 |
 | `.nestplugin` 安装包 | 开发版已实现 | 文件安装、路径/大小校验、DEX 加载和重启恢复；签名信任待补 |
 | Debug 源码插件直开 | 已实现 | Gradle 自动发现、资源隔离、宿主 ClassLoader 加载和外部同 ID 包遮蔽 |
-| 插件中心 UI | 应用中心风格 | 已安装插件网格、搜索、分类、详情、自定义设置、分享、导出和删除 |
+| 插件中心 UI | 应用中心风格 | 已安装插件网格、搜索、分类、详情、启停、自定义设置、分享、导出和删除 |
 | 运行时代理扩展 API | 已实现 | `runtime-plugin-api` 提供启动描述、Profile、类名索引和 ClassLoader scope |
 | 外部运行时代理安全隔离 | 未实现 | 发布者签名、信任等级、独立插件进程和自动回滚仍待完成 |
 
@@ -1309,7 +1309,9 @@ Set<String> webSocketHosts = manifest.getWebSocketHosts();
 - **源码标识**：Debug 源码插件不单独分组，只在图标左下角显示“源码”角标；
 - **详情弹窗**：显示名称、版本、发布者、插件 ID、Capability，并在存在
   `ui.html_page` 时嵌入插件 HTML；
-- **长按菜单**：设置、重命名、分享、导出；第三方安装包额外提供删除；
+- **启用与停用**：长按菜单根据当前状态显示“停用”或“启用”；停用后图标变暗并显示
+  “停用”角标，插件 Hook、工具、Provider、设置页和运行时代理立即从当前进程移除；
+- **长按菜单**：启用/停用、设置、重命名、分享、导出；第三方安装包额外提供删除；
 - **设置 View**：插件通过 `PluginSettingsViewProvider` 返回自己的 Android View，
   宿主使用独立 Activity 承载；
 - **重命名**：只改变插件中心显示名称，不修改 Manifest ID；
@@ -1336,7 +1338,7 @@ Set<String> webSocketHosts = manifest.getWebSocketHosts();
 尚未实现。
 
 MCP 客户端可以使用 `plugin_list` 和 `plugin_manage` 完成相同的核心操作，包括从
-HTTP/content URI 安装、卸载外部插件、重命名、读写设置、启停内置插件以及调用插件命令。
+HTTP/content URI 安装、卸载外部插件、重命名、读写设置、启停插件以及调用插件命令。
 
 ### 10.4 贡献文件
 

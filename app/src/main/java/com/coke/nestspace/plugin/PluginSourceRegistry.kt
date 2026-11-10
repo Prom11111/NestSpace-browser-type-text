@@ -6,8 +6,8 @@ import java.util.concurrent.ConcurrentHashMap
 internal data class SourcePluginRecord(
     val manifest: PluginManifest,
     val directory: File,
-    val plugin: Any,
-    val host: AndroidPluginHostApi
+    val plugin: Any?,
+    val host: AndroidPluginHostApi?
 )
 
 /**
@@ -19,12 +19,17 @@ internal object PluginSourceRegistry {
 
     fun register(record: SourcePluginRecord) {
         val previous = plugins.put(record.manifest.id, record)
-        if (previous != null && previous !== record) {
+        if (previous?.plugin != null && previous.host != null) {
             PluginRuntimeManager.detach(previous.plugin, previous.host)
         }
     }
 
     fun contains(pluginId: String): Boolean = plugins.containsKey(pluginId)
+
+    fun record(pluginId: String): SourcePluginRecord? = plugins[pluginId]
+
+    fun isLoaded(pluginId: String): Boolean =
+        plugins[pluginId]?.plugin != null
 
     fun manifests(): List<PluginManifest> =
         plugins.values.map { it.manifest }.sortedBy { it.name.lowercase() }
@@ -43,7 +48,9 @@ internal object PluginSourceRegistry {
 
     fun clear() {
         plugins.values.forEach {
-            PluginRuntimeManager.detach(it.plugin, it.host)
+            if (it.plugin != null && it.host != null) {
+                PluginRuntimeManager.detach(it.plugin, it.host)
+            }
         }
         plugins.clear()
     }

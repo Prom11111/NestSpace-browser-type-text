@@ -41,6 +41,8 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FileOpen
+import androidx.compose.material.icons.rounded.PauseCircleOutline
+import androidx.compose.material.icons.rounded.PlayCircleOutline
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Settings
@@ -67,6 +69,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -465,15 +468,62 @@ internal fun PluginCenterScreen() {
         openPluginSettings(manifest, sourcePlugin)
     }
 
+    fun toggleAction(
+        id: String,
+        displayName: String,
+        enabled: Boolean
+    ) = PluginMenuAction(
+        AppLanguage.tr(
+            if (enabled) "停用" else "启用",
+            if (enabled) "Disable" else "Enable"
+        ),
+        if (enabled) {
+            Icons.Rounded.PauseCircleOutline
+        } else {
+            Icons.Rounded.PlayCircleOutline
+        }
+    ) {
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    PluginCenterStore.setEnabled(context, id, !enabled)
+                }
+            }.onSuccess {
+                localRevision++
+                installStatus = AppLanguage.tr(
+                    if (enabled) {
+                        "已停用 $displayName"
+                    } else {
+                        "已启用 $displayName"
+                    },
+                    if (enabled) {
+                        "Disabled $displayName"
+                    } else {
+                        "Enabled $displayName"
+                    }
+                )
+            }.onFailure {
+                installStatus = AppLanguage.tr(
+                    "操作失败：${it.message ?: it.javaClass.simpleName}",
+                    "Operation failed: ${it.message ?: it.javaClass.simpleName}"
+                )
+            }
+        }
+    }
+
     fun packageActions(manifest: PluginManifest): List<PluginMenuAction> {
         val target = actionTarget(
             manifest.id,
             manifest.name,
             PluginEntryKind.PACKAGE
         )
+        val enabled = PluginCenterStore.isEnabled(context, manifest.id)
         return buildList {
-            if (manifest.contributions.settingsPath.isNotBlank() ||
+            add(toggleAction(manifest.id, target.displayName, enabled))
+            if (enabled &&
+                (manifest.contributions.settingsPath.isNotBlank() ||
                 PluginSettingsViewPlugins.find(manifest.id) != null
+                )
             ) {
                 add(settingsAction(manifest, sourcePlugin = false))
             }
@@ -577,19 +627,35 @@ internal fun PluginCenterScreen() {
                             manifest.id,
                             manifest.name
                         )
+                        val enabled = PluginCenterStore.isEnabled(
+                            context,
+                            manifest.id
+                        )
                         PluginTile(
                             title = displayName,
-                            subtitle = AppLanguage.tr("已安装", "Installed"),
+                            subtitle = AppLanguage.tr(
+                                if (enabled) "已安装" else "已停用",
+                                if (enabled) "Installed" else "Disabled"
+                            ),
                             iconFile = PluginSourceRegistry
                                 .iconFile(manifest.id),
                             fallbackIcon = Icons.Rounded.Extension,
                             badge = AppLanguage.tr("源码", "DEV"),
+                            enabled = enabled,
                             onOpen = {
                                 detail = manifest.toDetail(context)
                             },
                             menuActions = buildList {
-                                if (manifest.contributions.settingsPath.isNotBlank() ||
-                                    PluginSettingsViewPlugins.find(manifest.id) != null
+                                add(
+                                    toggleAction(
+                                        manifest.id,
+                                        displayName,
+                                        enabled
+                                    )
+                                )
+                                if (enabled &&
+                                    (manifest.contributions.settingsPath.isNotBlank() ||
+                                        PluginSettingsViewPlugins.find(manifest.id) != null)
                                 ) {
                                     add(
                                         settingsAction(
@@ -635,12 +701,20 @@ internal fun PluginCenterScreen() {
                             manifest.id,
                             manifest.name
                         )
+                        val enabled = PluginCenterStore.isEnabled(
+                            context,
+                            manifest.id
+                        )
                         PluginTile(
                             title = displayName,
-                            subtitle = AppLanguage.tr("已安装", "Installed"),
+                            subtitle = AppLanguage.tr(
+                                if (enabled) "已安装" else "已停用",
+                                if (enabled) "Installed" else "Disabled"
+                            ),
                             iconFile = PluginPackageInstaller.get(context)
                                 .iconFile(manifest.id),
                             fallbackIcon = Icons.Rounded.Extension,
+                            enabled = enabled,
                             onOpen = {
                                 detail = manifest.toDetail(context)
                             },
@@ -978,6 +1052,7 @@ private fun PluginTile(
     iconFile: java.io.File?,
     fallbackIcon: ImageVector,
     badge: String? = null,
+    enabled: Boolean = true,
     onOpen: () -> Unit,
     menuActions: List<PluginMenuAction> = emptyList()
 ) {
@@ -1007,7 +1082,8 @@ private fun PluginTile(
                 modifier = Modifier
                     .size(62.dp)
                     .clip(RoundedCornerShape(17.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .alpha(if (enabled) 1f else 0.5f),
                 contentAlignment = Alignment.Center
             ) {
                 if (bitmap != null) {
@@ -1024,6 +1100,24 @@ private fun PluginTile(
                         tint = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.size(30.dp)
                     )
+                }
+                if (!enabled) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(3.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(MaterialTheme.colorScheme.error)
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            AppLanguage.tr("停用", "OFF"),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onError,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
                 }
                 if (!badge.isNullOrBlank()) {
                     Box(

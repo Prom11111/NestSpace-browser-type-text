@@ -78,6 +78,33 @@ internal object PluginSourceLoader {
     }
 
     @Synchronized
+    fun setEnabled(
+        context: Context,
+        pluginId: String,
+        enabled: Boolean
+    ): PluginManifest {
+        val existing = PluginSourceRegistry.record(pluginId)
+            ?: error("Source plugin is not loaded: $pluginId")
+        if (enabled) {
+            if (existing.plugin != null && existing.host != null) {
+                return existing.manifest
+            }
+            return loadRecord(
+                context.applicationContext,
+                existing.directory,
+                existing.manifest
+            ).manifest
+        }
+        if (existing.plugin != null && existing.host != null) {
+            PluginSourceRegistry.register(
+                existing.copy(plugin = null, host = null)
+            )
+            Log.i(TAG, "source plugin disabled: $pluginId")
+        }
+        return existing.manifest
+    }
+
+    @Synchronized
     fun createShareFile(context: Context, pluginId: String): File {
         val manifest = PluginSourceRegistry.manifests()
             .firstOrNull { it.id == pluginId }
@@ -235,6 +262,21 @@ internal object PluginSourceLoader {
         require(manifest.id == directory.name) {
             "source plugin directory does not match manifest id"
         }
+        if (!PluginCenterStore.isEnabled(context, manifest.id)) {
+            PluginSourceRegistry.register(
+                SourcePluginRecord(manifest, directory, null, null)
+            )
+            Log.i(TAG, "source plugin restored disabled: ${manifest.id}")
+            return manifest
+        }
+        return loadRecord(context, directory, manifest).manifest
+    }
+
+    private fun loadRecord(
+        context: Context,
+        directory: File,
+        manifest: PluginManifest
+    ): SourcePluginRecord {
         val plugin = Class.forName(
             manifest.entryClass,
             true,
@@ -248,14 +290,13 @@ internal object PluginSourceLoader {
             manifest.webSocketHosts
         )
         PluginRuntimeManager.attach(plugin, host)
-        PluginSourceRegistry.register(
-            SourcePluginRecord(manifest, directory, plugin, host)
-        )
+        val record = SourcePluginRecord(manifest, directory, plugin, host)
+        PluginSourceRegistry.register(record)
         Log.i(
             TAG,
             "source plugin attached: ${manifest.id}@${manifest.version}"
         )
-        return manifest
+        return record
     }
 
     private fun sourceBuildMarker(context: Context): String {

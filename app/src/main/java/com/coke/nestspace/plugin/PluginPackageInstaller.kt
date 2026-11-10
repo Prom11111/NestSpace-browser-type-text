@@ -27,8 +27,8 @@ internal class PluginPackageInstaller private constructor(
     private data class LoadedPlugin(
         val directory: File,
         val manifest: PluginManifest,
-        val plugin: Any,
-        val host: AndroidPluginHostApi
+        val plugin: Any?,
+        val host: AndroidPluginHostApi?
     )
 
     private val installed = ConcurrentHashMap<String, LoadedPlugin>()
@@ -61,7 +61,11 @@ internal class PluginPackageInstaller private constructor(
                         )
                         return@forEach
                     }
-                    attach(directory, manifest)
+                    if (PluginCenterStore.isEnabled(context, manifest.id)) {
+                        attach(directory, manifest)
+                    } else {
+                        registerDisabled(directory, manifest)
+                    }
                 }.onFailure {
                     Log.w(TAG, "restore plugin failed: ${directory.name}", it)
                 }
@@ -113,6 +117,32 @@ internal class PluginPackageInstaller private constructor(
             .map { it.manifest }
             .filterNot { PluginSourceRegistry.contains(it.id) }
             .sortedBy { it.name.lowercase() }
+
+    @Synchronized
+    fun contains(pluginId: String): Boolean =
+        installed.values.any { it.manifest.id == pluginId }
+
+    @Synchronized
+    fun setEnabled(pluginId: String, enabled: Boolean): PluginManifest {
+        val record = installed.values.firstOrNull {
+            it.manifest.id == pluginId
+        } ?: error("Plugin is not installed: $pluginId")
+        if (enabled) {
+            if (record.plugin != null && record.host != null) {
+                return record.manifest
+            }
+            return attach(record.directory, record.manifest)
+        }
+        if (record.plugin != null && record.host != null) {
+            PluginRuntimeManager.detach(record.plugin, record.host)
+            installed[record.directory.name] = record.copy(
+                plugin = null,
+                host = null
+            )
+            Log.i(TAG, "plugin disabled: $pluginId")
+        }
+        return record.manifest
+    }
 
     @Synchronized
     fun htmlPage(pluginId: String): File? {
@@ -201,7 +231,9 @@ internal class PluginPackageInstaller private constructor(
             it.manifest.id == pluginId
         }
         if (record != null) {
-            PluginRuntimeManager.detach(record.plugin, record.host)
+            if (record.plugin != null && record.host != null) {
+                PluginRuntimeManager.detach(record.plugin, record.host)
+            }
             installed.remove(record.directory.name)
             check(record.directory.deleteRecursively()) {
                 "Plugin package could not be deleted"
@@ -292,7 +324,12 @@ internal class PluginPackageInstaller private constructor(
             val namespace = digest(manifest.id)
 
             installed[namespace]?.let { existing ->
-                PluginRuntimeManager.detach(existing.plugin, existing.host)
+                if (existing.plugin != null && existing.host != null) {
+                    PluginRuntimeManager.detach(
+                        existing.plugin,
+                        existing.host
+                    )
+                }
                 installed.remove(namespace)
             }
 
@@ -317,7 +354,11 @@ internal class PluginPackageInstaller private constructor(
                 check(staging.renameTo(target)) {
                     "Plugin package could not be finalized"
                 }
-                return attach(target, manifest)
+                return if (PluginCenterStore.isEnabled(context, manifest.id)) {
+                    attach(target, manifest)
+                } else {
+                    registerDisabled(target, manifest)
+                }
             } catch (error: Throwable) {
                 staging.deleteRecursively()
                 throw error
@@ -375,6 +416,20 @@ internal class PluginPackageInstaller private constructor(
             TAG,
             "plugin attached: ${manifest.id}@${manifest.version}"
         )
+        return manifest
+    }
+
+    private fun registerDisabled(
+        directory: File,
+        manifest: PluginManifest
+    ): PluginManifest {
+        installed[directory.name] = LoadedPlugin(
+            directory,
+            manifest,
+            null,
+            null
+        )
+        Log.i(TAG, "plugin installed disabled: ${manifest.id}")
         return manifest
     }
 
