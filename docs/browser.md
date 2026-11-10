@@ -37,7 +37,15 @@ NestSpace 自带一个基于 WebView 的多标签浏览器，桌面有「浏览�
 - AI 对话会显示下载进度，下载完成后可从对话或浏览器下载菜单查看。
 - 浏览器下载菜单支持删除文件。
 - 下载好的 APK 可以直接在「应用管理 → 导入 APK」里选择，或交给 `space_install_apk`。
-- 助手可以调用 `browser_download` 直接下载 URL，或等待页面触发的下载完成。
+- 助手调用 `browser_download` 启动 URL 下载，或绑定页面触发的下载；它立即返回
+  `download_id`。
+- `browser_download` 同时返回 `download_id` 和 `task_id`；助手使用 `poll_tool`
+  按次数和间隔观察 `task_status`。`terminal=true` 表示任务结束，只有
+  `state=succeeded` 才算成功；需要字节数或百分比时可查看 `browser_download_status`。
+- 同一个 AI 助手会话只保留一个当前下载。切换镜像、节点或 URL 时，新任务会先取消
+  并清理该助手的旧任务；用户下载和其他助手会话的下载仍可并行。
+- 状态工具不会自动判断“慢就取消”；助手根据 `bytes_per_second`、`eta_seconds`、
+  `idle_seconds` 等状态决定是否调用 `task_cancel`。
 - HTML、XHTML 和 SVG 下载文件会继续在自带浏览器中打开，不交给系统浏览器。
 
 ## 上传

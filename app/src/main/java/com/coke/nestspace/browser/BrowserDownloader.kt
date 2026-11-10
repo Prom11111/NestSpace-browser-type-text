@@ -7,7 +7,10 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.CookieManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -26,9 +29,48 @@ object BrowserDownloader {
         val size: Long
     )
 
+    class CancellationSignal {
+        private val lock = Any()
+        private var cancelled = false
+        private var connection: HttpURLConnection? = null
+
+        fun attach(value: HttpURLConnection) {
+            val disconnectNow = synchronized(lock) {
+                if (cancelled) {
+                    true
+                } else {
+                    connection = value
+                    false
+                }
+            }
+            if (disconnectNow) value.disconnect()
+        }
+
+        fun detach(value: HttpURLConnection) {
+            synchronized(lock) {
+                if (connection === value) connection = null
+            }
+        }
+
+        fun cancel() {
+            val active = synchronized(lock) {
+                cancelled = true
+                connection.also { connection = null }
+            }
+            active?.disconnect()
+        }
+
+        fun throwIfCancelled() {
+            if (synchronized(lock) { cancelled }) {
+                throw CancellationException("Download cancelled")
+            }
+        }
+    }
+
     suspend fun download(
         context: Context,
         url: String,
+        cancellation: CancellationSignal? = null,
         onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> }
     ): DownloadResult = withContext(Dispatchers.IO) {
         var currentUrl = url
@@ -60,6 +102,9 @@ object BrowserDownloader {
                 }
             }
             try {
+                cancellation?.attach(connection)
+                cancellation?.throwIfCancelled()
+                currentCoroutineContext().ensureActive()
                 connection.connect()
                 val code = connection.responseCode
                 if (code in 300..399) {
@@ -80,11 +125,27 @@ object BrowserDownloader {
                 val total = connection.contentLengthLong
                 onProgress(0L, total)
                 return@withContext if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    writeToMediaStore(context, connection, name, contentType, total, onProgress)
+                    writeToMediaStore(
+                        context,
+                        connection,
+                        name,
+                        contentType,
+                        total,
+                        cancellation,
+                        onProgress
+                    )
                 } else {
-                    writeToLegacyDownloads(context, connection, name, total, onProgress)
+                    writeToLegacyDownloads(
+                        context,
+                        connection,
+                        name,
+                        total,
+                        cancellation,
+                        onProgress
+                    )
                 }
             } finally {
+                cancellation?.detach(connection)
                 connection.disconnect()
             }
         }
@@ -92,12 +153,13 @@ object BrowserDownloader {
         throw IOException("Download failed")
     }
 
-    private fun writeToMediaStore(
+    private suspend fun writeToMediaStore(
         context: Context,
         connection: HttpURLConnection,
         name: String,
         contentType: String,
         total: Long,
+        cancellation: CancellationSignal?,
         onProgress: (downloaded: Long, total: Long) -> Unit
     ): DownloadResult {
         val resolver = context.contentResolver
@@ -118,7 +180,13 @@ object BrowserDownloader {
         try {
             connection.inputStream.use { input ->
                 resolver.openOutputStream(uri)?.use { output ->
-                    copyWithProgress(input, output, total, onProgress)
+                    copyWithProgress(
+                        input,
+                        output,
+                        total,
+                        cancellation,
+                        onProgress
+                    )
                 } ?: throw IOException("Cannot open Downloads file")
             }
             values.clear()
@@ -138,11 +206,12 @@ object BrowserDownloader {
         }
     }
 
-    private fun writeToLegacyDownloads(
+    private suspend fun writeToLegacyDownloads(
         context: Context,
         connection: HttpURLConnection,
         name: String,
         total: Long,
+        cancellation: CancellationSignal?,
         onProgress: (downloaded: Long, total: Long) -> Unit
     ): DownloadResult {
         // Public Downloads needs WRITE_EXTERNAL_STORAGE before Android 10.
@@ -170,10 +239,21 @@ object BrowserDownloader {
                 lastError = t
                 continue
             }
-            output.use { to ->
-                connection.inputStream.use { from ->
-                    copyWithProgress(from, to, total, onProgress)
+            try {
+                output.use { to ->
+                    connection.inputStream.use { from ->
+                        copyWithProgress(
+                            from,
+                            to,
+                            total,
+                            cancellation,
+                            onProgress
+                        )
+                    }
                 }
+            } catch (t: Throwable) {
+                target.delete()
+                throw t
             }
             if (!target.isFile || target.length() == 0L) {
                 throw IOException("Downloaded file is empty")
@@ -188,16 +268,19 @@ object BrowserDownloader {
         throw IOException(lastError?.message ?: "Cannot write the download", lastError)
     }
 
-    private fun copyWithProgress(
+    private suspend fun copyWithProgress(
         input: java.io.InputStream,
         output: java.io.OutputStream,
         total: Long,
+        cancellation: CancellationSignal?,
         onProgress: (downloaded: Long, total: Long) -> Unit
     ) {
         val buffer = ByteArray(64 * 1024)
         var downloaded = 0L
         var lastReported = 0L
         while (true) {
+            cancellation?.throwIfCancelled()
+            currentCoroutineContext().ensureActive()
             val count = input.read(buffer)
             if (count < 0) break
             if (count == 0) continue

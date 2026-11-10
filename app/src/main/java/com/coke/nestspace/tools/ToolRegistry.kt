@@ -75,11 +75,14 @@ class ToolRegistry(
         "browser_forward",
         "browser_reload",
         "browser_links",
+        "browser_download_status",
         "browser_read_text",
         "memory_search",
         "skill_list",
         "skill_read",
         "replay_list",
+        "poll_tool",
+        "task_status",
         "system_status"
     )
 

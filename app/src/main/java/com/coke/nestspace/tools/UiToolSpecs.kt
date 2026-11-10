@@ -239,7 +239,9 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
         },
         ToolSpec(
             name = "ui_wait_for",
-            description = "Wait until text appears in a virtual app. Optionally pass package/instance_id.",
+            description = "Compatibility shortcut for waiting until text appears in a virtual app. " +
+                "New workflows should use poll_tool with ui_observe so UI waits share the same " +
+                "check-count, interval and timeout semantics as other asynchronous work.",
             inputSchema = schema(
                 "text" to "string",
                 "timeout_ms" to "integer",

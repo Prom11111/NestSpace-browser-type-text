@@ -60,7 +60,14 @@ class SystemPromptStore(context: Context) {
                 "使用无头方形小窗，不要先全屏再切换。需要用户接管时用 hand_to_user。\n" +
                 "浏览器默认使用无头模式，不要打开可见窗口，除非用户明确要求。\n" +
                 "网页任务一律使用内置浏览器（browser_*），不要用系统浏览器或其他外部 App 打开链接。\n" +
-                "下载文件用 browser_download；需要设备信息时用 system_status。\n" +
+                "遇到页面加载、App 启动、安装后处理、UI 文本或其它异步任务，统一用 poll_tool " +
+                "按次数和间隔复查只读状态；未看到明确的完成态前不得当作成功。browser_download " +
+                "只负责启动并返回 download_id 和 task_id，随后用 poll_tool 观察 task_status，" +
+                "直到 terminal=true；只有 state=succeeded 才算成功。是否因速度慢而取消由你根据速度、" +
+                "剩余时间和空闲时间判断并调用 task_cancel；启动替代下载时系统仍会强制停止旧连接。" +
+                "ui_wait_for 仅为旧调用兼容入口。同一助手切换下载" +
+                "节点时，新下载会取消该助手的旧下载；用户或其它会话的下载仍可并行。需要设备信息" +
+                "时用 system_status。\n" +
                 "不要安装/卸载应用或修改系统设置，除非用户明确要求。\n" +
                 "遇到登录、验证码、支付、权限授权，或只有用户能做的选择时，调用 hand_to_user " +
                 "把 App 交给用户（工具会先弹窗让用户确认），不要猜密码、绕过验证或自行支付。\n" +
@@ -86,8 +93,17 @@ class SystemPromptStore(context: Context) {
                 "window unless the user explicitly asks.\n" +
                 "Use the built-in browser (browser_* tools) for web tasks; never " +
                 "open links in the system browser or another external app.\n" +
-                "Use browser_download to download files and system_status for " +
-                "device information.\n" +
+                "For page loads, app startup, post-install work, visible app text and other " +
+                "asynchronous operations, use poll_tool to check a read-only status tool at a fixed " +
+                "interval and count. Never treat a timeout as success. browser_download only starts " +
+                "the task and returns download_id and task_id; then poll task_status with poll_tool " +
+                "until terminal=true; only state=succeeded is success. Decide from speed, ETA and " +
+                "idle time whether to cancel a slow task with task_cancel; starting a replacement " +
+                "still enforces old-connection shutdown. ui_wait_for remains only for " +
+                "backward compatibility. A new " +
+                "download replaces only the previous download " +
+                "owned by the same assistant session; user and other-session downloads may run " +
+                "in parallel. Use system_status for device information.\n" +
                 "Do not install/uninstall apps or change system settings unless " +
                 "the user explicitly asks.\n" +
                 "When the screen shows login, captcha, payment, permission, or a " +

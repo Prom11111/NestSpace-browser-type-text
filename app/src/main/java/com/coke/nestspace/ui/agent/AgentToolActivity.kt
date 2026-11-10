@@ -339,12 +339,16 @@ private fun toolTitle(name: String): String = when (name) {
     "ui_tap" -> AppLanguage.tr("点击界面", "Tap screen")
     "ui_set_text" -> AppLanguage.tr("输入文字", "Type text")
     "ui_wait_for" -> AppLanguage.tr("等待界面", "Wait for screen")
+    "poll_tool" -> AppLanguage.tr("定时复查", "Poll status")
     "ui_screenshot" -> AppLanguage.tr("截取界面", "Screenshot")
     "ui_key" -> AppLanguage.tr("返回按键", "Press key")
     "browser_open", "browser_navigate" -> AppLanguage.tr("打开网页", "Open page")
     "browser_read_text" -> AppLanguage.tr("读取网页", "Read page")
     "browser_click" -> AppLanguage.tr("点击网页", "Click page")
     "browser_download" -> AppLanguage.tr("下载文件", "Download file")
+    "browser_download_status" -> AppLanguage.tr("查看下载", "Check download")
+    "task_status" -> AppLanguage.tr("查看任务", "Check task")
+    "task_cancel" -> AppLanguage.tr("取消任务", "Cancel task")
     "browser_tabs", "browser_switch_tab", "browser_close_tab" ->
         AppLanguage.tr("浏览器标签", "Browser tabs")
     "system_status" -> AppLanguage.tr("检查系统", "Check system")
@@ -364,7 +368,9 @@ private fun toolIcon(name: String): ImageVector = when {
     name == "ui_observe" || name == "ui_screenshot" -> Icons.Rounded.Visibility
     name == "ui_tap" -> Icons.Rounded.TouchApp
     name == "ui_set_text" -> Icons.Rounded.Keyboard
-    name == "ui_wait_for" -> Icons.Rounded.HourglassEmpty
+    name == "ui_wait_for" || name == "poll_tool" -> Icons.Rounded.HourglassEmpty
+    name == "task_status" -> Icons.Rounded.HourglassEmpty
+    name == "task_cancel" -> Icons.Rounded.Close
     name == "space_launch" || name == "space_multi_open" -> Icons.Rounded.Apps
     else -> Icons.Rounded.Build
 }
@@ -429,6 +435,26 @@ private fun toolSummary(tool: ToolActivity, json: JSONObject?): String {
         "ui_tap" -> humanizeTap(tool.body)
         "ui_set_text" -> AppLanguage.tr("已输入文字", "Text entered")
         "ui_wait_for" -> humanizeWait(tool.body)
+        "poll_tool" -> {
+            val checks = json.optInt("checks")
+            val complete = json.optBoolean("completed")
+            AppLanguage.tr(
+                "${json.optString("tool")} · 已检查 $checks 次" +
+                    if (complete) " · 已完成" else " · 仍在等待",
+                "${json.optString("tool")} · checked $checks times" +
+                    if (complete) " · complete" else " · still waiting"
+            )
+        }
+        "task_status", "task_cancel" -> {
+            val progress = json.optInt("progress_percent", -1)
+                .takeIf { it >= 0 }
+                ?.let { " · $it%" }
+                .orEmpty()
+            AppLanguage.tr(
+                "${json.optString("title")} · ${json.optString("state")}$progress",
+                "${json.optString("title")} · ${json.optString("state")}$progress"
+            )
+        }
         "ui_key" -> AppLanguage.tr("已按下返回键", "Pressed back")
         "ui_screenshot" -> AppLanguage.tr("已截取当前界面", "Captured the screen")
         "browser_open", "browser_navigate" -> {
@@ -440,10 +466,27 @@ private fun toolSummary(tool: ToolActivity, json: JSONObject?): String {
             "已读取 ${body.length} 个字符",
             "Read ${body.length} characters"
         )
-        "browser_download" -> listOf(
-            json.optString("name"),
-            json.optString("url")
-        ).firstOrNull { it.isNotBlank() } ?: AppLanguage.tr("下载完成", "Downloaded")
+        "browser_download" -> {
+            val name = listOf(json.optString("name"), json.optString("url"))
+                .firstOrNull { it.isNotBlank() }
+                .orEmpty()
+            AppLanguage.tr(
+                "$name · 已开始下载",
+                "$name · Download started"
+            )
+        }
+        "browser_download_status" -> AppLanguage.tr(
+            when (json.optString("state")) {
+                "done" -> "下载完成"
+                "failed" -> "下载失败"
+                else -> "下载中"
+            },
+            when (json.optString("state")) {
+                "done" -> "Download complete"
+                "failed" -> "Download failed"
+                else -> "Downloading"
+            }
+        )
         "system_status" -> listOf(
             json.optString("android"),
             json.optString("battery_percent").takeIf { it.isNotBlank() }?.let { "$it%" }

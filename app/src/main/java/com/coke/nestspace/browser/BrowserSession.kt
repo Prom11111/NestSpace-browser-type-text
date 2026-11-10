@@ -1,6 +1,7 @@
 package com.coke.nestspace.browser
 
 import com.coke.nestspace.i18n.AppLanguage
+import com.coke.nestspace.task.OperationTaskRegistry
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
@@ -16,16 +17,23 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import java.lang.ref.WeakReference
+import org.json.JSONObject
 
 /**
  * Multi-tab in-process browser used by both the visible BrowserActivity and
@@ -78,6 +86,8 @@ object BrowserSession {
         var uiOwned: Boolean = false
         /** True while attached to the visible activity's container. */
         var visible: Boolean = false
+        /** Assistant session that opened or is acting on this tab. */
+        var ownerId: String? = null
     }
 
     private val entries = LinkedHashMap<String, Entry>()
@@ -101,6 +111,8 @@ object BrowserSession {
         val url: String,
         val name: String,
         val state: String,
+        val ownerId: String? = null,
+        val taskId: String? = null,
         val downloadedBytes: Long = 0L,
         val totalBytes: Long = -1L,
         val startedAt: Long = System.currentTimeMillis(),
@@ -118,6 +130,14 @@ object BrowserSession {
     @Volatile
     private var downloadState: DownloadState? = null
     private val downloadLock = Any()
+    private val downloadTaskLock = Any()
+    private data class ActiveDownload(
+        val job: Job,
+        val cancellation: BrowserDownloader.CancellationSignal
+    )
+    private val activeDownloadJobs = mutableMapOf<String, ActiveDownload>()
+    private val downloadGenerations = mutableMapOf<String, Long>()
+    private val latestDownloadIds = mutableMapOf<String, String>()
     private val _downloads = MutableStateFlow<List<DownloadState>>(emptyList())
     val downloadsFlow: StateFlow<List<DownloadState>> = _downloads.asStateFlow()
 
@@ -230,7 +250,8 @@ object BrowserSession {
         headless: Boolean = false,
         newTab: Boolean = true,
         tabId: String? = null,
-        showActivity: Boolean = true
+        showActivity: Boolean = true,
+        ownerId: String? = null
     ): String {
         val target = normalizeInput(url)
         val entry: Entry
@@ -248,6 +269,7 @@ object BrowserSession {
         } else {
             entry = createEntry(target)
         }
+        if (!ownerId.isNullOrBlank()) entry.ownerId = ownerId
 
         if (headless) {
             entry.url = target
@@ -326,6 +348,9 @@ object BrowserSession {
 
     fun selectTab(tabId: String): Boolean {
         val entry = entries[tabId] ?: return false
+        // Selecting/taking over a tab is a user-visible handoff. A later
+        // browser_click can explicitly attach the assistant session again.
+        entry.ownerId = null
         activeTabId = tabId
         selectedTabId = tabId
         publish()
@@ -340,7 +365,8 @@ object BrowserSession {
      */
     fun showTab(context: Context, tabId: String? = null): Boolean {
         val id = tabId ?: selectedTabId ?: activeTabId ?: return false
-        if (!entries.containsKey(id)) return false
+        val entry = entries[id] ?: return false
+        entry.ownerId = null
         activeTabId = id
         selectedTabId = id
         publish()
@@ -601,7 +627,8 @@ object BrowserSession {
                                     url = uri.toString(),
                                     headless = !entry.visible,
                                     newTab = true,
-                                    showActivity = false
+                                    showActivity = false,
+                                    ownerId = entry.ownerId
                                 )
                             }
                             popup.destroy()
@@ -665,7 +692,9 @@ object BrowserSession {
         view.setDownloadListener { url, _, _, _, _ ->
             if (url.startsWith("http://") || url.startsWith("https://")) {
                 headlessScope.launch {
-                    runCatching { download(app, url) }
+                    runCatching {
+                        download(app, url, downloadOwner(entry.id))
+                    }
                         .onSuccess { result ->
                             if (forUi) {
                                 android.widget.Toast.makeText(
@@ -829,19 +858,38 @@ object BrowserSession {
 
     // ---- downloads ------------------------------------------------------
 
-    /** Forget the previous download before a new click is expected to start one. */
-    fun clearDownload() {
-        downloadState = null
+    /** Forget the previous download for one assistant before a new click. */
+    fun clearDownload(ownerId: String? = null) {
+        synchronized(downloadLock) {
+            latestDownloadIds.remove(downloadOwnerKey(ownerId))
+            if (ownerId == null || downloadState?.ownerId == ownerId) {
+                downloadState = null
+            }
+        }
     }
 
-    fun startDownload(url: String): DownloadState {
+    fun startDownload(
+        url: String,
+        ownerId: String? = null,
+        taskId: String? = null
+    ): DownloadState {
         val record = DownloadState(
             id = "download-${System.currentTimeMillis()}-${System.nanoTime()}",
             url = url,
             name = downloadName(url),
-            state = "downloading"
+            state = "downloading",
+            ownerId = ownerId,
+            taskId = taskId
         )
         synchronized(downloadLock) {
+            // One assistant keeps one active transfer. Downloads owned by the
+            // user or by other sessions remain independent.
+            _downloads.value = _downloads.value.filterNot {
+                ownerId != null &&
+                    it.state == "downloading" &&
+                    it.ownerId == ownerId
+            }
+            latestDownloadIds[downloadOwnerKey(ownerId)] = record.id
             downloadState = record
             _downloads.value = (listOf(record) + _downloads.value).take(MAX_DOWNLOADS)
         }
@@ -862,7 +910,17 @@ object BrowserSession {
 
     fun finishDownload(id: String, result: BrowserDownloader.DownloadResult): DownloadState {
         val current = _downloads.value.firstOrNull { it.id == id }
-            ?: startDownload(result.uri)
+            ?: return DownloadState(
+                id = id,
+                url = result.uri,
+                name = result.name,
+                state = "done",
+                downloadedBytes = result.size,
+                totalBytes = result.size,
+                path = result.path,
+                uri = result.uri,
+                size = result.size
+            )
         val finished = current.copy(
             name = result.name,
             state = "done",
@@ -882,7 +940,13 @@ object BrowserSession {
 
     fun failDownload(id: String, error: Throwable): DownloadState {
         val current = _downloads.value.firstOrNull { it.id == id }
-            ?: startDownload("")
+            ?: return DownloadState(
+                id = id,
+                url = "",
+                name = "",
+                state = "failed",
+                error = error.message ?: error.javaClass.simpleName
+            )
         val failed = current.copy(
             state = "failed",
             error = error.message ?: error.javaClass.simpleName
@@ -894,20 +958,241 @@ object BrowserSession {
         return failed
     }
 
-    suspend fun download(context: Context, url: String): DownloadState {
-        val record = startDownload(url)
-        return try {
-            val result = BrowserDownloader.download(context, url) { downloaded, total ->
-                updateDownloadProgress(record.id, downloaded, total)
+    suspend fun download(
+        context: Context,
+        url: String,
+        ownerId: String? = null
+    ): DownloadState {
+        val currentJob = currentCoroutineContext()[Job]
+            ?: throw CancellationException("Download has no coroutine job")
+        val task = createDownloadTask(ownerId, url)
+        val cancellation = BrowserDownloader.CancellationSignal()
+        val (generation, record) = registerDownload(
+            url = url,
+            ownerId = ownerId,
+            job = currentJob,
+            cancellation = cancellation,
+            taskId = task.id
+        )
+        return runDownload(
+            context = context,
+            url = url,
+            ownerId = ownerId,
+            generation = generation,
+            record = record,
+            cancellation = cancellation,
+            taskId = task.id
+        )
+    }
+
+    /**
+     * Start a download without waiting for completion. The returned record's
+     * id can be observed through downloadStatus/browser_download_status.
+     */
+    fun enqueueDownload(
+        context: Context,
+        url: String,
+        ownerId: String? = null
+    ): DownloadState {
+        val task = createDownloadTask(ownerId, url)
+        val cancellation = BrowserDownloader.CancellationSignal()
+        var generation = 0L
+        var record: DownloadState? = null
+        lateinit var job: Job
+        job = headlessScope.launch(start = CoroutineStart.LAZY) {
+            runCatching {
+                runDownload(
+                    context = context,
+                    url = url,
+                    ownerId = ownerId,
+                    generation = generation,
+                    record = checkNotNull(record),
+                    cancellation = cancellation,
+                    taskId = task.id
+                )
             }
-            finishDownload(record.id, result)
+        }
+        val registered = registerDownload(
+            url = url,
+            ownerId = ownerId,
+            job = job,
+            cancellation = cancellation,
+            taskId = task.id
+        )
+        generation = registered.first
+        record = registered.second
+        job.start()
+        return registered.second
+    }
+
+    private fun registerDownload(
+        url: String,
+        ownerId: String?,
+        job: Job,
+        cancellation: BrowserDownloader.CancellationSignal,
+        taskId: String
+    ): Pair<Long, DownloadState> = synchronized(downloadTaskLock) {
+        if (ownerId != null) {
+            activeDownloadJobs[ownerId]?.let { previous ->
+                previous.cancellation.cancel()
+                if (previous.job !== job) {
+                    previous.job.cancel(CancellationException("Download replaced"))
+                }
+            }
+        }
+        val generation = if (ownerId != null) {
+            val next = (downloadGenerations[ownerId] ?: 0L) + 1L
+            downloadGenerations[ownerId] = next
+            activeDownloadJobs[ownerId] = ActiveDownload(job, cancellation)
+            next
+        } else {
+            0L
+        }
+        generation to startDownload(url, ownerId, taskId)
+    }
+
+    private suspend fun runDownload(
+        context: Context,
+        url: String,
+        ownerId: String?,
+        generation: Long,
+        record: DownloadState,
+        cancellation: BrowserDownloader.CancellationSignal,
+        taskId: String
+    ): DownloadState {
+        return try {
+            val startedAt = System.nanoTime()
+            val result = BrowserDownloader.download(
+                context = context,
+                url = url,
+                cancellation = cancellation
+            ) { downloaded, total ->
+                updateDownloadProgress(record.id, downloaded, total)
+                val percent = if (total > 0L) {
+                    ((downloaded * 100L) / total).toInt().coerceIn(0, 100)
+                } else {
+                    null
+                }
+                val elapsedSeconds =
+                    ((System.nanoTime() - startedAt) / 1_000_000_000.0)
+                        .coerceAtLeast(0.001)
+                val bytesPerSecond = (downloaded / elapsedSeconds).toLong()
+                val etaSeconds = if (total > 0L && bytesPerSecond > 0L) {
+                    val remaining = (total - downloaded).coerceAtLeast(0L)
+                    (remaining + bytesPerSecond - 1L) / bytesPerSecond
+                } else {
+                    null
+                }
+                OperationTaskRegistry.progress(
+                    taskId,
+                    percent,
+                    "downloading ${downloadName(url)}",
+                    current = downloaded,
+                    total = total.takeIf { it > 0L },
+                    bytesPerSecond = bytesPerSecond,
+                    etaSeconds = etaSeconds
+                )
+            }
+            currentCoroutineContext().ensureActive()
+            if (!isCurrentDownload(ownerId, generation)) {
+                throw CancellationException("Download replaced")
+            }
+            val finished = finishDownload(record.id, result)
+            OperationTaskRegistry.succeed(
+                taskId,
+                JSONObject()
+                    .put("download_id", finished.id)
+                    .put("name", finished.name)
+                    .put("path", finished.path.orEmpty())
+                    .put("uri", finished.uri.orEmpty())
+                    .put("size", finished.size)
+                    .toString()
+            )
+            finished
         } catch (t: Throwable) {
+            if (t is CancellationException ||
+                !currentCoroutineContext().isActive ||
+                !isCurrentDownload(ownerId, generation)
+            ) {
+                removeDownload(record.id)
+                OperationTaskRegistry.cancel(taskId, "download replaced")
+                throw if (t is CancellationException) {
+                    t
+                } else {
+                    CancellationException("Download replaced").also {
+                        it.initCause(t)
+                    }
+                }
+            }
             failDownload(record.id, t)
+            OperationTaskRegistry.fail(
+                taskId,
+                t.message ?: t.javaClass.simpleName
+            )
             throw t
+        } finally {
+            synchronized(downloadTaskLock) {
+                if (ownerId != null &&
+                    downloadGenerations[ownerId] == generation &&
+                    activeDownloadJobs[ownerId]?.cancellation === cancellation
+                ) {
+                    activeDownloadJobs.remove(ownerId)
+                }
+            }
         }
     }
 
-    fun latestDownload(): DownloadState? = downloadState
+    private fun createDownloadTask(
+        ownerId: String?,
+        url: String
+    ): OperationTaskRegistry.Snapshot = OperationTaskRegistry.create(
+        ownerId = ownerId ?: "user",
+        kind = "browser_download",
+        title = downloadName(url),
+        replaceKey = ownerId?.let { "$it:browser_download" },
+        onCancel = ownerId?.let {
+            { cancelLatestDownload(it) }
+        }
+    )
+
+    private fun cancelLatestDownload(ownerId: String) {
+        val active = synchronized(downloadTaskLock) {
+            activeDownloadJobs.remove(ownerId).also {
+                if (it != null) {
+                    downloadGenerations[ownerId] =
+                        (downloadGenerations[ownerId] ?: 0L) + 1L
+                }
+            }
+        }
+        active?.cancellation?.cancel()
+        active?.job?.cancel(CancellationException("Download cancelled"))
+        latestDownload(ownerId)?.let { removeDownload(it.id) }
+    }
+
+    fun latestDownload(ownerId: String? = null): DownloadState? =
+        downloadStatus(ownerId = ownerId)
+
+    fun downloadStatus(
+        id: String? = null,
+        ownerId: String? = null
+    ): DownloadState? =
+        synchronized(downloadLock) {
+            val byId = id?.let { wanted ->
+                _downloads.value.firstOrNull { it.id == wanted }
+            }
+            if (byId != null) return@synchronized byId
+            if (ownerId != null) {
+                latestDownloadIds[ownerId]?.let { latestId ->
+                    _downloads.value.firstOrNull { it.id == latestId }
+                } ?: _downloads.value.firstOrNull {
+                    it.state == "downloading" && it.ownerId == ownerId
+                }
+            } else {
+                downloadState ?: _downloads.value.firstOrNull {
+                    it.state == "downloading"
+                }
+            }
+        }
 
     fun deleteDownload(context: Context, id: String): Boolean {
         val target = synchronized(downloadLock) {
@@ -915,6 +1200,7 @@ object BrowserSession {
             if (item.state == "downloading") return false
             _downloads.value = _downloads.value.filterNot { it.id == id }
             if (downloadState?.id == id) downloadState = null
+            latestDownloadIds.entries.removeAll { it.value == id }
             item
         }
         target.uri?.let { raw ->
@@ -933,21 +1219,31 @@ object BrowserSession {
         return true
     }
 
-    suspend fun awaitDownload(timeoutMs: Long = 30_000): DownloadState? {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        var current = downloadState
-        while (current?.state == "downloading" && System.currentTimeMillis() < deadline) {
-            delay(200)
-            current = downloadState
-        }
-        return current
-    }
-
     private fun replaceDownload(updated: DownloadState) {
         _downloads.value = _downloads.value.map { item ->
             if (item.id == updated.id) updated else item
         }
     }
+
+    private fun removeDownload(id: String) {
+        synchronized(downloadLock) {
+            _downloads.value = _downloads.value.filterNot { it.id == id }
+            if (downloadState?.id == id) downloadState = null
+            latestDownloadIds.entries.removeAll { it.value == id }
+        }
+    }
+
+    private fun isCurrentDownload(ownerId: String?, generation: Long): Boolean =
+        ownerId == null || downloadGenerations[ownerId] == generation
+
+    fun setDownloadOwner(tabId: String?, ownerId: String) {
+        val entry = entryFor(tabId) ?: return
+        entry.ownerId = ownerId
+    }
+
+    private fun downloadOwner(tabId: String): String? = entries[tabId]?.ownerId
+
+    private fun downloadOwnerKey(ownerId: String?): String = ownerId.orEmpty()
 
     private fun downloadName(url: String): String {
         val fromUrl = runCatching { Uri.parse(url).lastPathSegment }.getOrNull()

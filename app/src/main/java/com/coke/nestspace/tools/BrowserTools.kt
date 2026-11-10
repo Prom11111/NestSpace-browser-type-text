@@ -57,6 +57,94 @@ internal object BrowserTools {
         BrowserSession.snapshot().forEach { put(tabJson(it)) }
     }
 
+    private fun downloadResult(
+        download: BrowserSession.DownloadState,
+        checks: Int,
+        maxChecks: Int,
+        intervalMs: Long,
+        timedOut: Boolean = false
+    ): ToolResult {
+        val percent = download.progress?.let {
+            (it * 100f).toInt().coerceIn(0, 100)
+        } ?: -1
+        val text = JSONObject()
+            .put("state", download.state)
+            .put(
+                "terminal",
+                download.state == "done" || download.state == "failed"
+            )
+            .put("downloaded", download.state == "done")
+            .put("download_id", download.id)
+            .put("task_id", download.taskId.orEmpty())
+            .put("url", download.url)
+            .put("name", download.name)
+            .put("path", download.path.orEmpty())
+            .put("uri", download.uri.orEmpty())
+            .put("size", download.size)
+            .put("downloaded_bytes", download.downloadedBytes)
+            .put("total_bytes", download.totalBytes)
+            .put("progress_percent", percent)
+            .put("checks", checks)
+            .put("max_checks", maxChecks)
+            .put("interval_ms", intervalMs)
+            .put("poll_timed_out", timedOut)
+            .put(
+                "message",
+                when (download.state) {
+                    "done" -> "download completed"
+                    "failed" -> "download failed"
+                    else -> "download is still running; keep polling with " +
+                        "poll_tool and this task_id"
+                }
+            )
+            .put("error", download.error.orEmpty())
+            .toString()
+        return when (download.state) {
+            "done" -> ToolResult(true, text)
+            "failed" -> ToolResult(
+                false,
+                text,
+                errorCode = "DOWNLOAD_FAILED"
+            )
+            else -> ToolResult(
+                false,
+                text,
+                errorCode = "DOWNLOAD_IN_PROGRESS"
+            )
+        }
+    }
+
+    private fun startedDownloadResult(
+        download: BrowserSession.DownloadState,
+        started: Boolean
+    ): ToolResult {
+        val failed = download.state == "failed"
+        return ToolResult(
+            !failed,
+            JSONObject()
+                .put("started", started)
+                .put("attached", !started)
+                .put("state", download.state)
+                .put("terminal", download.state == "done" || failed)
+                .put("download_id", download.id)
+                .put("task_id", download.taskId.orEmpty())
+                .put("url", download.url)
+                .put("name", download.name)
+                .put(
+                    "next",
+                    if (download.state == "downloading") {
+                        "Use poll_tool with task_status and this task_id. Do not report " +
+                            "completion until terminal=true and state=succeeded."
+                    } else {
+                        "Inspect state before continuing."
+                    }
+                )
+                .put("error", download.error.orEmpty())
+                .toString(),
+            errorCode = if (failed) "DOWNLOAD_FAILED" else null
+        )
+    }
+
     /**
      * Publish the page the assistant is working on so the live preview card
      * can render a small chrome-less WebView of it.
@@ -97,7 +185,7 @@ internal object BrowserTools {
                 "wait_ms" to "integer",
                 required = listOf("url")
             )
-        ) { args, _ ->
+        ) { args, ctx ->
             val url = BrowserSession.normalizeInput(args.optString("url"))
             val headless = args.optBoolean("headless", true)
             val newTab = args.optBoolean("new_tab", true)
@@ -110,7 +198,8 @@ internal object BrowserTools {
                         url = url,
                         headless = headless,
                         newTab = newTab,
-                        tabId = requestedTab
+                        tabId = requestedTab,
+                        ownerId = ctx.sessionId
                     )
                 }
             }.getOrElse { error ->
@@ -477,7 +566,7 @@ internal object BrowserTools {
                 "selector" to "string",
                 "tab_id" to "string"
             )
-        ) { args, _ ->
+        ) { args, ctx ->
             val text = args.optString("text").trim()
             val selector = args.optString("selector").trim()
             if (text.isBlank() && selector.isBlank()) return@ToolSpec ToolResult(
@@ -489,7 +578,11 @@ internal object BrowserTools {
             withContext(Dispatchers.Main) {
                 val webView = BrowserSession.webView(id)
                     ?: return@withContext noTabResult(args)
-                BrowserSession.clearDownload()
+                BrowserSession.clearDownload(ctx.sessionId)
+                BrowserSession.setDownloadOwner(
+                    id ?: BrowserSession.activeTabId(),
+                    ctx.sessionId
+                )
                 val needle = if (text.isBlank()) "null" else JSONObject.quote(text)
                 val sel = if (selector.isBlank()) "null" else JSONObject.quote(selector)
                 val script = """
@@ -538,30 +631,27 @@ internal object BrowserTools {
         },
         ToolSpec(
             name = "browser_download",
-            description = "Download a file (for example an APK) from a URL. Returns the local file path, " +
-                "which can be passed to space_install_apk. If url is omitted, waits for and reports " +
-                "a download started by browser_click.",
-            inputSchema = toolSchema("url" to "string", "tab_id" to "string")
+            description = "Start a file download from a URL and return its download_id immediately. " +
+                "Use poll_tool with task_status to observe progress until terminal=true. " +
+                "If url is omitted, attach to the page-triggered download started by browser_click. " +
+                "Starting a new download cancels only the previous download owned by the same " +
+                "assistant session.",
+            inputSchema = toolSchema(
+                "url" to "string",
+                "tab_id" to "string"
+            )
         ) { args, ctx ->
             val input = args.optString("url").trim()
             if (input.isBlank()) {
-                val state = BrowserSession.awaitDownload()
+                val state = BrowserSession.latestDownload(ctx.sessionId)
                     ?: return@ToolSpec ToolResult(
                         false,
                         "no browser download has started",
                         errorCode = "DOWNLOAD_NOT_FOUND"
                     )
-                return@ToolSpec ToolResult(
-                    state.state != "failed",
-                    JSONObject()
-                        .put("state", state.state)
-                        .put("url", state.url)
-                        .put("path", state.path ?: "")
-                        .put("uri", state.uri ?: "")
-                        .put("size", state.size)
-                        .put("error", state.error ?: "")
-                        .toString(),
-                    errorCode = if (state.state == "failed") "DOWNLOAD_FAILED" else null
+                return@ToolSpec startedDownloadResult(
+                    download = state,
+                    started = false
                 )
             }
             val id = tabIdArg(args)
@@ -590,30 +680,48 @@ internal object BrowserTools {
                     )
                 }
             }
-            runCatching { BrowserSession.download(context, url) }
-                .fold(
-                    onSuccess = { download ->
-                        ToolResult(
-                            download.state == "done",
-                            JSONObject()
-                                .put("downloaded", true)
-                                .put("url", url)
-                                .put("download_id", download.id)
-                                .put("path", download.path.orEmpty())
-                                .put("uri", download.uri.orEmpty())
-                                .put("name", download.name)
-                                .put("size", download.size)
-                                .toString()
-                        )
-                    },
-                    onFailure = { error ->
-                        ToolResult(
-                            false,
-                            "download failed: ${error.message ?: error.javaClass.simpleName}",
-                            errorCode = "DOWNLOAD_FAILED"
-                        )
-                    }
+            val started = BrowserSession.enqueueDownload(
+                context = context,
+                url = url,
+                ownerId = ctx.sessionId
+            )
+            startedDownloadResult(
+                download = started,
+                started = true
+            )
+        },
+        ToolSpec(
+            name = "browser_download_status",
+            description = "Read one browser download snapshot by download_id. This is a safe polling " +
+                "target for poll_tool. State=downloading is not success; state=done is complete and " +
+                "state=failed is terminal failure.",
+            inputSchema = toolSchema(
+                "download_id" to "string",
+                required = listOf("download_id")
+            )
+        ) { args, ctx ->
+            val downloadId = args.optString("download_id").trim()
+            if (downloadId.isBlank()) {
+                return@ToolSpec ToolResult(
+                    false,
+                    "download_id is required",
+                    errorCode = "INVALID_ARGUMENT"
                 )
+            }
+            val state = BrowserSession.downloadStatus(
+                id = downloadId,
+                ownerId = ctx.sessionId
+            ) ?: return@ToolSpec ToolResult(
+                false,
+                "download not found: $downloadId",
+                errorCode = "DOWNLOAD_NOT_FOUND"
+            )
+            downloadResult(
+                download = state,
+                checks = 1,
+                maxChecks = 1,
+                intervalMs = 0L
+            )
         },
         ToolSpec(
             name = "browser_upload",
