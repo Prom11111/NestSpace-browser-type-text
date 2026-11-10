@@ -778,7 +778,7 @@ claude mcp add --transport http space http://127.0.0.1:8765/mcp \
 - **OpenAI 互換**：`POST {base}/v1/chat/completions`、`Authorization: Bearer`、ネイティブ `tool_calls` / role=`tool` メッセージ。
 - サードパーティのカスタムテンプレートプロトコルは削除済み；旧バージョンで保存された `CUSTOM` 設定は無視され、Claude のデフォルト値にフォールバックする。残存するカスタム endpoint が新しいプロトコルに混入するのを避けるためである。
 - `LlmAgentRuntime` は `ToolRegistry` を再利用し、`ToolContext(sessionId, LOCAL_AGENT, "virtual-1")` を渡し、session/approval ツールを除外し、最大 16 ターンのツール呼び出し、単一ツール結果は 12k 文字で切り詰める。
-- 未設定時はルールベースの `LocalAgentRuntime` にフォールバックする；ルール Agent はシステム仮想空間の機能を引き続き保持し、大規模モデル Agent は virtual-1 のみを制御する。
+- モデルが未設定または利用できない場合、アシスタントはモデル設定を促し、ルールベースのコマンドやツール呼び出しを実行しない。
 - `AssistantConversation` はアシスタントページとフローティングボール音声アシスタントが共有するメッセージストリームと直近 24 テキストターンを統一的に管理する；`LlmAgentRuntime.run(history = ...)` は各リクエスト前に履歴を再生し、マルチターンの追加質問を実現する。音声入口はデフォルトでテキスト入力を隠し、最終認識結果を自動送信し、応答後に自動でリスニングを再開する。
 - 音声認識は内蔵の Vosk オフラインモデル（`com.alphacephei:vosk-android`）を使用し、クラウド STT を経由しない。モデルは初回使用時にダウンロードされ、フローティングボール設定でも管理できる；ダウンロード前に HF 中国ミラー、Hugging Face、Vosk 公式サイトのトップページへ並行アクセスして速度を測定し、最も応答の速い回線を選択し、失敗時は自動的に切り替える。中国語/English の小モデルはそれぞれキャッシュされ、モデル準備完了後は `SpeechService` が partial/final 結果を継続的に提供する。
 - `LocalSpeechEngine` はプロセス内で読み込み済みの `Model` をキャッシュする；ダウンロード完了後すぐにバックグラウンドで読み込み、アプリ起動時にモデルがキャッシュ済みならプリロードも行う。音声ページは `Recognizer`/`SpeechService` のみを作成し、開けばすぐにリスニングできる。言語切り替え時は先に新しいモデルを読み込む；古いモデルはプロセス終了まで保持し、一時停止中の音声ページが古い Recognizer を保持している間に早期解放されるのを避ける。
@@ -1415,7 +1415,7 @@ Android 7.1.1 x86 エミュレーターで検証：
   1. `ToolRegistry`：3 つのツール（`ui_observe`、`ui_tap`、`ui_key`）、パラメータ検証 + scope
   2. `SpaceAccessibilityService`（observe + tap + back）
   3. `McpForegroundService`（組み込みの最小 HTTP サーバー + token）
-  4. `LocalAgentRuntime`（まず `ClaudeAdapter` または偽モデル；ループはアプリ内）
+  4. `LlmAgentRuntime`（先にモデルを設定；ツールループはアプリ内）
   5. `ControlLease` + `ApprovalGate`（少なくとも排他リースと確認ダイアログを実装）
 
 **受け入れ確認：**

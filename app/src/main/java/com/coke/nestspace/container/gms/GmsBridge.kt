@@ -34,8 +34,6 @@ object GmsBridge {
     private const val BROKER = "com.google.android.gms.common.internal.IGmsServiceBroker"
 
     private val connections = ConcurrentHashMap<ServiceConnection, ServiceConnection>()
-    private val layoutInspected = java.util.concurrent.atomic.AtomicBoolean(false)
-
     fun isGmsIntent(intent: Intent): Boolean {
         val pkg = intent.component?.packageName ?: intent.`package` ?: return false
         return pkg == GMS || pkg.startsWith("$GMS.") ||

@@ -7,8 +7,4 @@ class ApplicationRuntimeInstaller : RuntimePluginInstaller {
     override fun install() {
         RuntimeApplicationFactories.target = TargetApplicationFactory
     }
-
-    override fun uninstall() {
-        RuntimeApplicationFactories.target = null
-    }
 }

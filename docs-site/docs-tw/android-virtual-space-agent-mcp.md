@@ -778,7 +778,7 @@ claude mcp add --transport http space http://127.0.0.1:8765/mcp \
 - **OpenAI 相容**：`POST {base}/v1/chat/completions`，`Authorization: Bearer`，原生 `tool_calls` / role=`tool` 訊息。
 - 已移除第三方自訂範本協定；舊版本儲存的 `CUSTOM` 設定會被忽略並回退到 Claude 預設值，避免殘留的自訂 endpoint 混入新協定。
 - `LlmAgentRuntime` 重用 `ToolRegistry`，`ToolContext(sessionId, LOCAL_AGENT, "virtual-1")`，排除 session/approval 工具，最多 16 輪工具呼叫，單次工具結果截斷 12k 字元。
-- 未設定時回退到規則 `LocalAgentRuntime`；規則 Agent 仍保留系統空間能力，大型語言模型 Agent 只控制 virtual-1。
+- 未設定或沒有可用模型時，助手會直接提示前往模型設定，不執行規則命令或工具呼叫。
 - `AssistantConversation` 統一維護助手頁與懸浮球語音助手共用的訊息流和最近 24 輪文字對話；`LlmAgentRuntime.run(history = ...)` 在每次請求前重播歷史，實現多輪追問。語音入口預設隱藏文字輸入，最終辨識結果自動提交，回覆後自動恢復聆聽。
 - 語音辨識使用內建 Vosk 離線模型（`com.alphacephei:vosk-android`），不經過雲端 STT。模型在首次使用時下載，也可在懸浮球設定中管理；下載前平行存取 HF 中國鏡像、Hugging Face 和 Vosk 官方網站首頁測速，選擇回應最快的線路，失敗自動切換。中文/English 小模型分別快取，模型就緒後 `SpeechService` 持續提供 partial/final 結果。
 - `LocalSpeechEngine` 在處理程序內快取已載入的 `Model`；下載完成立即背景載入，App 啟動時若模型已快取也會預先載入，語音頁只建立 `Recognizer`/`SpeechService`，開啟即可聆聽。切換語言時先載入新模型；舊模型保留到處理程序結束，避免暫停中的語音頁仍持有舊 Recognizer 時被提前釋放。
@@ -1415,7 +1415,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
   1. `ToolRegistry`：3 個工具（`ui_observe`、`ui_tap`、`ui_key`），參數驗證 + scope
   2. `SpaceAccessibilityService`（observe + tap + back）
   3. `McpForegroundService`（內建最小 HTTP server + token）
-  4. `LocalAgentRuntime`（先用 `ClaudeAdapter` 或假模型；迴圈在 App 內）
+  4. `LlmAgentRuntime`（需先設定模型；工具迴圈在 App 內）
   5. `ControlLease` + `ApprovalGate`（至少實作獨占租約和確認彈出視窗）
 
 **驗收：**

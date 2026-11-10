@@ -778,7 +778,7 @@ Implemented (NestSpace 0.3):
 - **OpenAI compatible**: `POST {base}/v1/chat/completions`, `Authorization: Bearer`, native `tool_calls` / role=`tool` messages.
 - The third-party custom template protocol has been removed; `CUSTOM` configurations saved by older versions are ignored and fall back to Claude defaults, preventing leftover custom endpoints from mixing into the new protocol.
 - `LlmAgentRuntime` reuses `ToolRegistry`, with `ToolContext(sessionId, LOCAL_AGENT, "virtual-1")`, excludes session/approval tools, allows at most 16 rounds of tool calls, and truncates a single tool result to 12k characters.
-- When unconfigured, it falls back to the rule-based `LocalAgentRuntime`; the rule-based Agent still retains system-space capabilities, while the large-model Agent controls only virtual-1.
+- When no model is configured, the assistant asks the user to finish model setup and does not execute rule-based commands or tool calls.
 - `AssistantConversation` uniformly maintains the message stream shared by the assistant page and the floating-ball voice assistant and the most recent 24 text turns; `LlmAgentRuntime.run(history = ...)` replays history before each request to support multi-turn follow-ups. The voice entry hides text input by default, automatically submits the final recognition result, and resumes listening after the reply.
 - Speech recognition uses the built-in Vosk offline model (`com.alphacephei:vosk-android`) and does not go through cloud STT. The model is downloaded on first use and can also be managed in the floating-ball settings; before downloading, it concurrently probes the HF China mirror, Hugging Face, and the Vosk homepage to measure speed, chooses the fastest route, and switches automatically on failure. Chinese/English small models are cached separately; once the model is ready, `SpeechService` continuously provides partial/final results.
 - `LocalSpeechEngine` caches the loaded `Model` in-process; it loads in the background immediately after download and preloads at app startup if the model is cached; the voice page only creates `Recognizer`/`SpeechService`, so it can listen as soon as it opens. When switching languages, load the new model first; keep the old model until the process exits, so it is not released early while a paused voice page still holds the old Recognizer.
@@ -1415,7 +1415,7 @@ Implementation locations: `app` (`engine/MiniContainerEngine.kt`, `container/Con
   1. `ToolRegistry`: 3 tools (`ui_observe`, `ui_tap`, `ui_key`), argument validation + scope
   2. `SpaceAccessibilityService` (observe + tap + back)
   3. `McpForegroundService` (built-in minimal HTTP server + token)
-  4. `LocalAgentRuntime` (use `ClaudeAdapter` or a fake model first; loop inside the app)
+  4. `LlmAgentRuntime` (configure a model first; the tool loop stays inside the app)
   5. `ControlLease` + `ApprovalGate` (implement at least exclusive leases and confirmation dialogs)
 
 **Acceptance:**

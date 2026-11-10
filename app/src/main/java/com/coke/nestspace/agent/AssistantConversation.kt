@@ -54,12 +54,12 @@ object AssistantConversation {
         AppLanguage.tr(
             "你好，我是 NestSpace 助手。\n" +
                 "点按圆点说话，或点左下角键盘输入；我会记住上下文，继续追问即可。\n" +
-                "在 空间设置 → 模型设置 配置大模型后，可以执行更复杂的虚拟空间任务。",
+                "请先在 空间设置 → 模型设置 配置可用模型，之后才能执行虚拟空间任务。",
             "Hi, I'm the NestSpace assistant.\n" +
                 "Tap the dot to speak, or use the keyboard button; I remember the " +
                 "context, so just keep asking.\n" +
-                "Configure a model in Space settings → Model settings to handle more " +
-                "complex virtual-space tasks."
+                "Configure a model in Space settings → Model settings before running " +
+                "virtual-space tasks."
         ),
         welcome = true
     )
@@ -232,7 +232,6 @@ object AssistantConversation {
             val state = LlmConfigStore(app).load()
             val config = state.configs.firstOrNull { it.id == state.activeId }
                 ?: state.configs.firstOrNull()
-            val registry = AppGraph.registry(app)
             val priorHistory = synchronized(stateLock) { history.toList() }
             val priorAssistantAnswer = priorHistory.asReversed()
                 .firstOrNull { it.role == ChatRole.ASSISTANT }
@@ -241,7 +240,7 @@ object AssistantConversation {
                 ?.take(1_500)
 
             if (config != null && config.isConfigured) {
-                val runtime = LlmAgentRuntime(registry)
+                val runtime = LlmAgentRuntime(AppGraph.registry(app))
                 val memoryContext = withContext(Dispatchers.IO) {
                     MemoryStore(app).contextFor(text)
                 }
@@ -284,21 +283,17 @@ object AssistantConversation {
                     ?: trace.lastOrNull { it.role == AgentMessage.Role.ERROR }?.text
                 recordHistory(text, answer, consumedSteering)
             } else {
-                // Rule mode still reaches the container/UI tools; run it off
-                // the main thread like the LLM runtime.
-                val trace = withContext(Dispatchers.IO) {
-                    LocalAgentRuntime(registry).run(text, "local-ui")
-                }
-                _messages.update { it + trace }
-                trace.filter { it.role != AgentMessage.Role.USER }
-                    .forEach { recorder?.record(it.role, it.text) }
-                metrics.addToolCalls(
-                    trace.count { it.role == AgentMessage.Role.TOOL }
+                val message = AppLanguage.tr(
+                    "尚未配置可用模型，请先在 空间设置 → 模型设置 中完成配置。",
+                    "No model is configured. Set one up in Space settings → Model settings."
                 )
-                runFailed = trace.any { it.role == AgentMessage.Role.ERROR }
-                answer = trace.lastOrNull { it.role == AgentMessage.Role.AGENT }?.text
-                    ?: trace.lastOrNull { it.role == AgentMessage.Role.ERROR }?.text
-                recordHistory(text, answer, consumedSteering)
+                _messages.update {
+                    it + AgentMessage(AgentMessage.Role.USER, text) +
+                        AgentMessage(AgentMessage.Role.ERROR, message)
+                }
+                recorder?.record(AgentMessage.Role.ERROR, message)
+                answer = message
+                runFailed = true
             }
             currentCoroutineContext().ensureActive()
             _lastRun.value = withContext(NonCancellable + Dispatchers.IO) {

@@ -18,8 +18,6 @@ data class RuntimeApplicationSpec(
 )
 
 interface RuntimeApplicationFactory {
-    fun supports(spec: RuntimeApplicationSpec): Boolean = true
-
     fun create(
         spec: RuntimeApplicationSpec,
         loader: ClassLoader,
@@ -34,9 +32,6 @@ object RuntimeApplicationFactories {
 
 interface RuntimePluginInstaller {
     fun install()
-
-    fun uninstall() {
-    }
 }
 
 /**
@@ -55,22 +50,6 @@ object RuntimePluginLoader {
         installClasses(coreInstallers)
     }
 
-    @Synchronized
-    fun installBuiltIns() {
-        installClasses(coreInstallers)
-    }
-
-    @Synchronized
-    fun uninstallBuiltIns() {
-        uninstallClasses(coreInstallers.asReversed())
-    }
-
-    @Synchronized
-    fun isCoreInstalled(): Boolean = coreInstallers.any(installed::containsKey)
-
-    @Synchronized
-    fun isInstalled(): Boolean = installed.isNotEmpty()
-
     private fun installClasses(classNames: List<String>) {
         classNames.forEach { className ->
             if (installed.containsKey(className)) return@forEach
@@ -80,14 +59,6 @@ object RuntimePluginLoader {
             }.getOrNull() ?: return@forEach
             runCatching { plugin.install() }.onSuccess {
                 installed[className] = plugin
-            }
-        }
-    }
-
-    private fun uninstallClasses(classNames: List<String>) {
-        classNames.forEach { className ->
-            installed.remove(className)?.let { plugin ->
-                runCatching { plugin.uninstall() }
             }
         }
     }

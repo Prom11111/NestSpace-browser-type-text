@@ -197,15 +197,7 @@ class ContainerSelfCheckRunner(private val context: Context) {
         }.getOrNull().orEmpty()
         val detail = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · " +
             "${Build.SUPPORTED_ABIS.firstOrNull().orEmpty()} · app $version · ${availableMb} MB free"
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            Outcome(ContainerCheckStatus.PASS, detail)
-        } else {
-            Outcome(
-                ContainerCheckStatus.FAIL,
-                detail,
-                AppLanguage.tr("需要 Android 7.0 及以上", "Android 7.0 or newer is required")
-            )
-        }
+        return Outcome(ContainerCheckStatus.PASS, detail)
     }
 
     private fun checkSlots(): Outcome {
