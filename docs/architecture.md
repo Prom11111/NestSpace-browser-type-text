@@ -22,16 +22,16 @@ NestSpace 由四部分组成：
 
 - `plugin-api`：Java 优先的外部插件 SDK、Agent Hook、Host API、设置 View、能力和
   启动策略契约。
-- `runtime-plugin-api`：目标运行时代理 Java API、启动描述、类名索引和 ClassLoader scope。
-- `runtime-api`：引擎契约、共享模型、Application factory 注册表和宿主 hook。
+- `runtime-api`：引擎契约、共享模型、Application factory 注册表、宿主 hook，以及目标
+  运行时代理 API、启动描述、类名索引和 ClassLoader scope。
 - `runtime-core`：APK 与实例存储、Session、Activity Host、进程槽位、Provider、生命周期、Native Facade 和 MCP UI。
 - `runtime-compat`：通用目标 Application 启动链解析、兼容 Application factory 和
   Tinker/AppLike 行为。
 - `app`：Compose 控制面、Agent、插件中心、设置 View 宿主和插件注册。
 - `example-plugin/plugin`、`dev-plugins/*`：只在 Debug 构建中发现和加载的源码插件。
 
-依赖方向为 `runtime-compat → runtime-core → runtime-api`；`runtime-core` 同时依赖
-`plugin-api` 和 `runtime-plugin-api`，`app` 作为控制面依赖全部模块。通用兼容后端
+依赖方向为 `runtime-compat → runtime-core → runtime-api`；`runtime-core` 还依赖
+`plugin-api`，`app` 作为控制面依赖全部模块。通用兼容后端
 通过 `RuntimePluginLoader` 安装；目标包名、版本、完整类名和专用 Profile 放在独立插件
 模块，不进入通用容器代码。
 

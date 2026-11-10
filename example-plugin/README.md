@@ -70,10 +70,10 @@ build/plugin-packages/runtime-demo-plugin.nestplugin
 
 示例使用全零测试指纹，只返回 `CONTAINER` 策略，不包含目标应用逻辑。
 
-运行时代理可以使用稳定的 `plugin-api` 和 `runtime-plugin-api`，也可以按需要提供
+运行时代理可以使用稳定的 `plugin-api` 和 `runtime-api`，也可以按需要提供
 目标相关的兼容策略。
 
-目标专用运行时代理只依赖稳定的 `plugin-api` 和 `runtime-plugin-api`。源码模式
+目标专用运行时代理只依赖稳定的 `plugin-api` 和 `runtime-api`。源码模式
 下这两个模块由宿主直接提供，插件开发者无需额外打包 SDK。
 
 ## 源码插件分享

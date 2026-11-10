@@ -7,7 +7,6 @@ NestSpace 的运行时由通用容器、Java-first 公共 SDK、运行时代理 
 ```text
 :app
 ├── :plugin-api
-├── :runtime-plugin-api
 ├── :runtime-api
 ├── :runtime-core
 └── :runtime-compat
@@ -20,11 +19,9 @@ NestSpace 的运行时由通用容器、Java-first 公共 SDK、运行时代理 
 
 ```text
 :runtime-compat ──> :runtime-core ──> :runtime-api
-                                  ├──> :plugin-api
-                                  └──> :runtime-plugin-api
+                                  └──> :plugin-api
 
 :app ──> :plugin-api
-     ├─> :runtime-plugin-api
      ├─> :runtime-api
      ├─> :runtime-core
      └─> :runtime-compat
@@ -34,12 +31,12 @@ NestSpace 的运行时由通用容器、Java-first 公共 SDK、运行时代理 
 工具、设置 View、Host API、页面、LLM Provider 和启动策略。它不依赖 Compose、Kotlin
 运行时或 `app` 内部类，Kotlin 实现也可以使用同一套 Java 接口。
 
-`runtime-plugin-api` 是目标运行时代理的稳定 Java 边界。它向插件提供只读启动描述、
+`runtime-api` 同时是目标运行时代理的稳定 Java 边界。它向插件提供只读启动描述、
 Application/Activity 生命周期 Hook、APK 类名索引和受控 ClassLoader scope。插件可以
 使用目标包名、精确或模糊版本匹配器和完整类名确定 Profile，但通用
 Tinker/AppLike/Application attach 逻辑仍属于运行时核心。
 
-`runtime-api` 保存容器引擎共享契约、数据模型、Application factory 注册表和宿主 hook。
+`runtime-api` 还保存容器引擎共享契约、数据模型、Application factory 注册表和宿主 hook。
 `runtime-core` 负责 APK 与实例存储、Session、Activity Host、进程槽位、Provider、
 生命周期、Native Facade 和 MCP UI。`runtime-compat` 负责通用目标 Application 启动链、
 兼容 Application factory 和 Tinker/AppLike 解析。

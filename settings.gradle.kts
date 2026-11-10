@@ -26,7 +26,6 @@ rootProject.name = "NestSpace"
 include(":app")
 include(":plugin-api")
 include(":runtime-api")
-include(":runtime-plugin-api")
 include(":runtime-core")
 include(":runtime-compat")
 include(":testapp")
