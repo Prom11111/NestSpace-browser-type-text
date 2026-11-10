@@ -20,7 +20,8 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "instance_id" to "string",
                 "process" to "string",
                 "slot" to "integer"
-            )
+            ),
+            maxWaitMs = 700L
         ) { args, ctx ->
             var slot = containerSlot(args)
             var observation = slot?.let { ContainerUiClient.observeJson(context, it) }
@@ -250,7 +251,8 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "process" to "string",
                 "slot" to "integer",
                 required = listOf("text")
-            )
+            ),
+            maxWaitMs = 1_000L
         ) { args, _ ->
             val text = args.optString("text").trim()
             if (text.isEmpty()) return@ToolSpec ToolResult(
@@ -277,7 +279,8 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "instance_id" to "string",
                 "process" to "string",
                 "slot" to "integer"
-            )
+            ),
+            maxWaitMs = 700L
         ) { args, _ ->
             val slot = containerSlot(args)
             if (missingRequestedContainer(args, slot)) {

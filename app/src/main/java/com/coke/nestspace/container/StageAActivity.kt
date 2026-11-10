@@ -943,8 +943,14 @@ open class StageAActivity : Activity() {
         )
         val newRoot = mirrorRoot ?: return
         if (target != null && !target.isFinishing) {
+            val targetDecor = target.window.decorView
+            // The previous mirror can disappear before setupMirrorPresentation
+            // succeeds. In that window the target may still be attached to the
+            // host's fallback root, not oldRoot. Detach from whichever parent
+            // currently owns it before moving it to the new Presentation.
+            (targetDecor.parent as? ViewGroup)?.removeView(targetDecor)
             newRoot.addView(
-                target.window.decorView,
+                targetDecor,
                 FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
@@ -1005,6 +1011,7 @@ open class StageAActivity : Activity() {
             headlessBackDone = false
             session?.headless = false
             root?.alpha = 1f
+            promoteMirrorToHost()
             syncAiInfoCaptureGuard()
             return
         }
@@ -1054,6 +1061,45 @@ open class StageAActivity : Activity() {
         } else {
             root?.alpha = 1f
         }
+    }
+
+    /**
+     * Move the current target decor from the mirror Presentation back into the
+     * normal host window. Without this handoff, the host task becomes visible
+     * but the target keeps drawing into the dismissed virtual display, leaving
+     * a black full-screen Activity.
+     */
+    private fun promoteMirrorToHost() {
+        if (!mirrorMode || isFinishing || isDestroyed) return
+        val target = current
+        val targetDecor = target?.window?.decorView
+        (targetDecor?.parent as? ViewGroup)?.removeView(targetDecor)
+        mirrorPresentation?.let { runCatching { it.dismiss() } }
+        mirrorPresentation = null
+        mirrorRoot = null
+        mirrorMode = false
+        mirrorRequested = false
+        mirrorBackDone = false
+        mirrorDisplayId = -1
+        session?.mirrorDisplayId = -1
+        val frame = root ?: return
+        frame.removeAllViews()
+        frame.setBackgroundColor(Color.rgb(246, 247, 251))
+        if (targetDecor != null && !target.isFinishing) {
+            frame.addView(
+                targetDecor,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+        }
+        window.setBackgroundDrawable(
+            android.graphics.drawable.ColorDrawable(Color.rgb(246, 247, 251))
+        )
+        restoreLoadingWindowFocus()
+        syncAiInfoCaptureGuard()
+        Log.i(TAG, "promoted mirror target to full-screen host")
     }
 
     /**

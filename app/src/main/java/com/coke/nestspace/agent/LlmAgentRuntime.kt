@@ -15,6 +15,7 @@ import com.coke.nestspace.llm.ChatServices
 import com.coke.nestspace.llm.ChatTool
 import com.coke.nestspace.llm.ChatUsageSink
 import com.coke.nestspace.tools.Caller
+import com.coke.nestspace.tools.ContainerDisplayMode
 import com.coke.nestspace.tools.ToolContext
 import com.coke.nestspace.tools.ToolRegistry
 import com.coke.nestspace.tools.ToolResult
@@ -78,6 +79,8 @@ class LlmAgentRuntime(
         config: LlmConfig,
         command: String,
         sessionId: String = "local-llm",
+        parentTaskId: String? = null,
+        displayMode: ContainerDisplayMode = ContainerDisplayMode.AUTO,
         history: List<ChatMessage> = emptyList(),
         memoryContext: String? = null,
         skillIndex: String? = null,
@@ -127,6 +130,8 @@ class LlmAgentRuntime(
             sessionId,
             Caller.LOCAL_AGENT,
             VIRTUAL_SPACE,
+            parentTaskId = parentTaskId,
+            displayMode = displayMode,
             userUtterances = userUtterances,
             onSkillUsed = onSkillUsed
         )
@@ -637,17 +642,11 @@ class LlmAgentRuntime(
         val hint = AppLanguage.tr(
             "当前本地时间：$now。\n" +
                 "当前虚拟空间 ID：$VIRTUAL_SPACE。\n" +
-                "先判断用户要打开/操作 App，还是只要从 App 获取信息。" +
-                "这条规则适用于所有虚拟 App，不只是抖音。" +
-                "如果用户只说“打开某个 App”，直接调用 space_launch 并传 headless=false，全屏打开后停止，" +
-                "不要读取或总结页面。如果用户说“打开某个 App 搜索某某”或要求在 App 里点击、关注、发布、下单等，" +
-                "调用 space_launch 并传 headless=false，然后直接用 ui_* 完成操作。" +
-                "如果用户说“打开某个 App，把某类标题/结果/列表发我”或要求整理、读取、总结等，" +
-                "核心目标是获取信息；即使句首有“打开”，也要把整句当成一个任务，使用无头方形小窗，" +
-                "不要先全屏打开再切换，也不要拆成两个任务。" +
-                "如果用户只是要查内容、看热榜、读取页面、收集资料或总结信息，" +
-                "调用 space_launch 时不传 headless，使用无头方形小窗模式。" +
-                "需要用户接管登录、验证码或支付时，用 hand_to_user 切换前台。\n" +
+                "所有由 AI 发起的虚拟 App 打开、浏览、搜索、点击、关注、发布和下单都使用" +
+                "无头方形小窗；调用 space_launch 时省略 headless 或传 true。" +
+                "不要为了执行页面操作而切换全屏，也不要把一个任务拆成先可见再无头。" +
+                "需要用户接管登录、验证码、支付或亲自操作时，保持任务无头并调用 hand_to_user " +
+                "把当前 App 交给用户。\n" +
                 "操作虚拟 App 前先检查它是否仍在运行" +
                 "（space_running 或直接 ui_observe）；已运行就直接用 ui_*，不要重复 space_launch。" +
                 "无头任务在多次读取之间保持 App 运行，只有整个任务结束或用户要求时才 space_stop。" +
@@ -655,9 +654,10 @@ class LlmAgentRuntime(
                 "并给 browser_navigate/browser_click/browser_read_text 等工具传 tab_id 同时操作多个网页。" +
                 "所有网页任务只能使用 browser_* 工具，禁止用 host_launch 启动 Chrome 或系统浏览器，" +
                 "也不要通过外部 Intent 打开网页。" +
-                "遇到页面加载、App 启动、安装后处理、UI 文本或其它异步任务，统一用 poll_tool " +
-                "按次数和间隔复查只读状态；未看到明确的完成态前不得当作成功。browser_download " +
-                "只负责启动并返回 download_id 和 task_id，随后用 poll_tool 观察 task_status，" +
+                "遇到下载、安装和其它内部异步任务，优先用 task_wait 等待状态变化或终态；" +
+                "工具最多等待各自配置的同步返回上限，完成则立即返回结果，未完成返回 task_id；" +
+                "拿到 task_id 后用 task_wait，timeout 只是最大等待时间。页面文字等没有内部事件源的观察才用 poll_tool。超时不是成功。browser_download " +
+                "只负责启动并返回 download_id 和 task_id，随后用 task_wait 观察，" +
                 "直到 terminal=true；只有 state=succeeded 才算成功。是否因速度慢而取消由你根据速度、" +
                 "剩余时间和空闲时间判断并调用 task_cancel；启动替代下载时系统仍会强制停止旧连接。" +
                 "ui_wait_for 仅为旧调用兼容入口。同一助手切换下载" +
@@ -679,19 +679,12 @@ class LlmAgentRuntime(
                 "需要看画面时用 ui_screenshot；支持视觉的模型会自动收到截图。",
             "Current local time: $now.\n" +
                 "Current virtual space ID: $VIRTUAL_SPACE.\n" +
-                "First decide whether the user wants to open/operate the app or only retrieve " +
-                "information. This applies to every virtual app, not only Douyin. For 'open " +
-                "an app', call space_launch with headless=false, leave it full-screen, and do " +
-                "not inspect or summarize the page. For 'open an app and search for X' or " +
-                "another requested action (tap, follow, post, order), " +
-                "also pass headless=false and perform it with ui_* in the visible app. For " +
-                "requests such as 'open an app and send me titles/results' or 'open an app and " +
-                "summarize/read the content', the information goal wins: treat the whole sentence " +
-                "as one headless-mirror task even though it starts with 'open'. Do not open it " +
-                "full-screen first and do not split it into two tasks. For " +
-                "information-only requests (read, check, collect, summarize, rankings), omit " +
-                "headless so the app runs in the assistant's headless square mirror. Use " +
-                "hand_to_user when the user must take over login, verification, or payment. " +
+                "Every app launch, browse, search, tap, follow, post or order initiated by " +
+                "the AI uses the headless square mirror. Omit headless or pass true to " +
+                "space_launch. Never switch to full-screen just to operate a page, and do not " +
+                "split a task into a visible launch followed by a headless one. Keep the task " +
+                "headless and call hand_to_user when the user must take over login, " +
+                "verification, payment, or direct operation. " +
                 "Before operating a virtual app, check whether it is " +
                 "already running (space_running or ui_observe); if it is, continue with ui_* " +
                 "and do not call space_launch again. Keep a headless app running between " +
@@ -702,9 +695,11 @@ class LlmAgentRuntime(
                 "browser_* tools. Never launch Chrome or another system browser with " +
                 "host_launch, and never hand a web URL to an external Intent. For page loads, app " +
                 "startup, post-install work, visible app text and other asynchronous operations, use " +
-                "poll_tool to check a read-only status tool at a fixed interval and count. Never " +
-                "treat a timeout as success. browser_download only starts the task and returns " +
-                "download_id and task_id; then poll task_status with poll_tool until terminal=true; " +
+                "task_wait for internal tasks; a tool returns immediately when finished within its own " +
+                "maximum wait, otherwise it returns task_id and task_wait timeout is only a maximum. " +
+                "Use poll_tool only for sources without internal events. " +
+                "Never treat a timeout as success. browser_download only starts the task and returns " +
+                "download_id and task_id; then wait with task_wait until terminal=true; " +
                 "only state=succeeded is success. Decide from speed, ETA and idle time whether to " +
                 "cancel a slow task with task_cancel; starting a replacement still enforces old-" +
                 "connection shutdown. ui_wait_for remains only for backward compatibility. " +

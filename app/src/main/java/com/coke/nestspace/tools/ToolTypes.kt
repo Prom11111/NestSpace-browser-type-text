@@ -4,6 +4,23 @@ import org.json.JSONObject
 
 enum class Caller { LOCAL_AGENT, REMOTE_MCP, USER }
 
+enum class ContainerDisplayMode(val api: String) {
+    AUTO("auto"),
+    BACKGROUND("background"),
+    MIRROR("mirror"),
+    VISIBLE("visible");
+
+    companion object {
+        fun parse(
+            value: String?,
+            default: ContainerDisplayMode
+        ): ContainerDisplayMode {
+            val normalized = value?.trim()?.lowercase().orEmpty()
+            return entries.firstOrNull { it.api == normalized } ?: default
+        }
+    }
+}
+
 internal enum class AssistantPresentation { VISIBLE, HEADLESS }
 
 /**
@@ -45,6 +62,11 @@ data class ToolContext(
     val sessionId: String,
     val caller: Caller,
     val spaceId: String = "system",
+    /** Stable task owner; unlike sessionId it survives reconnect for the same client. */
+    val ownerId: String = sessionId,
+    val parentTaskId: String? = null,
+    /** AUTO keeps the normal policy; MCP can force an off-screen, mirror or visible launch. */
+    val displayMode: ContainerDisplayMode = ContainerDisplayMode.AUTO,
     /** Guides already shown in this run, so the same app/site guide is not injected twice. */
     val seenKnowledge: MutableSet<String> = mutableSetOf(),
     /** User turns in this run; mutable so steering turns are visible to later tool calls. */
@@ -66,8 +88,23 @@ data class ToolSpec(
     val description: String,
     val inputSchema: JSONObject,
     val mutating: Boolean = false,
+    /**
+     * Maximum time a caller waits synchronously for a result. This is only an
+     * upper bound: a completed tool returns immediately, while unfinished work
+     * keeps running and returns a task id after the bound is reached.
+     */
+    val maxWaitMs: Long = DEFAULT_MAX_WAIT_MS,
+    /**
+     * The tool owns a durable task and returns its task id itself. The registry
+     * must not wrap it in a second, immediately completed tool_call task.
+     */
+    val nativeAsync: Boolean = false,
     val handler: suspend (JSONObject, ToolContext) -> ToolResult
-)
+) {
+    companion object {
+        const val DEFAULT_MAX_WAIT_MS = 500L
+    }
+}
 
 class LeaseManager {
     private data class Holder(val sessionId: String, val at: Long)

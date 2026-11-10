@@ -15,6 +15,7 @@ import com.coke.nestspace.memory.MemoryStore
 import com.coke.nestspace.memory.SkillDrafter
 import com.coke.nestspace.memory.SkillStore
 import com.coke.nestspace.replay.ReplayManager
+import com.coke.nestspace.tools.ContainerDisplayMode
 import com.coke.nestspace.llm.ChatBlock
 import com.coke.nestspace.llm.ChatMessage
 import com.coke.nestspace.llm.ChatRole
@@ -82,6 +83,14 @@ object AssistantConversation {
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy
 
+    private val _activeRunOrigin =
+        MutableStateFlow(AgentMessage.Origin.LOCAL)
+    val activeRunOrigin: StateFlow<AgentMessage.Origin> = _activeRunOrigin
+
+    private val _lastRunOrigin =
+        MutableStateFlow(AgentMessage.Origin.LOCAL)
+    val lastRunOrigin: StateFlow<AgentMessage.Origin> = _lastRunOrigin
+
     /** Partial assistant text for the current model response. */
     private val _streamingText = MutableStateFlow("")
     val streamingText: StateFlow<String> = _streamingText
@@ -101,6 +110,9 @@ object AssistantConversation {
     private data class PendingTask(
         val context: Context,
         val text: String,
+        val origin: AgentMessage.Origin,
+        val displayMode: ContainerDisplayMode,
+        val parentTaskId: String?,
         val onFinished: ((RunOutcome, String?) -> Unit)?
     )
 
@@ -137,6 +149,9 @@ object AssistantConversation {
         context: Context,
         command: String,
         queueIfBusy: Boolean = false,
+        origin: AgentMessage.Origin = AgentMessage.Origin.LOCAL,
+        displayMode: ContainerDisplayMode = ContainerDisplayMode.AUTO,
+        parentTaskId: String? = null,
         onFinished: ((RunOutcome, String?) -> Unit)? = null
     ): Boolean {
         val text = command.trim()
@@ -145,7 +160,16 @@ object AssistantConversation {
         synchronized(stateLock) {
             if (_busy.value) {
                 if (queueIfBusy) {
-                    pendingTasks.addLast(PendingTask(app, text, onFinished))
+                    pendingTasks.addLast(
+                        PendingTask(
+                            app,
+                            text,
+                            origin,
+                            displayMode,
+                            parentTaskId,
+                            onFinished
+                        )
+                    )
                 } else {
                     steeringQueue.addLast(text)
                     _queuedSteering.value = steeringQueue.size
@@ -154,7 +178,7 @@ object AssistantConversation {
             }
             _busy.value = true
         }
-        startJob(app, text, onFinished)
+        startJob(app, text, origin, displayMode, parentTaskId, onFinished)
         return true
     }
 
@@ -182,11 +206,21 @@ object AssistantConversation {
     private fun startJob(
         app: Context,
         text: String,
+        origin: AgentMessage.Origin,
+        displayMode: ContainerDisplayMode,
+        parentTaskId: String?,
         onFinished: ((RunOutcome, String?) -> Unit)?
     ) {
         val job = scope.launch(start = CoroutineStart.LAZY) {
             submitLock.withLock {
-                executeRun(app, text, onFinished)
+                executeRun(
+                    app,
+                    text,
+                    origin,
+                    displayMode,
+                    parentTaskId,
+                    onFinished
+                )
             }
         }
         synchronized(stateLock) { currentJob = job }
@@ -207,9 +241,13 @@ object AssistantConversation {
     private suspend fun executeRun(
         app: Context,
         text: String,
+        origin: AgentMessage.Origin,
+        displayMode: ContainerDisplayMode,
+        parentTaskId: String?,
         onFinished: ((RunOutcome, String?) -> Unit)?
     ) {
         runContext = app
+        _activeRunOrigin.value = origin
         LivePreview.clear()
         _lastRun.value = null
         _streamingText.value = ""
@@ -253,6 +291,8 @@ object AssistantConversation {
                     config = config,
                     command = text,
                     sessionId = "local-llm",
+                    parentTaskId = parentTaskId,
+                    displayMode = displayMode,
                     history = priorHistory,
                     memoryContext = memoryContext,
                     skillIndex = skillIndex,
@@ -261,7 +301,7 @@ object AssistantConversation {
                         ReplayManager.record(name, args)
                     },
                     onMessage = { message ->
-                        _messages.update { it + message }
+                        _messages.update { it + message.copy(origin = origin) }
                         if (message.role == AgentMessage.Role.USER && firstUserMessage) {
                             // The initial command was already recorded above.
                             firstUserMessage = false
@@ -288,8 +328,16 @@ object AssistantConversation {
                     "No model is configured. Set one up in Space settings → Model settings."
                 )
                 _messages.update {
-                    it + AgentMessage(AgentMessage.Role.USER, text) +
-                        AgentMessage(AgentMessage.Role.ERROR, message)
+                    it + AgentMessage(
+                        AgentMessage.Role.USER,
+                        text,
+                        origin = origin
+                    ) +
+                        AgentMessage(
+                            AgentMessage.Role.ERROR,
+                            message,
+                            origin = origin
+                        )
                 }
                 recorder?.record(AgentMessage.Role.ERROR, message)
                 answer = message
@@ -308,8 +356,8 @@ object AssistantConversation {
             } else {
                 ReplayManager.complete()
                 outcome = RunOutcome.COMPLETED
-                showPendingMemoryCards(app, runStartedAt)
-                showPendingSkillCards(app, runStartedAt)
+                showPendingMemoryCards(app, runStartedAt, origin)
+                showPendingSkillCards(app, runStartedAt, origin)
                 val replay = ReplayManager.last()
                 if (config?.isConfigured == true &&
                     replay != null &&
@@ -321,7 +369,8 @@ object AssistantConversation {
                         goal = text,
                         answer = answer,
                         toolNames = replay.steps.map { it.name },
-                        runStartedAt = runStartedAt
+                    runStartedAt = runStartedAt,
+                    origin = origin
                     )
                 }
                 val memoryContext = listOfNotNull(
@@ -334,14 +383,21 @@ object AssistantConversation {
                     text,
                     consumedSteering,
                     memoryContext,
-                    runStartedAt
+                    runStartedAt,
+                    origin
                 )
             }
         } catch (cancelled: CancellationException) {
             val current = recorder
             val summary = current?.stopSummary()
                 ?: RunRecordStore.buildStopSummary(text, emptyList())
-            _messages.update { it + AgentMessage(AgentMessage.Role.AGENT, summary) }
+            _messages.update {
+                it + AgentMessage(
+                    AgentMessage.Role.AGENT,
+                    summary,
+                    origin = origin
+                )
+            }
             recordHistory(text, summary, consumedSteering)
             answer = summary
             ReplayManager.abort()
@@ -368,12 +424,19 @@ object AssistantConversation {
                     metrics = metrics.snapshot()
                 )
             }
-            _messages.update { it + AgentMessage(AgentMessage.Role.ERROR, message) }
+            _messages.update {
+                it + AgentMessage(
+                    AgentMessage.Role.ERROR,
+                    message,
+                    origin = origin
+                )
+            }
             answer = message
             ReplayManager.abort()
             outcome = RunOutcome.FAILED
         } finally {
             _streamingText.value = ""
+            _lastRunOrigin.value = origin
             if (usedSkills.isNotEmpty() && outcome != RunOutcome.CANCELLED) {
                 val success = outcome == RunOutcome.COMPLETED
                 memoryScope.launch {
@@ -381,9 +444,10 @@ object AssistantConversation {
                     usedSkills.forEach { store.recordOutcome(it, success) }
                 }
             }
-            // The floating preview belongs to the active run. Close it when
-            // the run ends; the headless target stays alive for follow-ups.
-            HeadlessMirrorWindow.hide()
+            // Keep the completed task visible for a short grace period. Any
+            // later mirror operation resets the timer; otherwise the panel and
+            // its target process close together.
+            HeadlessMirrorWindow.scheduleAutoClose()
             advanceAfterRun(app, onFinished, outcome, answer)
         }
     }
@@ -394,7 +458,8 @@ object AssistantConversation {
         goal: String,
         answer: String?,
         toolNames: List<String>,
-        runStartedAt: Long
+        runStartedAt: Long,
+        origin: AgentMessage.Origin
     ) {
         memoryScope.launch {
             val existing = runCatching { SkillStore(app).list() }.getOrDefault(emptyList())
@@ -410,7 +475,7 @@ object AssistantConversation {
             }.getOrNull()
             if (draft != null) {
                 AppSettingsEvents.notifyChanged()
-                showPendingSkillCards(app, runStartedAt)
+                showPendingSkillCards(app, runStartedAt, origin)
             }
         }
     }
@@ -421,7 +486,8 @@ object AssistantConversation {
         command: String,
         steering: List<String>,
         contextSummary: String?,
-        runStartedAt: Long
+        runStartedAt: Long,
+        origin: AgentMessage.Origin
     ) {
         if (config?.isConfigured != true) return
         val utterances = listOf(command) + steering
@@ -435,7 +501,7 @@ object AssistantConversation {
                     contextSummary = contextSummary
                 )
             }
-            showPendingMemoryCards(app, runStartedAt)
+            showPendingMemoryCards(app, runStartedAt, origin)
         }
     }
 
@@ -472,7 +538,11 @@ object AssistantConversation {
      * Add one card per pending memory created by this run; a memory id already
      * present in the transcript is never duplicated.
      */
-    private fun showPendingMemoryCards(app: Context, runStartedAt: Long) {
+    private fun showPendingMemoryCards(
+        app: Context,
+        runStartedAt: Long,
+        origin: AgentMessage.Origin
+    ) {
         memoryScope.launch {
             val pending = runCatching {
                 MemoryStore(app).list().filter {
@@ -490,6 +560,7 @@ object AssistantConversation {
                         AgentMessage(
                             AgentMessage.Role.AGENT,
                             it.content,
+                            origin = origin,
                             pendingMemoryId = it.id
                         )
                     }
@@ -502,7 +573,11 @@ object AssistantConversation {
      * Newly saved skills are disabled by default. Offer to enable them right in
      * the conversation instead of sending the user back to settings.
      */
-    private fun showPendingSkillCards(app: Context, runStartedAt: Long) {
+    private fun showPendingSkillCards(
+        app: Context,
+        runStartedAt: Long,
+        origin: AgentMessage.Origin
+    ) {
         memoryScope.launch {
             val pending = runCatching {
                 SkillStore(app).list().filter {
@@ -520,6 +595,7 @@ object AssistantConversation {
                         AgentMessage(
                             AgentMessage.Role.AGENT,
                             "${it.name}：${it.description.ifBlank { it.body.take(240) }}",
+                            origin = origin,
                             pendingSkillId = it.id
                         )
                     }
@@ -542,14 +618,30 @@ object AssistantConversation {
             val leftovers = drainSteeringLocked()
             if (leftovers.isNotEmpty()) {
                 pendingTasks.addFirst(
-                    PendingTask(app, leftovers.joinToString("\n\n"), null)
+                    PendingTask(
+                        app,
+                        leftovers.joinToString("\n\n"),
+                        AgentMessage.Origin.LOCAL,
+                        ContainerDisplayMode.AUTO,
+                        null,
+                        null
+                    )
                 )
             }
             next = pendingTasks.removeFirstOrNull()
             if (next == null) _busy.value = false
         }
         runCatching { onFinished?.invoke(outcome, answer) }
-        if (next != null) startJob(next.context, next.text, next.onFinished)
+        if (next != null) {
+            startJob(
+                next.context,
+                next.text,
+                next.origin,
+                next.displayMode,
+                next.parentTaskId,
+                next.onFinished
+            )
+        }
     }
 
     private fun drainSteering(): List<String> = synchronized(stateLock) {

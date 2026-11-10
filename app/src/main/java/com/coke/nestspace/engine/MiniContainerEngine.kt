@@ -209,6 +209,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         packageName: String,
         instanceId: String?,
         headless: Boolean,
+        backgroundOnly: Boolean,
         requestedActivity: String?
     ): EngineResult<LaunchInfo> = withContext(Dispatchers.IO) {
         lock.withLock {
@@ -256,6 +257,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                 app = app,
                 instanceId = instance.id,
                 headless = headless,
+                backgroundOnly = backgroundOnly,
                 requestedActivity = requestedActivity
             )
         }
@@ -451,7 +453,8 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
     override suspend fun multiOpen(
         spaceId: String,
         packageName: String,
-        headless: Boolean
+        headless: Boolean,
+        backgroundOnly: Boolean
     ): EngineResult<LaunchInfo> = withContext(Dispatchers.IO) {
         lock.withLock {
             ensureLoadedLocked()
@@ -471,7 +474,12 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             runCatching { store.save(apps.values) }
                 .onFailure { Log.w(TAG, "save state failed", it) }
             publish()
-            val result = launchLocked(updated, instance.id, headless)
+            val result = launchLocked(
+                updated,
+                instance.id,
+                headless,
+                backgroundOnly
+            )
             if (result is EngineResult.Error) {
                 // Do not leave an instance that never launched behind.
                 apps[key(updated)] = app
@@ -536,7 +544,8 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         packageName: String,
         instanceId: String?,
         shortcut: AppShortcut,
-        headless: Boolean
+        headless: Boolean,
+        backgroundOnly: Boolean
     ): EngineResult<LaunchInfo> = withContext(Dispatchers.IO) {
         lock.withLock {
             ensureLoadedLocked()
@@ -561,6 +570,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                 app = app,
                 instanceId = instance.id,
                 headless = headless,
+                backgroundOnly = backgroundOnly,
                 requestedActivity = shortcut.targetActivity,
                 requestedIntent = shortcut.toIntent(packageName)
             )
@@ -975,6 +985,7 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
         app: StoredApp,
         instanceId: String,
         headless: Boolean = false,
+        backgroundOnly: Boolean = false,
         requestedActivity: String? = null,
         requestedIntent: Intent? = null
     ): EngineResult<LaunchInfo> {
@@ -1123,19 +1134,38 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
             )
         var mirrorLaunch = false
         if (headless) {
+            val previousMirrorSlot = HeadlessMirrorWindow.activeSlot()
+            if (previousMirrorSlot >= 0 && previousMirrorSlot != slot) {
+                // A new headless task owns the single mirror/offscreen display.
+                // Close the previous target before reusing that display.
+                val previousOwner =
+                    ContainerProcessPool.ownerOfSlot(previousMirrorSlot)
+                HeadlessMirrorWindow.hide()
+                if (previousOwner == null) {
+                    ContainerProcessPool.closeSlot(context, previousMirrorSlot)
+                } else {
+                    ContainerProcessPool.closeInstance(
+                        context,
+                        previousOwner.packageName,
+                        previousOwner.instanceId
+                    )
+                }
+                finishPreviousHostTasks(previousMirrorSlot)
+            }
             // A previous headless host may still hold a task for this slot.
             // MULTIPLE_TASK would stack another one, so remove old host tasks
             // before starting the new run.
             finishPreviousHostTasks(slot)
-            val mirrorId = runCatching { HeadlessMirrorWindow.awaitDisplay(context) }
+            val mirrorId = runCatching {
+                HeadlessMirrorWindow.awaitDisplay(
+                    context,
+                    showPanel = !backgroundOnly
+                )
+            }
                 .onFailure { Log.w(TAG, "mirror display unavailable", it) }
                 .getOrNull()
             if (mirrorId != null) {
                 Log.i(TAG, "using mirror display $mirrorId")
-                val previousMirrorSlot = HeadlessMirrorWindow.activeSlot()
-                if (previousMirrorSlot >= 0 && previousMirrorSlot != slot) {
-                    finishPreviousHostTasks(previousMirrorSlot)
-                }
                 HeadlessMirrorWindow.setActiveSlot(slot)
                 intent.putExtra(StageAActivity.EXTRA_MIRROR_DISPLAY_ID, mirrorId)
                 intent.addFlags(

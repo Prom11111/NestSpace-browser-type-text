@@ -34,7 +34,8 @@ internal fun ToolRegistry.agentToolSpecs(): List<ToolSpec> = listOf(
                 "max_result_chars" to "integer",
                 "format" to "string",
                 required = listOf("goal")
-            )
+            ),
+            maxWaitMs = 1_000L
         ) { args, ctx ->
             val goal = args.optString("goal").trim()
             if (goal.isBlank()) {
@@ -88,6 +89,8 @@ internal fun ToolRegistry.agentToolSpecs(): List<ToolSpec> = listOf(
                             config = config.copy(maxToolRounds = maxSteps),
                             command = childGoal,
                             sessionId = "${ctx.sessionId}-child",
+                            parentTaskId = ctx.parentTaskId,
+                            displayMode = ctx.displayMode,
                             memoryContext = memory.contextFor(goal),
                             skillIndex = skills.enabledIndex()
                         )

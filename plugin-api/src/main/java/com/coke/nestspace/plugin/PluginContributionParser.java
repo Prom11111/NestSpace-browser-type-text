@@ -25,6 +25,10 @@ public final class PluginContributionParser {
             List<PluginToolSpec> result = new ArrayList<>();
             for (int index = 0; index < array.length(); index++) {
                 JSONObject item = requiredObject(array, index, "tool");
+                int timeoutMs = item.optInt(
+                    "timeout_ms",
+                    PluginToolSpec.DEFAULT_TIMEOUT_MS
+                );
                 result.add(
                     new PluginToolSpec(
                         item.getString("id"),
@@ -34,9 +38,13 @@ public final class PluginContributionParser {
                             ? "{\"type\":\"object\",\"properties\":{}}"
                             : item.getJSONObject("input_schema").toString(),
                         item.optBoolean("mutating", true),
+                        timeoutMs,
                         item.optInt(
-                            "timeout_ms",
-                            PluginToolSpec.DEFAULT_TIMEOUT_MS
+                            "max_wait_ms",
+                            Math.min(
+                                timeoutMs,
+                                PluginToolSpec.DEFAULT_MAX_WAIT_MS
+                            )
                         )
                     )
                 );
@@ -56,6 +64,10 @@ public final class PluginContributionParser {
             List<PluginCommandSpec> result = new ArrayList<>();
             for (int index = 0; index < array.length(); index++) {
                 JSONObject item = requiredObject(array, index, "command");
+                int timeoutMs = item.optInt(
+                    "timeout_ms",
+                    PluginCommandSpec.DEFAULT_TIMEOUT_MS
+                );
                 result.add(
                     new PluginCommandSpec(
                         item.getString("id"),
@@ -65,9 +77,13 @@ public final class PluginContributionParser {
                             ? "{\"type\":\"object\",\"properties\":{}}"
                             : item.getJSONObject("arguments_schema").toString(),
                         item.optBoolean("mutating", true),
+                        timeoutMs,
                         item.optInt(
-                            "timeout_ms",
-                            PluginCommandSpec.DEFAULT_TIMEOUT_MS
+                            "max_wait_ms",
+                            Math.min(
+                                timeoutMs,
+                                PluginCommandSpec.DEFAULT_MAX_WAIT_MS
+                            )
                         )
                     )
                 );

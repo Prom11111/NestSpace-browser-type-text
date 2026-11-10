@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.coke.nestspace.data.ApiKeyCipher
+import com.coke.nestspace.task.OperationTaskRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
 import java.io.File
@@ -525,6 +526,15 @@ internal class AndroidPluginTasks(
             executor,
             active::remove
         )
+        val task = OperationTaskRegistry.start(
+            ownerId = "plugin:$pluginId",
+            kind = "plugin_task",
+            title = request.name,
+            requestId = handle.getId(),
+            requestHash = "$pluginId:${request.name}:${request.timeoutMs}",
+            onCancel = handle::cancelFromHost
+        ).task ?: error("could not create plugin task")
+        handle.attachHostTask(task.id)
         active[handle.id] = handle
         handle.start()
         return handle
@@ -556,9 +566,23 @@ private class AndroidPluginTaskHandle(
     @Volatile
     private var done = false
 
+    @Volatile
+    private var hostTaskId: String? = null
+
     private val taskId: String = UUID.randomUUID().toString()
 
+    fun attachHostTask(id: String) {
+        hostTaskId = id
+    }
+
     fun start() {
+        hostTaskId?.let {
+            OperationTaskRegistry.transition(
+                it,
+                OperationTaskRegistry.State.RUNNING,
+                "plugin task running"
+            )
+        }
         Scheduler.schedule({
             if (!result.isDone) {
                 cancelled.set(true)
@@ -607,12 +631,32 @@ private class AndroidPluginTaskHandle(
         return finish(PluginTaskResult.cancelled("Plugin task cancelled"))
     }
 
+    fun cancelFromHost() {
+        cancel()
+    }
+
     override fun getResult(): CompletableFuture<PluginTaskResult> = result
 
     private fun finish(value: PluginTaskResult): Boolean {
         val completed = result.complete(value)
         if (completed) {
             done = true
+            hostTaskId?.let { id ->
+                when {
+                    value.isSuccessful -> OperationTaskRegistry.succeed(
+                        id,
+                        value.message
+                    )
+                    value.isCancelled -> OperationTaskRegistry.markCancelled(
+                        id,
+                        value.message.ifBlank { "plugin task cancelled" }
+                    )
+                    else -> OperationTaskRegistry.fail(
+                        id,
+                        value.message.ifBlank { value.errorCode }
+                    )
+                }
+            }
             onFinished(taskId)
         }
         return completed
@@ -630,6 +674,13 @@ private class AndroidPluginTaskHandle(
         override fun reportProgress(percent: Int, message: String?) {
             require(percent in 0..100) { "progress must be between 0 and 100" }
             progress.set(percent to message.orEmpty())
+            hostTaskId?.let {
+                OperationTaskRegistry.progress(
+                    it,
+                    percent,
+                    message
+                )
+            }
         }
     }
 

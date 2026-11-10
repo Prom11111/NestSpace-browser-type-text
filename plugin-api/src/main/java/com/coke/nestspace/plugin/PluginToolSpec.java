@@ -11,6 +11,8 @@ public final class PluginToolSpec {
 
     public static final int DEFAULT_TIMEOUT_MS = 30_000;
     public static final int MAX_TIMEOUT_MS = 120_000;
+    public static final int DEFAULT_MAX_WAIT_MS = 1_000;
+    public static final int MAX_MAX_WAIT_MS = 30_000;
     public static final int MAX_SCHEMA_BYTES = 64 * 1024;
 
     private static final Pattern ID =
@@ -22,6 +24,7 @@ public final class PluginToolSpec {
     private final String inputSchemaJson;
     private final boolean mutating;
     private final int timeoutMs;
+    private final int maxWaitMs;
 
     public PluginToolSpec(
         String id,
@@ -48,6 +51,33 @@ public final class PluginToolSpec {
         boolean mutating,
         int timeoutMs
     ) {
+        this(
+            id,
+            title,
+            description,
+            inputSchemaJson,
+            mutating,
+            timeoutMs,
+            Math.min(timeoutMs, DEFAULT_MAX_WAIT_MS)
+        );
+    }
+
+    /**
+     * @param maxWaitMs maximum time the Agent waits synchronously for this
+     *                  tool. This is an upper bound, not a fixed delay or an
+     *                  execution timeout. If the tool is still running at the
+     *                  deadline, the Agent receives a task id and can wait for
+     *                  the tool through the common task API.
+     */
+    public PluginToolSpec(
+        String id,
+        String title,
+        String description,
+        String inputSchemaJson,
+        boolean mutating,
+        int timeoutMs,
+        int maxWaitMs
+    ) {
         this.id = Objects.requireNonNull(id, "id").trim();
         this.title = limit(title, 100);
         this.description = limit(description, 2_000);
@@ -57,6 +87,10 @@ public final class PluginToolSpec {
         ).trim();
         this.mutating = mutating;
         this.timeoutMs = Math.max(1_000, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+        this.maxWaitMs = Math.max(
+            50,
+            Math.min(maxWaitMs, MAX_MAX_WAIT_MS)
+        );
         if (!ID.matcher(this.id).matches()) {
             throw new IllegalArgumentException(
                 "tool id must contain 1-64 letters, digits, '.', '_' or '-'"
@@ -96,6 +130,10 @@ public final class PluginToolSpec {
 
     public int getTimeoutMs() {
         return timeoutMs;
+    }
+
+    public int getMaxWaitMs() {
+        return maxWaitMs;
     }
 
     private static String limit(String value, int maxChars) {

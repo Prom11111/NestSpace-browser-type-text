@@ -86,10 +86,9 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
         ToolSpec(
             name = "space_running",
             description = "List running virtual apps and their slot processes. Check this (or " +
-                "call ui_observe directly) before space_launch; if the target package/instance " +
-                "is already running headless and the user wants to see or operate it, call " +
-                "space_launch with headless=false to show it full-screen before using ui_*. " +
-                "For an information-only task, continue with ui_* without reopening it.",
+                "call ui_observe directly) before space_launch. Agent and MCP work continues " +
+                "in headless mirror mode even when the user wants an in-app action. Use " +
+                "hand_to_user only when the user must take over directly.",
             inputSchema = schema()
         ) { _, _ ->
             val arr = JSONArray()
@@ -111,22 +110,22 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
             name = "space_launch",
             description = "Launch an app by package name in virtual-1 by default (pass space_id=system " +
                 "for a system app). instance_id is optional; omit it to use the most recently " +
-                "launched instance. For a direct request to open an app, or to open it and " +
-                "perform an action such as searching, tapping, following or posting, pass " +
-                "headless=false and operate it full-screen. For information-only work such as " +
-                "reading, checking, collecting or summarizing content, omit headless (or pass " +
-                "true) to use the assistant's headless square mirror. If a sentence starts with " +
-                "'open the app' but asks to send titles, results, or a summary, the information " +
-                "goal wins and the whole sentence is one headless task. Do not inspect or " +
-                "summarize after a plain open request.",
+                "launched instance. Agent and MCP launches always use the assistant's headless " +
+                "square mirror, including searches, taps and other in-app actions. Omit " +
+                "headless or pass true. If the user needs to operate the app directly, launch " +
+                "headless and then call hand_to_user. A headless=false argument from Agent or " +
+                "MCP is ignored unless display_mode=visible. display_mode controls background " +
+                "(off-screen headless), mirror (small headless window), or visible (normal app).",
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
                 "instance_id" to "string",
                 "headless" to "boolean",
+                "display_mode" to "string",
                 "activity" to "string"
             ),
-            mutating = true
+            mutating = true,
+            maxWaitMs = 2_000L
         ) { args, ctx ->
             val spaceId = args.optString("space_id", ctx.spaceId)
             val pkg = args.optString("package")
@@ -136,11 +135,20 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
             if (spaceId != "system") {
                 val instanceId = args.optString("instance_id").takeIf { it.isNotBlank() }
                 val requestedActivity = args.optString("activity").takeIf { it.isNotBlank() }
-                // Direct open/action requests use a normal window. Information
-                // gathering defaults to the assistant's square headless mirror.
-                val explicitVisible = args.has("headless") &&
+                // AUTO keeps the assistant/user policy. MCP can force any of
+                // the three presentation modes through display_mode.
+                val requestedVisible = args.has("headless") &&
                     !args.optBoolean("headless", true)
+                val explicitVisible = when (ctx.displayMode) {
+                    ContainerDisplayMode.VISIBLE -> true
+                    ContainerDisplayMode.BACKGROUND,
+                    ContainerDisplayMode.MIRROR -> false
+                    ContainerDisplayMode.AUTO ->
+                        requestedVisible && ctx.caller == Caller.USER
+                }
                 val headless = !explicitVisible
+                val offscreen =
+                    ctx.displayMode == ContainerDisplayMode.BACKGROUND
                 // Headless reads use the UI service directly; no mirror or
                 // screenshot card needs to be shown on the assistant page.
                 LivePreview.setSuppressed(headless)
@@ -194,7 +202,7 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                             return@ToolSpec launchBlockedResult()
                         }
                         ContainerUiKeepAlive.bind(context, running.slot)
-                        ensureMirrorPreview(args)
+                        ensureMirrorPreview(args, showPanel = !offscreen)
                         capturePreview(running.slot, pkg)
                         return@ToolSpec ToolResult(
                             true,
@@ -216,6 +224,7 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                     pkg,
                     instanceId,
                     headless,
+                    offscreen,
                     requestedActivity
                 )) {
                     is EngineResult.Error -> return@ToolSpec ToolResult(
@@ -270,23 +279,41 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
         ToolSpec(
             name = "space_multi_open",
             description = "Create a new instance in a virtual space and launch it. Each instance has an isolated data directory. " +
-                "Pass headless=false when the user asks to open or operate the app; omit it " +
-                "for information-only work so it runs in the headless square mirror.",
+                "Agent and MCP calls always run in the headless square mirror; use " +
+                "hand_to_user when the user must operate it directly.",
             inputSchema = schema(
                 "space_id" to "string",
                 "package" to "string",
-                "headless" to "boolean"
+                "headless" to "boolean",
+                "display_mode" to "string"
             ),
-            mutating = true
+            mutating = true,
+            maxWaitMs = 2_000L
         ) { args, ctx ->
             val spaceId = args.optString("space_id", "virtual-1")
             val pkg = args.optString("package")
             if (pkg.isBlank()) return@ToolSpec ToolResult(
                 false, "package is required", errorCode = "INVALID_ARGUMENT"
             )
-            val headless = args.optBoolean("headless", true)
+            val headless = when (ctx.displayMode) {
+                ContainerDisplayMode.VISIBLE -> false
+                ContainerDisplayMode.BACKGROUND,
+                ContainerDisplayMode.MIRROR -> true
+                ContainerDisplayMode.AUTO -> if (ctx.caller == Caller.USER) {
+                    args.optBoolean("headless", true)
+                } else {
+                    true
+                }
+            }
+            val offscreen =
+                ctx.displayMode == ContainerDisplayMode.BACKGROUND
             LivePreview.setSuppressed(headless)
-            when (val result = engine.multiOpen(spaceId, pkg, headless)) {
+            when (val result = engine.multiOpen(
+                spaceId,
+                pkg,
+                headless,
+                backgroundOnly = offscreen
+            )) {
                 is EngineResult.Error -> ToolResult(
                     false, "${result.code}: ${result.message}", errorCode = result.code
                 )
@@ -330,7 +357,8 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
                         .put("items", JSONObject().put("type", "string"))
                 )
             },
-            mutating = true
+            mutating = true,
+            maxWaitMs = 5_000L
         ) { args, ctx ->
             val spaceId = args.optString("space_id", "virtual-1")
             val base = args.optString("apk_uri")
@@ -391,7 +419,8 @@ internal fun ToolRegistry.spaceToolSpecs(): List<ToolSpec> = listOf(
             name = "space_uninstall",
             description = "Uninstall a virtual app and delete its APKs, instances and data directories.",
             inputSchema = schema("space_id" to "string", "package" to "string"),
-            mutating = true
+            mutating = true,
+            maxWaitMs = 1_500L
         ) { args, ctx ->
             val pkg = args.optString("package")
             if (pkg.isBlank()) return@ToolSpec ToolResult(

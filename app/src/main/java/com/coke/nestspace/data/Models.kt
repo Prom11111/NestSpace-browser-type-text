@@ -114,6 +114,8 @@ data class UiSnapshot(
 data class AgentMessage(
     val role: Role,
     val text: String,
+    /** Where this turn originated; MCP turns are shown in the MCP task center. */
+    val origin: Origin = Origin.LOCAL,
     /** True only for the localized greeting that the assistant UI replaces with WelcomeState. */
     val welcome: Boolean = false,
     /** A pending procedure memory that can be confirmed or ignored in the chat. */
@@ -125,6 +127,7 @@ data class AgentMessage(
     val skillDecision: String? = null
 ) {
     enum class Role { USER, AGENT, TOOL, ERROR }
+    enum class Origin { LOCAL, MCP, SCHEDULED }
 }
 
 data class McpStatus(

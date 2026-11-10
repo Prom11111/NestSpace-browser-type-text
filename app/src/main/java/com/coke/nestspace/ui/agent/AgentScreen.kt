@@ -60,6 +60,9 @@ import com.coke.nestspace.data.LlmConfig
 import com.coke.nestspace.data.ReasoningEffort
 import com.coke.nestspace.memory.MemoryStore
 import com.coke.nestspace.memory.SkillStore
+import com.coke.nestspace.plugin.AgentPluginSupport
+import com.coke.nestspace.task.McpTaskClassifier
+import com.coke.nestspace.task.OperationTaskRegistry
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +72,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import org.json.JSONObject
+
+private fun taskIdFromToolMessage(message: AgentMessage): String? {
+    if (message.role != AgentMessage.Role.TOOL) return null
+    val marker = "${AgentPluginSupport.TOOL_DISPLAY_MARKER} "
+    val raw = if (message.text.contains(marker)) {
+        message.text.substringAfter(marker)
+            .substringAfter('\n', "")
+    } else {
+        message.text.substringAfter('\n', "")
+    }
+    val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+    if (!json.optBoolean("started") && !json.optBoolean("attached")) return null
+    return json.optString("task_id").takeIf(String::isNotBlank)
+}
 
 /**
  * Conversation surface for the on-device agent.
@@ -88,6 +106,7 @@ internal fun AgentScreen(
     onStop: () -> Unit,
     onClear: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenMcpTasks: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenModelSettings: () -> Unit,
     permissionLevel: ToolPermissionLevel,
@@ -106,8 +125,15 @@ internal fun AgentScreen(
     val queuedSteering by AssistantConversation.queuedSteering.collectAsState()
     val liveFrame by LivePreview.frame.collectAsState()
     val lastRun by AssistantConversation.lastRun.collectAsState()
+    val lastRunOrigin by AssistantConversation.lastRunOrigin.collectAsState()
+    val activeRunOrigin by AssistantConversation.activeRunOrigin.collectAsState()
     val streamingText by AssistantConversation.streamingText.collectAsState()
     val downloads by BrowserSession.downloadsFlow.collectAsState()
+    val operationTasks by OperationTaskRegistry.tasksFlow.collectAsState()
+    val mirrorSlot = remember(operationTasks) {
+        HeadlessMirrorWindow.activeSlot().takeIf { it >= 0 }
+            ?: ContainerProcessPool.lastSlot()
+    }
     var showLivePreview by remember { mutableStateOf(false) }
 
     LaunchedEffect(injectedText) {
@@ -200,16 +226,65 @@ internal fun AgentScreen(
         }
     }
 
+    val externalTaskBusy = busy &&
+        activeRunOrigin == AgentMessage.Origin.MCP
+    val conversationBusy = busy && !externalTaskBusy
     val displayMessages = remember(messages) {
-        messages.filterNot { it.welcome }
+        messages.filterNot {
+            it.welcome || it.origin == AgentMessage.Origin.MCP
+        }
     }
-    val showWelcome = displayMessages.isEmpty() && !busy
-    val activeDownloads = downloads.filter { it.state == "downloading" }
+    val inlineTaskIds = remember(displayMessages) {
+        displayMessages.mapNotNull(::taskIdFromToolMessage).toSet()
+    }
+    val mcpTaskIds = remember(operationTasks) {
+        operationTasks
+            .filter { McpTaskClassifier.isMcpTask(it, operationTasks) }
+            .mapTo(HashSet()) { it.id }
+    }
+    val activeMcpTaskCount = remember(operationTasks) {
+        McpTaskClassifier.roots(operationTasks).count { !it.terminal }
+    }
+    val showWelcome = displayMessages.isEmpty() && !conversationBusy
+    val visibleDownloads = downloads.filter {
+        it.taskId == null ||
+            (it.taskId !in inlineTaskIds && it.taskId !in mcpTaskIds)
+    }.take(2)
+    val visibleOperationTasks = remember(
+        operationTasks,
+        downloads,
+        inlineTaskIds,
+        mcpTaskIds
+    ) {
+        operationTasks
+            .filterNot { task ->
+                task.id in mcpTaskIds ||
+                    task.id in inlineTaskIds ||
+                    downloads.any { it.taskId == task.id }
+            }
+            .filter { task ->
+                when (task.kind) {
+                    "browser_download" ->
+                        task.state == OperationTaskRegistry.State.FAILED &&
+                            task.message == "interrupted"
+                    "tool_call" ->
+                        !task.terminal || task.message == "interrupted"
+                    else -> true
+                }
+            }
+            .take(2)
+    }
 
-    LaunchedEffect(displayMessages.size, busy, streamingText.length, activeDownloads.size) {
+    LaunchedEffect(
+        displayMessages.size,
+        conversationBusy,
+        if (externalTaskBusy) 0 else streamingText.length,
+        visibleDownloads.size,
+        visibleOperationTasks.size
+    ) {
         if (!showWelcome) {
-            val count = displayMessages.size + if (busy) 1 else 0 +
-                activeDownloads.size
+            val count = displayMessages.size + if (conversationBusy) 1 else 0 +
+                visibleDownloads.size + visibleOperationTasks.size
             if (count > 0) listState.animateScrollToItem(count - 1)
         }
     }
@@ -245,8 +320,11 @@ internal fun AgentScreen(
         AgentHeader(
             llmConfig = llmConfig,
             busy = busy,
+            externalTaskBusy = externalTaskBusy,
             onClear = clearConversation,
             onOpenHistory = onOpenHistory,
+            onOpenMcpTasks = onOpenMcpTasks,
+            activeMcpTaskCount = activeMcpTaskCount,
             onOpenSettings = onOpenSettings
         )
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
@@ -270,10 +348,44 @@ internal fun AgentScreen(
                             }
                         )
                     }
-                    activeDownloads.take(2).forEach { download ->
+                    visibleDownloads.forEach { download ->
                         DownloadProgressCard(
                             download = download,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            onCancel = download.taskId?.let { taskId ->
+                                {
+                                    OperationTaskRegistry.requestCancel(
+                                        taskId,
+                                        "user cancelled"
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    visibleOperationTasks.forEach { task ->
+                        OperationTaskStatusCard(
+                            task = task,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            onCancel = if (task.terminal) null else {
+                                {
+                                    OperationTaskRegistry.requestCancel(
+                                        task.id,
+                                        "user cancelled"
+                                    )
+                                }
+                            },
+                            onDismiss = if (task.terminal) {
+                                { OperationTaskRegistry.dismiss(task.id) }
+                            } else {
+                                null
+                            },
+                            onOpenMirror = mirrorSlot?.let { slot ->
+                                {
+                                    memoryScope.launch {
+                                        HeadlessMirrorWindow.promoteToPanel(context, slot)
+                                    }
+                                }
+                            }
                         )
                     }
                 }
@@ -285,40 +397,143 @@ internal fun AgentScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     items(displayMessages) { message ->
-                        val pendingSkillId = message.pendingSkillId
-                        val pendingId = message.pendingMemoryId
-                        if (pendingSkillId != null) {
-                            PendingSkillCard(
-                                text = message.text,
-                                decision = message.skillDecision,
-                                onEnable = { resolveSkill(pendingSkillId, enabled = true) },
-                                onIgnore = { resolveSkill(pendingSkillId, enabled = false) }
-                            )
-                        } else if (pendingId != null) {
-                            PendingMemoryCard(
-                                text = message.text,
-                                decision = message.memoryDecision,
-                                onConfirm = { resolveMemory(pendingId, approve = true) },
-                                onIgnore = { resolveMemory(pendingId, approve = false) }
-                            )
-                        } else {
-                            when (message.role) {
-                                AgentMessage.Role.USER -> UserMessage(message.text)
-                                AgentMessage.Role.AGENT -> AssistantMessage(message.text)
-                                AgentMessage.Role.TOOL -> ToolActivityCard(message.text)
-                                AgentMessage.Role.ERROR -> ErrorMessage(message.text)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val pendingSkillId = message.pendingSkillId
+                            val pendingId = message.pendingMemoryId
+                            if (pendingSkillId != null) {
+                                PendingSkillCard(
+                                    text = message.text,
+                                    decision = message.skillDecision,
+                                    onEnable = { resolveSkill(pendingSkillId, enabled = true) },
+                                    onIgnore = { resolveSkill(pendingSkillId, enabled = false) }
+                                )
+                            } else if (pendingId != null) {
+                                PendingMemoryCard(
+                                    text = message.text,
+                                    decision = message.memoryDecision,
+                                    onConfirm = { resolveMemory(pendingId, approve = true) },
+                                    onIgnore = { resolveMemory(pendingId, approve = false) }
+                                )
+                            } else {
+                                when (message.role) {
+                                    AgentMessage.Role.USER -> UserMessage(message.text)
+                                    AgentMessage.Role.AGENT -> AssistantMessage(message.text)
+                                    AgentMessage.Role.TOOL -> ToolActivityCard(message.text)
+                                    AgentMessage.Role.ERROR -> ErrorMessage(message.text)
+                                }
+                            }
+                            taskIdFromToolMessage(message)?.let { taskId ->
+                                val operationTask = operationTasks.firstOrNull {
+                                    it.id == taskId
+                                }
+                                if (operationTask != null &&
+                                    McpTaskClassifier.isMcpTask(
+                                        operationTask,
+                                        operationTasks
+                                    )
+                                ) {
+                                    return@let
+                                }
+                                val download = downloads.firstOrNull {
+                                    it.taskId == taskId
+                                }
+                                if (download != null) {
+                                    DownloadProgressCard(
+                                        download = download,
+                                        onCancel = if (
+                                            download.state == "downloading" ||
+                                            download.state == "cancelling"
+                                        ) {
+                                            {
+                                                OperationTaskRegistry.requestCancel(
+                                                    taskId,
+                                                    "user cancelled"
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        }
+                                    )
+                                } else {
+                                    operationTask?.let { task ->
+                                        OperationTaskStatusCard(
+                                            task = task,
+                                            onCancel = if (task.terminal) null else {
+                                                {
+                                                    OperationTaskRegistry.requestCancel(
+                                                        task.id,
+                                                        "user cancelled"
+                                                    )
+                                                }
+                                            },
+                                            onDismiss = if (task.terminal) {
+                                                { OperationTaskRegistry.dismiss(task.id) }
+                                            } else {
+                                                null
+                                            },
+                                            onOpenMirror = mirrorSlot?.let { slot ->
+                                                {
+                                                    memoryScope.launch {
+                                                        HeadlessMirrorWindow.promoteToPanel(
+                                                            context,
+                                                            slot
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
-                    if (streamingText.isNotBlank()) {
+                    if (!externalTaskBusy && streamingText.isNotBlank()) {
                         item {
                             AssistantMessage(streamingText.trimEnd() + " ▍")
                         }
-                    } else if (busy) {
+                    } else if (conversationBusy) {
                         item { ThinkingRow(displayMessages.lastOrNull()) }
                     }
-                    items(activeDownloads, key = { "download:${it.id}" }) { download ->
-                        DownloadProgressCard(download)
+                    items(visibleDownloads, key = { "download:${it.id}" }) { download ->
+                        DownloadProgressCard(
+                            download = download,
+                            onCancel = download.taskId?.let { taskId ->
+                                {
+                                    OperationTaskRegistry.requestCancel(
+                                        taskId,
+                                        "user cancelled"
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    items(
+                        visibleOperationTasks,
+                        key = { "operation:${it.id}" }
+                    ) { task ->
+                        OperationTaskStatusCard(
+                            task = task,
+                            onCancel = if (task.terminal) null else {
+                                {
+                                    OperationTaskRegistry.requestCancel(
+                                        task.id,
+                                        "user cancelled"
+                                    )
+                                }
+                            },
+                            onDismiss = if (task.terminal) {
+                                { OperationTaskRegistry.dismiss(task.id) }
+                            } else {
+                                null
+                            },
+                            onOpenMirror = mirrorSlot?.let { slot ->
+                                {
+                                    memoryScope.launch {
+                                        HeadlessMirrorWindow.promoteToPanel(context, slot)
+                                    }
+                                }
+                            }
+                        )
                     }
                     item { Spacer(Modifier.height(2.dp)) }
                 }
@@ -379,7 +594,10 @@ internal fun AgentScreen(
             }
         }
 
-        if (!busy && lastRun != null) {
+        if (!busy &&
+            lastRun != null &&
+            lastRunOrigin != AgentMessage.Origin.MCP
+        ) {
             LastRunCard(
                 run = lastRun!!,
                 onOpenHistory = onOpenHistory,

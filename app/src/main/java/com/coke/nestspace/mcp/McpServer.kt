@@ -88,6 +88,9 @@ class McpServer(
     /** Guides already sent to this MCP server session; one copy per app/site. */
     private val seenKnowledge: MutableSet<String> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val taskOwner = "mcp:" + MessageDigest.getInstance("SHA-256")
+        .digest(token.toByteArray(StandardCharsets.UTF_8))
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     private val taskManager = McpTaskManager.get(context.applicationContext)
     private val taskSpecs = McpTaskTools.specs(taskManager)
     private val settingsSpecs = McpSettingsTools.specs(context.applicationContext)
@@ -175,7 +178,7 @@ class McpServer(
         // finally block when they become idle.
         sessions.values.forEach { session ->
             if (session.active.get() == 0) {
-                registry.releaseSession(session.id)
+                registry.releaseSession(taskOwner)
             } else {
                 session.releaseWhenIdle = true
             }
@@ -202,7 +205,7 @@ class McpServer(
                     .map { it.key }
                 expired.forEach {
                     sessions.remove(it)
-                    registry.releaseSession(it)
+                    registry.releaseSession(taskOwner)
                 }
             }
         }, "mcp-session-cleaner").apply {
@@ -379,7 +382,7 @@ class McpServer(
                                 val previous = sessions[previousId]
                                 if (previous != null && previous.active.get() == 0) {
                                     sessions.remove(previousId)
-                                    registry.releaseSession(previousId)
+                                    registry.releaseSession(taskOwner)
                                 }
                             }
                             createSession()
@@ -416,7 +419,7 @@ class McpServer(
                                 session.releaseWhenIdle
                             ) {
                                 session.releaseWhenIdle = false
-                                registry.releaseSession(session.id)
+                                registry.releaseSession(taskOwner)
                             }
                         }
                     }
@@ -436,7 +439,7 @@ class McpServer(
                                 // session but has not incremented active yet.
                                 removed.releaseWhenIdle = true
                                 if (removed.active.get() == 0) {
-                                    registry.releaseSession(sessionId)
+                                    registry.releaseSession(taskOwner)
                                 }
                                 writeResponse(output, 204, "No Content", "")
                             }
@@ -555,6 +558,11 @@ class McpServer(
                 val ctx = ToolContext(
                     sessionId = sessionId,
                     caller = Caller.REMOTE_MCP,
+                    ownerId = taskOwner,
+                    displayMode = com.coke.nestspace.tools.ContainerDisplayMode.parse(
+                        args.optString("display_mode"),
+                        com.coke.nestspace.tools.ContainerDisplayMode.BACKGROUND
+                    ),
                     // The control plane operates the virtual space by default;
                     // system-targeted calls still pass space_id=system.
                     spaceId = args.optString("space_id", "virtual-1"),

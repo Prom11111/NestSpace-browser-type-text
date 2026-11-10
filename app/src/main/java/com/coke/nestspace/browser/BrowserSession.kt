@@ -200,6 +200,13 @@ object BrowserSession {
         }
     }
 
+    data class DownloadEnqueueResult(
+        val download: DownloadState?,
+        val task: OperationTaskRegistry.Snapshot,
+        val created: Boolean,
+        val errorCode: String? = null
+    )
+
     fun pauseAll() {
         entries.values.forEach { entry ->
             entry.webView?.let { runCatching { it.onPause() } }
@@ -965,7 +972,7 @@ object BrowserSession {
     ): DownloadState {
         val currentJob = currentCoroutineContext()[Job]
             ?: throw CancellationException("Download has no coroutine job")
-        val task = createDownloadTask(ownerId, url)
+        val task = requireNotNull(createDownloadTask(ownerId, url).task)
         val cancellation = BrowserDownloader.CancellationSignal()
         val (generation, record) = registerDownload(
             url = url,
@@ -992,9 +999,30 @@ object BrowserSession {
     fun enqueueDownload(
         context: Context,
         url: String,
-        ownerId: String? = null
-    ): DownloadState {
-        val task = createDownloadTask(ownerId, url)
+        ownerId: String? = null,
+        requestId: String? = null,
+        requestHash: String? = null,
+        parentTaskId: String? = null
+    ): DownloadEnqueueResult {
+        val started = createDownloadTask(
+            ownerId = ownerId,
+            url = url,
+            requestId = requestId,
+            requestHash = requestHash,
+            parentTaskId = parentTaskId
+        )
+        val task = requireNotNull(started.task)
+        if (!started.created) {
+            val existing = synchronized(downloadLock) {
+                _downloads.value.firstOrNull { it.taskId == task.id }
+            }
+            return DownloadEnqueueResult(
+                download = existing,
+                task = task,
+                created = false,
+                errorCode = started.errorCode
+            )
+        }
         val cancellation = BrowserDownloader.CancellationSignal()
         var generation = 0L
         var record: DownloadState? = null
@@ -1022,7 +1050,11 @@ object BrowserSession {
         generation = registered.first
         record = registered.second
         job.start()
-        return registered.second
+        return DownloadEnqueueResult(
+            download = registered.second,
+            task = task,
+            created = true
+        )
     }
 
     private fun registerDownload(
@@ -1061,6 +1093,11 @@ object BrowserSession {
         taskId: String
     ): DownloadState {
         return try {
+            OperationTaskRegistry.transition(
+                taskId,
+                OperationTaskRegistry.State.RUNNING,
+                "downloading ${downloadName(url)}"
+            )
             val startedAt = System.nanoTime()
             val result = BrowserDownloader.download(
                 context = context,
@@ -1114,8 +1151,20 @@ object BrowserSession {
                 !currentCoroutineContext().isActive ||
                 !isCurrentDownload(ownerId, generation)
             ) {
-                removeDownload(record.id)
-                OperationTaskRegistry.cancel(taskId, "download replaced")
+                val reason = OperationTaskRegistry.status(taskId)
+                    ?.error
+                    ?.takeIf(String::isNotBlank)
+                    ?: t.message
+                    ?: "Download cancelled"
+                updateDownloadState(
+                    record.id,
+                    "cancelled",
+                    reason
+                )
+                OperationTaskRegistry.markCancelled(
+                    taskId,
+                    reason
+                )
                 throw if (t is CancellationException) {
                     t
                 } else {
@@ -1144,12 +1193,18 @@ object BrowserSession {
 
     private fun createDownloadTask(
         ownerId: String?,
-        url: String
-    ): OperationTaskRegistry.Snapshot = OperationTaskRegistry.create(
+        url: String,
+        requestId: String? = null,
+        requestHash: String? = null,
+        parentTaskId: String? = null
+    ): OperationTaskRegistry.StartResult = OperationTaskRegistry.start(
         ownerId = ownerId ?: "user",
         kind = "browser_download",
         title = downloadName(url),
         replaceKey = ownerId?.let { "$it:browser_download" },
+        parentTaskId = parentTaskId,
+        requestId = requestId,
+        requestHash = requestHash,
         onCancel = ownerId?.let {
             { cancelLatestDownload(it) }
         }
@@ -1164,9 +1219,24 @@ object BrowserSession {
                 }
             }
         }
+        latestDownload(ownerId)?.let { current ->
+            updateDownloadState(current.id, "cancelling", null)
+        }
         active?.cancellation?.cancel()
         active?.job?.cancel(CancellationException("Download cancelled"))
-        latestDownload(ownerId)?.let { removeDownload(it.id) }
+    }
+
+    private fun updateDownloadState(
+        id: String,
+        state: String,
+        error: String?
+    ) {
+        synchronized(downloadLock) {
+            val current = _downloads.value.firstOrNull { it.id == id } ?: return
+            val updated = current.copy(state = state, error = error)
+            replaceDownload(updated)
+            if (downloadState?.id == id) downloadState = updated
+        }
     }
 
     fun latestDownload(ownerId: String? = null): DownloadState? =

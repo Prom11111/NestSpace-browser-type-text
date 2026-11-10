@@ -348,6 +348,8 @@ private fun toolTitle(name: String): String = when (name) {
     "browser_download" -> AppLanguage.tr("下载文件", "Download file")
     "browser_download_status" -> AppLanguage.tr("查看下载", "Check download")
     "task_status" -> AppLanguage.tr("查看任务", "Check task")
+    "task_list" -> AppLanguage.tr("任务列表", "Task list")
+    "task_wait" -> AppLanguage.tr("等待任务", "Wait for task")
     "task_cancel" -> AppLanguage.tr("取消任务", "Cancel task")
     "browser_tabs", "browser_switch_tab", "browser_close_tab" ->
         AppLanguage.tr("浏览器标签", "Browser tabs")
@@ -369,7 +371,8 @@ private fun toolIcon(name: String): ImageVector = when {
     name == "ui_tap" -> Icons.Rounded.TouchApp
     name == "ui_set_text" -> Icons.Rounded.Keyboard
     name == "ui_wait_for" || name == "poll_tool" -> Icons.Rounded.HourglassEmpty
-    name == "task_status" -> Icons.Rounded.HourglassEmpty
+    name == "task_status" || name == "task_wait" || name == "task_list" ->
+        Icons.Rounded.HourglassEmpty
     name == "task_cancel" -> Icons.Rounded.Close
     name == "space_launch" || name == "space_multi_open" -> Icons.Rounded.Apps
     else -> Icons.Rounded.Build
@@ -445,16 +448,34 @@ private fun toolSummary(tool: ToolActivity, json: JSONObject?): String {
                     if (complete) " · complete" else " · still waiting"
             )
         }
-        "task_status", "task_cancel" -> {
+        "task_status", "task_wait", "task_cancel" -> {
             val progress = json.optInt("progress_percent", -1)
                 .takeIf { it >= 0 }
                 ?.let { " · $it%" }
                 .orEmpty()
             AppLanguage.tr(
-                "${json.optString("title")} · ${json.optString("state")}$progress",
-                "${json.optString("title")} · ${json.optString("state")}$progress"
+                "${json.optString("title")} · ${json.optString("state")}$progress" +
+                    if (tool.name == "task_wait") {
+                        when {
+                            json.optBoolean("timed_out") -> " · 等待超时"
+                            json.optBoolean("changed") -> " · 状态已变化"
+                            else -> ""
+                        }
+                    } else "",
+                "${json.optString("title")} · ${json.optString("state")}$progress" +
+                    if (tool.name == "task_wait") {
+                        when {
+                            json.optBoolean("timed_out") -> " · timed out"
+                            json.optBoolean("changed") -> " · state changed"
+                            else -> ""
+                        }
+                    } else ""
             )
         }
+        "task_list" -> AppLanguage.tr(
+            "${json.optJSONArray("tasks")?.length() ?: 0} 个任务",
+            "${json.optJSONArray("tasks")?.length() ?: 0} tasks"
+        )
         "ui_key" -> AppLanguage.tr("已按下返回键", "Pressed back")
         "ui_screenshot" -> AppLanguage.tr("已截取当前界面", "Captured the screen")
         "browser_open", "browser_navigate" -> {

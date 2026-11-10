@@ -252,7 +252,8 @@ class ScheduledTaskManager(context: Context) {
         val accepted = AssistantConversation.submit(
             appContext,
             task.goal,
-            queueIfBusy = true
+            queueIfBusy = true,
+            origin = com.coke.nestspace.data.AgentMessage.Origin.SCHEDULED
         ) { outcome, answer ->
             val status = when (outcome) {
                 AssistantConversation.RunOutcome.COMPLETED -> "done"

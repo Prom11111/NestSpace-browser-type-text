@@ -12,6 +12,7 @@ import com.coke.nestspace.container.identity.HostIdentity
 import com.coke.nestspace.i18n.AppLanguage
 import com.coke.nestspace.runtime.RuntimeHostIdentity
 import com.coke.nestspace.runtime.RuntimeHostHooks
+import com.coke.nestspace.task.OperationTaskRegistry
 import com.coke.nestspace.ui.DesktopNavigation
 import java.io.File
 
@@ -68,6 +69,7 @@ class NestSpaceApp : Application() {
         // do not report that as a virtual-app crash.
         ContainerProcessPool.resetLaunchedFlagsAfterHostRestart(this)
         UserGateManager.init(this)
+        OperationTaskRegistry.initialize(this)
         com.coke.nestspace.plugin.AgentPluginSupport.installBuiltins(this)
         NestSpaceDeferredStartup.schedule(this, processStartedAt)
     }

@@ -357,8 +357,35 @@ public final class HelloPlugin implements
 `PluginToolResult`。只读工具把 `mutating` 设为 `false`，会修改外部状态、文件、数据库或
 业务数据的工具应设为 `true`，让宿主继续使用工具确认流程。
 
-工具默认超时是 30 秒，最大可以设置到 120 秒。结果文本最大 1 MB，Base64 图片最大
-8 MB。复杂任务的进度和取消应该使用任务 API，而不是让一次工具调用无限阻塞。
+工具默认执行超时是 30 秒，最大可以设置到 120 秒。`timeout_ms` 是插件执行上限；
+`max_wait_ms` 是 Agent 同步等待结果的上限，默认 1 秒，最大 30 秒。两者含义不同：
+
+- 在 `max_wait_ms` 内完成时，工具立即返回原始结果，不会额外等待；
+- 超过 `max_wait_ms` 但未超过 `timeout_ms` 时，Agent 返回 `task_id`，插件调用继续在后台
+  执行，之后用 `task_wait` 观察；
+- 超过 `timeout_ms` 才表示插件执行失败。
+
+不同工具应按实际体验分别设置，不需要使用统一窗口。例如纯计算工具可以是 300 ms，远程
+查询可以是 3 秒，安装类工具可以是 5 秒。声明式贡献示例：
+
+```json
+{
+  "items": [
+    {
+      "id": "index",
+      "title": "Build index",
+      "input_schema": { "type": "object", "properties": {} },
+      "mutating": true,
+      "timeout_ms": 60000,
+      "max_wait_ms": 3000
+    }
+  ]
+}
+```
+
+Java 侧可在 `PluginToolSpec` 和 `PluginCommandSpec` 的完整构造器中传入同一个值。结果文本
+最大 1 MB，Base64 图片最大 8 MB。复杂任务的进度和取消应该使用任务 API，而不是让一次
+工具调用无限阻塞。
 
 ## 7. 在 Agent 决策链中增加逻辑
 

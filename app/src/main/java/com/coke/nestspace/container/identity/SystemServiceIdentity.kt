@@ -1,9 +1,11 @@
 package com.coke.nestspace.container.identity
 
 import com.coke.nestspace.container.ContainerLaunchSpec
+import com.coke.nestspace.browser.webUrlFromViewIntent
 import com.coke.nestspace.container.notify.ContainerNotificationBridge
 import com.coke.nestspace.container.vpm.ContainerPermissions
 import com.coke.nestspace.container.vpm.VirtualPackageRegistry
+import com.coke.nestspace.runtime.RuntimeHostHooks
 
 
 import android.app.PendingIntent
@@ -812,6 +814,23 @@ object SystemServiceIdentity {
             val isFinish = method.name.startsWith("finishActivity")
             val isMinimize = method.name.startsWith("moveTaskToBack")
             val activeHook = rootExitHook.get()
+            if (method.name.startsWith("startActivity")) {
+                val startIntent =
+                    args.orEmpty().filterIsInstance<Intent>().firstOrNull()
+                val webUrl = startIntent?.let(::webUrlFromViewIntent)
+                val context = hostContext ?: systemContext()
+                if (webUrl != null && context != null) {
+                    Log.w(TAG, "redirected external web startActivity into NestSpace")
+                    runCatching {
+                        RuntimeHostHooks.openBrowser?.invoke(context, webUrl)
+                    }
+                    return when (method.returnType) {
+                        Boolean::class.javaPrimitiveType -> false
+                        Int::class.javaPrimitiveType -> 0
+                        else -> null
+                    }
+                }
+            }
             if (activeHook != null) {
                 if (method.name.startsWith("startActivity")) {
                     val intent = args.orEmpty().filterIsInstance<Intent>().firstOrNull()

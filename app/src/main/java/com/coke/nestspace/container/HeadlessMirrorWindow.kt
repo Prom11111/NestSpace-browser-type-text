@@ -7,10 +7,12 @@ import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
+import android.media.ImageReader
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -52,6 +54,9 @@ object HeadlessMirrorWindow {
     private var windowManager: WindowManager? = null
     private var params: WindowManager.LayoutParams? = null
     private var virtualDisplay: VirtualDisplay? = null
+    private var backgroundReader: ImageReader? = null
+    private var backgroundThread: HandlerThread? = null
+    private var usingOffscreenDisplay = false
     private var displayId: Int = INVALID
     private var ready: CompletableDeferred<Int?>? = null
     @Volatile
@@ -62,6 +67,7 @@ object HeadlessMirrorWindow {
     private var assistantVisible = false
     @Volatile
     private var activeSlot: Int = -1
+    private var autoCloseToken: Any? = null
     private val backListeners = CopyOnWriteArraySet<(Boolean) -> Unit>()
 
     fun bind(activity: Activity) {
@@ -86,7 +92,7 @@ object HeadlessMirrorWindow {
 
     fun setAssistantVisible(visible: Boolean) {
         assistantVisible = visible
-        if (!visible) hide()
+        if (!visible && !usingOffscreenDisplay) hide()
     }
 
     /**
@@ -130,14 +136,29 @@ object HeadlessMirrorWindow {
         backListeners.remove(listener)
     }
 
-    private fun backEnabled(): Boolean = activeSlot >= 0 && displayId != INVALID
+    private fun backEnabled(): Boolean =
+        !usingOffscreenDisplay && activeSlot >= 0 && displayId != INVALID
 
     private fun publishBackEnabled() {
         val enabled = backEnabled()
         main.post { backListeners.forEach { it(enabled) } }
     }
 
-    suspend fun awaitDisplay(context: Context): Int? = withContext(Dispatchers.Main) {
+    suspend fun awaitDisplay(
+        context: Context,
+        showPanel: Boolean = true
+    ): Int? = withContext(Dispatchers.Main) {
+        cancelAutoClose()
+        if (!showPanel) {
+            if (!usingOffscreenDisplay && displayId != INVALID) {
+                hide()
+            }
+            ensureOffscreenDisplay(context)
+            return@withContext displayId.takeIf { it != INVALID }
+        }
+        if (usingOffscreenDisplay && displayId != INVALID) {
+            hide()
+        }
         while (hiding) kotlinx.coroutines.delay(10)
         if (displayId != INVALID) return@withContext displayId
         if (!assistantVisible || !hostResumed || hostActivity.get() == null) {
@@ -163,6 +184,37 @@ object HeadlessMirrorWindow {
         }
     }
 
+    /** Promote a currently off-screen/background target into the visible mirror panel. */
+    suspend fun promoteToPanel(context: Context, slot: Int): Boolean {
+        if (slot < 0) return false
+        setActiveSlot(slot)
+        return awaitDisplay(context, showPanel = true) != null
+    }
+
+    /**
+     * Keep the completed task visible for a short grace period. Any further
+     * mirror operation cancels this timer; otherwise the small window and its
+     * target process are closed together.
+     */
+    fun scheduleAutoClose(delayMs: Long = 10_000L) {
+        main.post {
+            cancelAutoClose()
+            if (usingOffscreenDisplay || overlay == null || activeSlot < 0) return@post
+            val token = Any()
+            autoCloseToken = token
+            main.postDelayed({
+                if (autoCloseToken === token) {
+                    autoCloseToken = null
+                    closeAndStopTarget()
+                }
+            }, delayMs.coerceAtLeast(0L))
+        }
+    }
+
+    private fun cancelAutoClose() {
+        autoCloseToken = null
+    }
+
     /**
      * Display id of a live mirror, readable from container processes. Child
      * hosts launched by the target must join the existing mirror instead of
@@ -180,11 +232,18 @@ object HeadlessMirrorWindow {
 
     fun hide() {
         if (hiding) return
+        cancelAutoClose()
         hiding = true
         val remove: () -> Unit = {
             try {
                 virtualDisplay?.release()
                 virtualDisplay = null
+                backgroundReader?.setOnImageAvailableListener(null, null)
+                backgroundReader?.close()
+                backgroundReader = null
+                backgroundThread?.quitSafely()
+                backgroundThread = null
+                usingOffscreenDisplay = false
                 displayId = INVALID
                 activeSlot = -1
                 publishBackEnabled()
@@ -220,7 +279,10 @@ object HeadlessMirrorWindow {
         // Match the old system PiP window footprint (~300 px on a 1080 px
         // display) instead of the larger 200 dp mirror panel.
         val width = (115 * density).toInt()
-        val height = (width.toFloat() * metrics.heightPixels / metrics.widthPixels).toInt()
+        val videoHeight =
+            (width.toFloat() * metrics.heightPixels / metrics.widthPixels).toInt()
+        val headerHeight = (44 * density).toInt()
+        val height = videoHeight + headerHeight
         val margin = (12 * density).toInt()
 
         val root = FrameLayout(host).apply { setBackgroundColor(Color.BLACK) }
@@ -230,40 +292,53 @@ object HeadlessMirrorWindow {
             surface,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
+                videoHeight,
+                Gravity.TOP
+            ).apply {
+                topMargin = headerHeight
+            }
         )
 
         val header = FrameLayout(host).apply {
             setBackgroundColor(Color.argb(165, 0, 0, 0))
             isClickable = true
         }
-        val title = TextView(host).apply {
-            text = "NestSpace · 镜像"
+        val fullscreen = TextView(host).apply {
+            text = "全屏"
             setTextColor(Color.WHITE)
-            textSize = 11f
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((10 * density).toInt(), 0, 0, 0)
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, (6 * density).toInt(), 0)
+            setOnClickListener {
+                cancelAutoClose()
+                openFullscreen()
+            }
         }
         val close = TextView(host).apply {
             text = "×"
             setTextColor(Color.WHITE)
-            textSize = 22f
+            textSize = 28f
             gravity = Gravity.CENTER
             setPadding(0, 0, (10 * density).toInt(), 0)
-            setOnClickListener { closeAndStopTarget() }
+            setOnClickListener {
+                cancelAutoClose()
+                closeAndStopTarget()
+            }
         }
         header.addView(
-            title,
+            fullscreen,
             FrameLayout.LayoutParams(
+                (56 * density).toInt(),
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
+                Gravity.END
+            ).apply {
+                rightMargin = (56 * density).toInt()
+            }
         )
         header.addView(
             close,
             FrameLayout.LayoutParams(
-                (40 * density).toInt(),
+                (52 * density).toInt(),
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 Gravity.END
             )
@@ -272,7 +347,7 @@ object HeadlessMirrorWindow {
             header,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                (30 * density).toInt(),
+                headerHeight,
                 Gravity.TOP
             )
         )
@@ -339,7 +414,8 @@ object HeadlessMirrorWindow {
         var downRawY = 0f
         var startX = 0
         var startY = 0
-        title.setOnTouchListener { _, event ->
+        header.setOnTouchListener { _, event ->
+            cancelAutoClose()
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downRawX = event.rawX
@@ -365,6 +441,59 @@ object HeadlessMirrorWindow {
     }
 
     /**
+     * MCP tasks need a real display for target Activity rendering but must not
+     * display the assistant mirror panel. An ImageReader-backed display keeps
+     * the surface queue drained while staying completely off-screen.
+     */
+    private fun ensureOffscreenDisplay(context: Context) {
+        if (displayId != INVALID && usingOffscreenDisplay) return
+        if (overlay != null || virtualDisplay != null) hide()
+        appContext = context.applicationContext
+        val manager = context.getSystemService(DisplayManager::class.java) ?: return
+        val metrics = context.resources.displayMetrics
+        val thread = HandlerThread("NestSpace-offscreen-display").apply { start() }
+        val reader = ImageReader.newInstance(
+            metrics.widthPixels,
+            metrics.heightPixels,
+            PixelFormat.RGBA_8888,
+            2
+        )
+        reader.setOnImageAvailableListener(
+            { source ->
+                runCatching {
+                    source.acquireLatestImage()?.close()
+                }
+            },
+            Handler(thread.looper)
+        )
+        val display = runCatching {
+            manager.createVirtualDisplay(
+                "$NAME background",
+                metrics.widthPixels,
+                metrics.heightPixels,
+                metrics.densityDpi,
+                reader.surface,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
+            )
+        }.onFailure {
+            Log.w(TAG, "create offscreen VirtualDisplay failed", it)
+        }.getOrNull()
+        if (display == null) {
+            reader.close()
+            thread.quitSafely()
+            return
+        }
+        backgroundReader = reader
+        backgroundThread = thread
+        virtualDisplay = display
+        displayId = display.display.displayId
+        usingOffscreenDisplay = true
+        writeDisplayFile(context, displayId)
+        Log.i(TAG, "offscreen display created id=$displayId")
+        publishBackEnabled()
+    }
+
+    /**
      * The title-bar close button means "close this app", not merely hide its
      * preview. Keeping the target process alive would leave video apps playing
      * audio with no visible window.
@@ -372,12 +501,22 @@ object HeadlessMirrorWindow {
     private fun closeAndStopTarget() {
         val slot = activeSlot
         val context = appContext
+        val owner = slot.takeIf { it >= 0 }
+            ?.let(ContainerProcessPool::ownerOfSlot)
         hide()
         if (slot < 0 || context == null) return
         Thread(
             {
                 val closed = runCatching {
-                    ContainerProcessPool.closeSlot(context, slot)
+                    if (owner == null) {
+                        ContainerProcessPool.closeSlot(context, slot)
+                    } else {
+                        ContainerProcessPool.closeInstance(
+                            context,
+                            owner.packageName,
+                            owner.instanceId
+                        ).isNotEmpty()
+                    }
                 }.onFailure {
                     Log.w(TAG, "failed to close slot $slot", it)
                 }.getOrDefault(false)
@@ -385,6 +524,23 @@ object HeadlessMirrorWindow {
             },
             "NestSpace-mirror-close"
         ).start()
+    }
+
+    private fun openFullscreen() {
+        val slot = activeSlot
+        val context = appContext ?: return
+        if (slot < 0) return
+        val owner = ContainerProcessPool.ownerOfSlot(slot)
+        ContainerProcessPool.bringToFront(
+            context,
+            slot,
+            owner?.packageName.orEmpty(),
+            owner?.instanceId.orEmpty()
+        )
+        // The container process first moves its target View out of the
+        // Presentation. Keep the display alive briefly so that handoff can
+        // finish before this process removes the mirror surface.
+        main.postDelayed({ hide() }, 800L)
     }
 
     private fun createDisplay(context: Context, holder: SurfaceHolder) {

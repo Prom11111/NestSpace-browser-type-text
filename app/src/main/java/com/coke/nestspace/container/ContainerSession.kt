@@ -1528,9 +1528,6 @@ class ContainerSession private constructor(
                 host.classLoader
             )
             ContainerLaunchProgress.advance(LaunchProgressStage.LOADING_CODE)
-            val resources = createResources(host, apkPaths + pluginMount.apkPaths)
-            ContainerLaunchProgress.advance(LaunchProgressStage.LOADING_RESOURCES)
-            Log.d(TAG, "resources ready")
             val appInfo = spec.applicationInfo
             appInfo.dataDir = dataRoot.absolutePath
             appInfo.sourceDir = spec.baseApkPath
@@ -1587,6 +1584,13 @@ class ContainerSession private constructor(
             // the Activity attachment path uses framework-private fields.
             HiddenApiCompat.ensure(force = true)
             Log.d(TAG, "session class loader: ${loader.javaClass.name}")
+            val resources = createResources(
+                host,
+                apkPaths + pluginMount.apkPaths,
+                loader
+            )
+            ContainerLaunchProgress.advance(LaunchProgressStage.LOADING_RESOURCES)
+            Log.d(TAG, "resources ready classLoader=${loader.javaClass.simpleName}")
             startupCoordinator.mark(
                 AndroidStartupPhase.CLASS_LOADER,
                 SystemClock.elapsedRealtime() - classLoaderStartedAt,
@@ -1965,7 +1969,11 @@ class ContainerSession private constructor(
             return application
         }
 
-        private fun createResources(host: Context, paths: List<String>): Resources {
+        private fun createResources(
+            host: Context,
+            paths: List<String>,
+            classLoader: ClassLoader
+        ): Resources {
             val assetManager = AssetManager::class.java
                 .getDeclaredConstructor()
                 .newInstance()
@@ -1985,11 +1993,65 @@ class ContainerSession private constructor(
                 }
             }
 
-            return Resources(
+            val base = Resources(
                 assetManager,
                 host.resources.displayMetrics,
                 host.resources.configuration
             )
+            return runCatching {
+                // Resources(AssetManager, ...) binds the system ClassLoader.
+                // Instantiate the target-bound Resources first, then swap in
+                // the APK-backed ResourcesImpl. DrawableInflater will therefore
+                // resolve custom Drawables bundled in the target APK.
+                val constructor = Resources::class.java
+                    .getDeclaredConstructor(ClassLoader::class.java)
+                    .apply { isAccessible = true }
+                val resources = constructor.newInstance(classLoader)
+                val impl = Resources::class.java
+                    .getDeclaredField("mResourcesImpl")
+                    .apply { isAccessible = true }
+                impl.set(resources, impl.get(base))
+                resources
+            }.getOrElse {
+                Log.w(
+                    TAG,
+                    "target Resources classloader binding failed; patching fields",
+                    it
+                )
+                bindResourcesClassLoader(base, classLoader)
+                base
+            }
+        }
+
+        private fun bindResourcesClassLoader(
+            resources: Resources,
+            classLoader: ClassLoader
+        ) {
+            fun patch(owner: Any, type: Class<*>) {
+                runCatching {
+                    type.getDeclaredField("mClassLoader").apply {
+                        isAccessible = true
+                        set(owner, classLoader)
+                    }
+                }.onFailure {
+                    Log.w(
+                        TAG,
+                        "bind ${type.simpleName}.mClassLoader failed",
+                        it
+                    )
+                }
+            }
+            patch(resources, Resources::class.java)
+            runCatching {
+                val implField = Resources::class.java
+                    .getDeclaredField("mResourcesImpl")
+                    .apply { isAccessible = true }
+                implField.get(resources)?.let { impl ->
+                    patch(impl, impl.javaClass)
+                }
+            }.onFailure {
+                Log.w(TAG, "read ResourcesImpl for classloader binding failed", it)
+            }
         }
     }
 }

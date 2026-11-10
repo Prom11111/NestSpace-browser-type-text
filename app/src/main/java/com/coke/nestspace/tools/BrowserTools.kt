@@ -10,6 +10,7 @@ import com.coke.nestspace.browser.BrowserSession
 import androidx.core.content.FileProvider
 import com.coke.nestspace.control.LivePreview
 import com.coke.nestspace.i18n.AppLanguage
+import com.coke.nestspace.task.OperationTaskRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -17,6 +18,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.File
+import java.security.MessageDigest
 import kotlin.coroutines.resume
 
 /**
@@ -67,12 +69,12 @@ internal object BrowserTools {
         val percent = download.progress?.let {
             (it * 100f).toInt().coerceIn(0, 100)
         } ?: -1
+        val terminal = download.state == "done" ||
+            download.state == "failed" ||
+            download.state == "cancelled"
         val text = JSONObject()
             .put("state", download.state)
-            .put(
-                "terminal",
-                download.state == "done" || download.state == "failed"
-            )
+            .put("terminal", terminal)
             .put("downloaded", download.state == "done")
             .put("download_id", download.id)
             .put("task_id", download.taskId.orEmpty())
@@ -93,8 +95,9 @@ internal object BrowserTools {
                 when (download.state) {
                     "done" -> "download completed"
                     "failed" -> "download failed"
-                    else -> "download is still running; keep polling with " +
-                        "poll_tool and this task_id"
+                    "cancelled" -> "download cancelled"
+                    "cancelling" -> "download cancellation in progress"
+                    else -> "download is still running; use task_wait with this task_id"
                 }
             )
             .put("error", download.error.orEmpty())
@@ -105,6 +108,16 @@ internal object BrowserTools {
                 false,
                 text,
                 errorCode = "DOWNLOAD_FAILED"
+            )
+            "cancelled" -> ToolResult(
+                false,
+                text,
+                errorCode = "DOWNLOAD_CANCELLED"
+            )
+            "cancelling" -> ToolResult(
+                false,
+                text,
+                errorCode = "DOWNLOAD_CANCELLING"
             )
             else -> ToolResult(
                 false,
@@ -119,22 +132,25 @@ internal object BrowserTools {
         started: Boolean
     ): ToolResult {
         val failed = download.state == "failed"
+        val terminal = download.state == "done" ||
+            failed ||
+            download.state == "cancelled"
         return ToolResult(
-            !failed,
+            !failed && download.state != "cancelled",
             JSONObject()
                 .put("started", started)
                 .put("attached", !started)
                 .put("state", download.state)
-                .put("terminal", download.state == "done" || failed)
+                .put("terminal", terminal)
                 .put("download_id", download.id)
                 .put("task_id", download.taskId.orEmpty())
                 .put("url", download.url)
                 .put("name", download.name)
                 .put(
                     "next",
-                    if (download.state == "downloading") {
-                        "Use poll_tool with task_status and this task_id. Do not report " +
-                            "completion until terminal=true and state=succeeded."
+                    if (download.state == "downloading" || download.state == "cancelling") {
+                        "Use task_wait with this task_id. Do not report completion until " +
+                            "terminal=true and state=succeeded."
                     } else {
                         "Inspect state before continuing."
                     }
@@ -144,6 +160,31 @@ internal object BrowserTools {
             errorCode = if (failed) "DOWNLOAD_FAILED" else null
         )
     }
+
+    private fun startedTaskResult(
+        task: OperationTaskRegistry.Snapshot,
+        started: Boolean,
+        errorCode: String? = null
+    ): ToolResult = ToolResult(
+        errorCode == null &&
+            (!task.terminal || task.state == OperationTaskRegistry.State.SUCCEEDED),
+        JSONObject()
+            .put("started", started)
+            .put("attached", !started)
+            .put("state", task.state.api)
+            .put("terminal", task.terminal)
+            .put("task_id", task.id)
+            .put("request_id", task.requestId ?: JSONObject.NULL)
+            .put("state_revision", task.stateRevision)
+            .put("progress_revision", task.progressRevision)
+            .put("message", task.message)
+            .put("result", task.result ?: "")
+            .put("error", task.error ?: "")
+            .put("cleanup_error", task.cleanupError ?: "")
+            .put("next", "Use task_wait until terminal=true.")
+            .toString(),
+        errorCode = errorCode
+    )
 
     /**
      * Publish the page the assistant is working on so the live preview card
@@ -184,7 +225,8 @@ internal object BrowserTools {
                 "tab_id" to "string",
                 "wait_ms" to "integer",
                 required = listOf("url")
-            )
+            ),
+            maxWaitMs = 1_500L
         ) { args, ctx ->
             val url = BrowserSession.normalizeInput(args.optString("url"))
             val headless = args.optBoolean("headless", true)
@@ -199,7 +241,7 @@ internal object BrowserTools {
                         headless = headless,
                         newTab = newTab,
                         tabId = requestedTab,
-                        ownerId = ctx.sessionId
+                        ownerId = ctx.ownerId
                     )
                 }
             }.getOrElse { error ->
@@ -345,7 +387,8 @@ internal object BrowserTools {
                 "url" to "string",
                 "tab_id" to "string",
                 required = listOf("url")
-            )
+            ),
+            maxWaitMs = 1_500L
         ) { args, _ ->
             val url = BrowserSession.normalizeInput(args.optString("url"))
             val tabId = tabIdArg(args)
@@ -490,7 +533,8 @@ internal object BrowserTools {
             name = "browser_reload",
             description = "Reload a browser tab. Defaults to the active tab; pass tab_id to target " +
                 "another page.",
-            inputSchema = toolSchema("tab_id" to "string")
+            inputSchema = toolSchema("tab_id" to "string"),
+            maxWaitMs = 1_500L
         ) { args, _ ->
             val id = tabIdArg(args)
             val ok = withContext(Dispatchers.Main) { BrowserSession.reload(id) }
@@ -578,10 +622,10 @@ internal object BrowserTools {
             withContext(Dispatchers.Main) {
                 val webView = BrowserSession.webView(id)
                     ?: return@withContext noTabResult(args)
-                BrowserSession.clearDownload(ctx.sessionId)
+                BrowserSession.clearDownload(ctx.ownerId)
                 BrowserSession.setDownloadOwner(
                     id ?: BrowserSession.activeTabId(),
-                    ctx.sessionId
+                    ctx.ownerId
                 )
                 val needle = if (text.isBlank()) "null" else JSONObject.quote(text)
                 val sel = if (selector.isBlank()) "null" else JSONObject.quote(selector)
@@ -632,18 +676,20 @@ internal object BrowserTools {
         ToolSpec(
             name = "browser_download",
             description = "Start a file download from a URL and return its download_id immediately. " +
-                "Use poll_tool with task_status to observe progress until terminal=true. " +
+                "Use task_wait with task_id until terminal=true. " +
                 "If url is omitted, attach to the page-triggered download started by browser_click. " +
                 "Starting a new download cancels only the previous download owned by the same " +
                 "assistant session.",
             inputSchema = toolSchema(
                 "url" to "string",
-                "tab_id" to "string"
-            )
+                "tab_id" to "string",
+                "request_id" to "string"
+            ),
+            nativeAsync = true
         ) { args, ctx ->
             val input = args.optString("url").trim()
             if (input.isBlank()) {
-                val state = BrowserSession.latestDownload(ctx.sessionId)
+                val state = BrowserSession.latestDownload(ctx.ownerId)
                     ?: return@ToolSpec ToolResult(
                         false,
                         "no browser download has started",
@@ -659,6 +705,9 @@ internal object BrowserTools {
                 BrowserSession.webView(id)?.url
             }
             val url = resolveUrl(currentUrl, input)
+            val requestId = args.optString("request_id")
+                .trim()
+                .takeIf(String::isNotBlank)
             if (ctx.caller != Caller.USER &&
                 ToolPermissionSettings.shouldConfirm(
                     context,
@@ -683,17 +732,36 @@ internal object BrowserTools {
             val started = BrowserSession.enqueueDownload(
                 context = context,
                 url = url,
-                ownerId = ctx.sessionId
+                ownerId = ctx.ownerId,
+                requestId = requestId,
+                requestHash = requestHash(url),
+                parentTaskId = ctx.parentTaskId
             )
-            startedDownloadResult(
-                download = started,
-                started = true
-            )
+            when {
+                started.errorCode != null -> ToolResult(
+                    false,
+                    startedTaskResult(
+                        task = started.task,
+                        started = false,
+                        errorCode = started.errorCode
+                    ).text,
+                    errorCode = started.errorCode
+                )
+                started.download != null -> startedDownloadResult(
+                    download = started.download,
+                    started = started.created
+                )
+                else -> startedTaskResult(
+                    task = started.task,
+                    started = started.created
+                )
+            }
         },
         ToolSpec(
             name = "browser_download_status",
-            description = "Read one browser download snapshot by download_id. This is a safe polling " +
-                "target for poll_tool. State=downloading is not success; state=done is complete and " +
+            description = "Read one browser download snapshot by download_id for detailed file and " +
+                "byte information. Use task_wait for lifecycle waiting. State=downloading is not " +
+                "success; state=done is complete and " +
                 "state=failed is terminal failure.",
             inputSchema = toolSchema(
                 "download_id" to "string",
@@ -710,7 +778,7 @@ internal object BrowserTools {
             }
             val state = BrowserSession.downloadStatus(
                 id = downloadId,
-                ownerId = ctx.sessionId
+                ownerId = ctx.ownerId
             ) ?: return@ToolSpec ToolResult(
                 false,
                 "download not found: $downloadId",
@@ -1013,4 +1081,9 @@ internal object BrowserTools {
             java.net.URI(base).resolve(input).toString()
         }.getOrDefault(input)
     }
+
+    private fun requestHash(url: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(url.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 }

@@ -44,7 +44,17 @@ Debug 构建提供，不能通过 MCP 删除；外部插件可以卸载并清理
 | `schedule_task` | 创建和管理定时任务 |
 | `replay_*` | 运行记录回放 |
 
-`space_launch` 和 `space_multi_open` 默认无头，只有显式传 `headless=false` 才打开可见窗口；需要悬浮窗权限提供的 BAL 豁免。本地 AI 助手会根据用户目标选择模式：直接打开或执行操作时全屏，查询、读取、整理标题/结果时使用无头方形小窗。无头容器的 UI 服务会保持长连接，空闲时也能继续用 `ui_*` 读取，不需要重新打开应用。
+`space_launch`、`space_multi_open` 和 `nestspace_run_task` 支持
+`display_mode=background|mirror|visible`：
+
+- `background`：纯无头，不显示 App，也不显示镜像小窗，适合 MCP 后台任务；
+- `mirror`：无头运行并显示助手镜像小窗；
+- `visible`：正常打开 App；
+- `auto`：保留原有策略，由本地助手根据调用方决定。
+
+MCP 调用未指定时默认 `background`，调用方可按任务自行选择。本地 AI 发起的操作默认使用
+无头镜像；需要用户接管时调用 `hand_to_user`。无头容器的 UI 服务会保持长连接，空闲时也能
+继续用 `ui_*` 读取，不需要重新打开应用。
 
 系统浏览器包（Chrome、Firefox、Edge、夸克等）不能通过 `host_launch` 或系统空间 `space_launch` 启动，会返回 `USE_BUILT_IN_BROWSER`。网页任务必须使用 `browser_*`。
 
@@ -61,19 +71,19 @@ Debug 构建提供，不能通过 MCP 删除；外部插件可以卸载并清理
 
 `ui_*` 支持用 `package` / `instance_id` 路由到指定容器实例；省略时操作最近启动的实例。目标 Activity 自建的 Dialog、底部弹窗等独立窗口也会合并进观察和截图。
 
-`poll_tool` 是统一的定时复查入口，用于 UI 文本、页面加载、App 启动和其它异步状态。它按
-`max_checks` 和 `interval_ms` 调用受控的只读状态工具，可用 `stop_when_contains`
-在目标状态出现时提前结束；达到次数上限返回 `POLL_TIMEOUT`，不会当作成功。
+`poll_tool` 用于 UI 文本或外部服务等没有内部事件源的观察。它按 `max_checks` 和
+`interval_ms` 调用受控的只读状态工具；达到次数上限返回 `POLL_TIMEOUT`，不会当作成功。
 
 异步操作通过进程内任务中心统一暴露：
 
 | 工具 | 说明 |
 | --- | --- |
-| `task_status` | 按不可猜的 `task_id` 返回状态、进度、速度、剩余时间、空闲时间、结果和错误；作为 `poll_tool` 的观察目标 |
-| `task_cancel` | 取消任务并调用对应任务的清理钩子 |
+| `task_status` | 非阻塞返回状态、进度、速度、剩余时间、空闲时间、结果和错误 |
+| `task_wait` | 等待生命周期变化、终态或超时；进度变化不会唤醒 |
+| `task_cancel` | 请求取消并立即返回，随后用 `task_wait` 等待清理完成 |
 
-任务的终态是 `succeeded`、`failed` 或 `cancelled`，`terminal=true` 表示可以停止轮询。
-`task_status` 和 `poll_tool` 只汇报状态，不会仅因为下载慢而自行取消；模型可根据速度、
+任务的终态是 `succeeded`、`failed` 或 `cancelled`，`terminal=true` 表示可以停止等待。
+`task_status` 和 `task_wait` 只汇报状态，不会仅因为下载慢而自行取消；模型可根据速度、
 剩余时间和空闲时间决定是否调用 `task_cancel`。启动同一助手的新下载时，系统仍会强制
 停止旧连接，避免并行任务。
 
@@ -106,15 +116,15 @@ Debug 构建提供，不能通过 MCP 删除；外部插件可以卸载并清理
 | `browser_links` | 列出链接、按钮和图片按钮；图片按钮返回可传给 `browser_click` 的 CSS selector |
 | `browser_click` | 按可见文本或 CSS selector 点击元素 |
 | `browser_read_text` | 读取标签页可见文本 |
-| `browser_download` | 启动 URL 下载并立即返回 `download_id`；省略 URL 时绑定页面触发的下载 |
-| `browser_download_status` | 按 `download_id` 返回一次下载快照，作为 `poll_tool` 的观察目标 |
+| `browser_download` | 启动 URL 下载并立即返回 `download_id/task_id`；可传 `request_id` 幂等重试；省略 URL 时绑定页面触发的下载 |
+| `browser_download_status` | 按 `download_id` 返回一次详细下载快照；生命周期等待使用 `task_wait` |
 | `browser_upload` | 用本地路径或 `content://` URI 完成文件选择 |
 | `browser_hand_to_user` | 遇到验证码、登录墙或反爬拦截时，先弹窗让用户确认，确认后把标签页切到可见浏览器并全屏打开交给用户；用户完成后返回当前页面状态 |
 
 下载文件写入系统 **Download** 目录（Android 10+ 通过 MediaStore），返回文件名、路径、大小和 URI，可直接交给 `space_install_apk`。
 
-下载流程是 `browser_download` 返回 `task_id` → `poll_tool(tool=task_status,
-stop_when_contains="terminal":true)`；任务结果中的 `state` 区分
+下载流程是 `browser_download` 返回 `task_id` → `task_wait` 直到
+`terminal=true`；任务结果中的 `state` 区分
 `succeeded`、`failed` 和 `cancelled`。`browser_download_status` 可用于需要字节数、
 百分比或文件信息的细粒度查看。
 每个 AI 助手会话只保留一个当前下载。同一助手选择

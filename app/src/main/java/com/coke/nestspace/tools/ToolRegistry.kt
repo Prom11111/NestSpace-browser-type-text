@@ -28,12 +28,17 @@ import com.coke.nestspace.plugin.AgentPluginSupport
 import com.coke.nestspace.plugin.PluginCenterStore
 import com.coke.nestspace.schedule.ScheduledTaskManager
 import com.coke.nestspace.replay.ReplayStore
+import com.coke.nestspace.task.OperationTaskRegistry
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -51,6 +56,7 @@ class ToolRegistry(
 ) {
     internal val leases = LeaseManager()
     private val tools: List<ToolSpec> = buildTools()
+    private val taskScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val LEASE_RENEW_MS = 10_000L
     private val knowledge by lazy { KnowledgeStore.get(context) }
     internal val memory by lazy { MemoryStore(context) }
@@ -83,6 +89,8 @@ class ToolRegistry(
         "replay_list",
         "poll_tool",
         "task_status",
+        "task_list",
+        "task_wait",
         "system_status"
     )
 
@@ -102,7 +110,32 @@ class ToolRegistry(
     suspend fun execute(name: String, args: JSONObject, ctx: ToolContext): ToolResult {
         val spec = list().firstOrNull { it.name == name }
             ?: return ToolResult(false, "Unknown tool: $name", errorCode = "UNKNOWN_TOOL")
+        if (name !in directTaskTools && !spec.nativeAsync) {
+            return executeAsTask(name, args, ctx, spec)
+        }
+        return executeDirect(name, args, ctx, spec)
+    }
 
+    /**
+     * Run a status probe inside an existing task without creating another
+     * task for every poll iteration.
+     */
+    internal suspend fun executeUntracked(
+        name: String,
+        args: JSONObject,
+        ctx: ToolContext
+    ): ToolResult {
+        val spec = list().firstOrNull { it.name == name }
+            ?: return ToolResult(false, "Unknown tool: $name", errorCode = "UNKNOWN_TOOL")
+        return executeDirect(name, args, ctx, spec)
+    }
+
+    private suspend fun executeDirect(
+        name: String,
+        args: JSONObject,
+        ctx: ToolContext,
+        spec: ToolSpec
+    ): ToolResult {
         if (name.startsWith("host_") && !HostControlSettings.isEnabled(context)) {
             return ToolResult(
                 false,
@@ -114,11 +147,17 @@ class ToolRegistry(
         val spaceId = if (name.startsWith("host_")) {
             // Host tools are serialized per agent session so one CLI/MCP
             // connection cannot block another session for the lease TTL.
-            "host:${ctx.sessionId}"
+            "host:${ctx.ownerId}"
         } else {
             args.optString("space_id", ctx.spaceId)
         }
-        if (spec.mutating && !leases.acquire(spaceId, ctx.sessionId)) {
+        // Task control belongs to the task layer, not to the space being
+        // operated by that task. In particular task_cancel must remain
+        // available while a long-running tool owns the space lease.
+        if (spec.mutating &&
+            name !in directTaskTools &&
+            !leases.acquire(spaceId, ctx.ownerId)
+        ) {
             return ToolResult(
                 false,
                 "SPACE_BUSY: another agent is controlling $spaceId",
@@ -128,7 +167,10 @@ class ToolRegistry(
 
         if (name.startsWith("ui_")) {
             alignAssistantPresentation(args, ctx)
-            ensureMirrorPreview(args)
+            ensureMirrorPreview(
+                args,
+                showPanel = ctx.displayMode != ContainerDisplayMode.BACKGROUND
+            )
         }
 
         val result = try {
@@ -137,7 +179,7 @@ class ToolRegistry(
                     val renew = launch(Dispatchers.Default) {
                         while (isActive) {
                             delay(LEASE_RENEW_MS)
-                            leases.renew(spaceId, ctx.sessionId)
+                            leases.renew(spaceId, ctx.ownerId)
                         }
                     }
                     try {
@@ -159,6 +201,105 @@ class ToolRegistry(
             )
         }
         return withKnowledge(name, args, result, ctx)
+    }
+
+    private suspend fun executeAsTask(
+        name: String,
+        args: JSONObject,
+        ctx: ToolContext,
+        spec: ToolSpec
+    ): ToolResult {
+        val task = OperationTaskRegistry.start(
+            ownerId = ctx.ownerId,
+            kind = "tool_call",
+            title = name,
+            parentTaskId = ctx.parentTaskId
+        ).task ?: return ToolResult(
+            false,
+            "Could not create task for $name",
+            errorCode = "TASK_CREATE_FAILED"
+        )
+        val completed = CompletableDeferred<ToolResult>()
+        val job = taskScope.launch {
+            OperationTaskRegistry.transition(
+                task.id,
+                OperationTaskRegistry.State.RUNNING,
+                "running $name"
+            )
+            val result = try {
+                executeDirect(
+                    name,
+                    args,
+                    ctx.copy(parentTaskId = task.id),
+                    spec
+                )
+            } catch (cancelled: CancellationException) {
+                OperationTaskRegistry.markCancelled(task.id, "tool cancelled")
+                completed.cancel(cancelled)
+                throw cancelled
+            } catch (t: Throwable) {
+                val failed = ToolResult(
+                    false,
+                    "Tool $name failed: ${t.message ?: t.javaClass.simpleName}",
+                    errorCode = "TOOL_ERROR"
+                )
+                OperationTaskRegistry.fail(task.id, failed.text)
+                completed.complete(failed)
+                return@launch
+            }
+            if (result.ok) {
+                OperationTaskRegistry.succeed(task.id, result.text)
+                if (task.parentTaskId == null &&
+                    name in mirrorAutoCloseTools &&
+                    ContainerDisplayMode.parse(
+                        args.optString("display_mode"),
+                        ContainerDisplayMode.AUTO
+                    ) == ContainerDisplayMode.MIRROR
+                ) {
+                    HeadlessMirrorWindow.scheduleAutoClose()
+                }
+            } else {
+                OperationTaskRegistry.fail(
+                    task.id,
+                    result.text.ifBlank {
+                        result.errorCode ?: "tool failed"
+                    }
+                )
+            }
+            completed.complete(result)
+        }
+        OperationTaskRegistry.setCancelCallback(task.id) {
+            job.cancel(CancellationException("Tool cancelled"))
+        }
+        // This is an upper bound, not a fixed delay or a universal short
+        // polling window. Each tool declares its own value and completed.await
+        // returns immediately when the tool finishes before the deadline.
+        val maxWaitMs = spec.maxWaitMs
+            .coerceIn(50L, 30_000L)
+        val immediate = withTimeoutOrNull(maxWaitMs) {
+            completed.await()
+        }
+        if (immediate != null) return immediate
+        // Close the race where completion lands at the exact deadline.
+        if (completed.isCompleted) return completed.await()
+        val snapshot = OperationTaskRegistry.status(task.id, ctx.ownerId)
+        if (snapshot?.terminal == true) return completed.await()
+        return ToolResult(
+            true,
+            JSONObject()
+                .put("task_id", task.id)
+                .put("state", snapshot?.state?.api ?: "running")
+                .put("terminal", snapshot?.terminal ?: false)
+                .put("async", true)
+                .put("started", true)
+                .put("tool", name)
+                .put("max_wait_ms", maxWaitMs)
+                .put(
+                    "next",
+                    "Use task_wait with this task_id. timeout_s is only a maximum wait."
+                )
+                .toString()
+        )
     }
 
     /**
@@ -256,12 +397,17 @@ class ToolRegistry(
      * headless target stays alive for follow-ups. Re-open it when a later run
      * starts observing or operating that app.
      */
-    internal suspend fun ensureMirrorPreview(args: JSONObject) {
+    internal suspend fun ensureMirrorPreview(
+        args: JSONObject,
+        showPanel: Boolean = true
+    ) {
         val slot = containerSlot(args) ?: return
         val activeMirrorSlot = HeadlessMirrorWindow.activeSlot()
         if (activeMirrorSlot >= 0 && activeMirrorSlot != slot) return
         if (ContainerUiClient.isMirrorMode(context, slot) != true) return
-        val displayId = runCatching { HeadlessMirrorWindow.awaitDisplay(context) }
+        val displayId = runCatching {
+            HeadlessMirrorWindow.awaitDisplay(context, showPanel)
+        }
             .onFailure { Log.w("ToolRegistry", "mirror preview unavailable", it) }
             .getOrNull() ?: return
         if (HeadlessMirrorWindow.activeSlot() != slot) {
@@ -276,7 +422,11 @@ class ToolRegistry(
      * information request cannot silently continue in a visible app.
      */
     internal suspend fun alignAssistantPresentation(args: JSONObject, ctx: ToolContext) {
-        if (ctx.caller != Caller.LOCAL_AGENT) return
+        if (ctx.caller != Caller.LOCAL_AGENT &&
+            ctx.displayMode == ContainerDisplayMode.AUTO
+        ) {
+            return
+        }
         val requestedPackage = args.optString("package").takeIf { it.isNotBlank() }
         val requestedInstance = args.optString("instance_id").takeIf { it.isNotBlank() }
         val slot = containerSlot(args) ?: ContainerProcessPool.lastSlot() ?: return
@@ -285,12 +435,18 @@ class ToolRegistry(
         val instanceId = requestedInstance ?: owner?.instanceId ?: return
         val mirrored = ContainerUiClient.isMirrorMode(context, slot)
             ?: (HeadlessMirrorWindow.activeSlot() == slot)
-        val desired = assistantPresentation(ctx.userUtterances)
+        val desired = when (ctx.displayMode) {
+            ContainerDisplayMode.BACKGROUND,
+            ContainerDisplayMode.MIRROR -> AssistantPresentation.HEADLESS
+            ContainerDisplayMode.VISIBLE -> AssistantPresentation.VISIBLE
+            ContainerDisplayMode.AUTO -> assistantPresentation(ctx.userUtterances)
+        }
+        val offscreen = ctx.displayMode == ContainerDisplayMode.BACKGROUND
         val wantsMirror = desired == AssistantPresentation.HEADLESS
         if (mirrored == wantsMirror) {
             if (wantsMirror) {
                 ContainerUiKeepAlive.bind(context, slot)
-                ensureMirrorPreview(args)
+                ensureMirrorPreview(args, showPanel = !offscreen)
             }
             return
         }
@@ -306,7 +462,8 @@ class ToolRegistry(
             spaceId = args.optString("space_id", ctx.spaceId),
             packageName = packageName,
             instanceId = instanceId,
-            headless = wantsMirror
+            headless = wantsMirror,
+            backgroundOnly = offscreen
         )) {
             is EngineResult.Error -> return
             is EngineResult.Ok -> result.value
@@ -315,10 +472,13 @@ class ToolRegistry(
         awaitContainerReady(newSlot, 20_000L)
         if (wantsMirror) {
             ContainerUiKeepAlive.bind(context, newSlot)
-            ensureMirrorPreview(args.apply {
-                put("package", packageName)
-                put("instance_id", launched.instanceId)
-            })
+            ensureMirrorPreview(
+                args.apply {
+                    put("package", packageName)
+                    put("instance_id", launched.instanceId)
+                },
+                showPanel = !offscreen
+            )
         }
     }
 
@@ -362,7 +522,11 @@ class ToolRegistry(
         ctx: ToolContext,
         slotHint: Int?
     ): Int? {
-        if (ctx.caller != Caller.LOCAL_AGENT) return null
+        if (ctx.caller != Caller.LOCAL_AGENT &&
+            ctx.displayMode == ContainerDisplayMode.AUTO
+        ) {
+            return null
+        }
         val requestedPackage = args.optString("package").takeIf { it.isNotBlank() }
         val requestedInstance = args.optString("instance_id").takeIf { it.isNotBlank() }
         val owner = if (requestedPackage == null || requestedInstance == null) {
@@ -377,7 +541,8 @@ class ToolRegistry(
             spaceId = spaceId,
             packageName = packageName,
             instanceId = instanceId,
-            headless = true
+            headless = true,
+            backgroundOnly = ctx.displayMode == ContainerDisplayMode.BACKGROUND
         )) {
             is EngineResult.Error -> return null
             is EngineResult.Ok -> Unit
@@ -581,5 +746,18 @@ class ToolRegistry(
             .put("properties", properties)
             .put("required", req)
             .put("additionalProperties", false)
+    }
+
+    private companion object {
+        val directTaskTools = setOf(
+            "task_status",
+            "task_wait",
+            "task_cancel",
+            "task_list"
+        )
+        val mirrorAutoCloseTools = setOf(
+            "space_launch",
+            "space_multi_open"
+        )
     }
 }

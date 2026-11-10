@@ -45,7 +45,10 @@ internal fun ToolRegistry.sessionToolSpecs(): List<ToolSpec> = listOf(
             description = "Acquire the exclusive control lease for a space.",
             inputSchema = schema("space_id" to "string")
         ) { args, ctx ->
-            val ok = leases.acquire(args.optString("space_id", ctx.spaceId), ctx.sessionId)
+            val ok = leases.acquire(
+                args.optString("space_id", ctx.spaceId),
+                ctx.ownerId
+            )
             ToolResult(ok, if (ok) "lease acquired" else "SPACE_BUSY", errorCode = if (ok) null else "SPACE_BUSY")
         },
         ToolSpec(
@@ -53,7 +56,7 @@ internal fun ToolRegistry.sessionToolSpecs(): List<ToolSpec> = listOf(
             description = "Release all leases held by this session.",
             inputSchema = schema()
         ) { _, ctx ->
-            leases.release(ctx.sessionId)
+            leases.release(ctx.ownerId)
             ToolResult(true, "lease released")
         },
         ToolSpec(
@@ -65,17 +68,16 @@ internal fun ToolRegistry.sessionToolSpecs(): List<ToolSpec> = listOf(
         },
         ToolSpec(
             name = "task_status",
-            description = "Return one asynchronous operation task by task_id. Use this with poll_tool " +
-                "and stop_when_contains=\"terminal\":true. The terminal state distinguishes succeeded, " +
-                "failed and cancelled. It reports progress, speed, ETA and idle time; it does not decide " +
-                "that a slow task should be cancelled.",
+            description = "Return one asynchronous operation task by task_id. The terminal state " +
+                "distinguishes succeeded, failed and cancelled. It reports progress, speed, ETA and " +
+                "idle time; it does not decide that a slow task should be cancelled.",
             inputSchema = schema(
                 "task_id" to "string",
                 required = listOf("task_id")
             )
-        ) { args, _ ->
+        ) { args, ctx ->
             val taskId = args.optString("task_id").trim()
-            val task = OperationTaskRegistry.status(taskId)
+            val task = OperationTaskRegistry.status(taskId, ctx.ownerId)
                 ?: return@ToolSpec ToolResult(
                     false,
                     "task not found: $taskId",
@@ -84,35 +86,88 @@ internal fun ToolRegistry.sessionToolSpecs(): List<ToolSpec> = listOf(
             ToolResult(true, taskJson(task).toString())
         },
         ToolSpec(
+            name = "task_wait",
+            description = "Wait until an operation task changes lifecycle state, reaches a terminal " +
+                "state, or the timeout expires. Progress-only changes do not wake the wait. A timeout " +
+                "is not success and does not cancel the task.",
+            inputSchema = schema(
+                "task_id" to "string",
+                "timeout_s" to "integer",
+                required = listOf("task_id")
+            )
+        ) { args, ctx ->
+            val taskId = args.optString("task_id").trim()
+            val timeoutSeconds = args.optInt("timeout_s", 30)
+                .coerceIn(1, 50)
+            val result = OperationTaskRegistry.wait(
+                id = taskId,
+                timeoutMs = timeoutSeconds * 1_000L,
+                ownerId = ctx.ownerId
+            )
+            val task = result.task
+                ?: return@ToolSpec ToolResult(
+                    false,
+                    "task not found: $taskId",
+                    errorCode = "TASK_NOT_FOUND"
+                )
+            ToolResult(
+                true,
+                taskJson(task)
+                    .put("changed", result.changed)
+                    .put("timed_out", result.timedOut)
+                    .toString()
+            )
+        },
+        ToolSpec(
             name = "task_cancel",
-            description = "Cancel a running asynchronous operation by task_id. This also invokes the " +
-                "operation's cancellation hook, such as disconnecting an active download.",
+            description = "Request cancellation of an operation task. Returns immediately after " +
+                "entering cancelling; use task_wait to observe the final cancelled state.",
             inputSchema = schema(
                 "task_id" to "string",
                 required = listOf("task_id")
             ),
             mutating = true
-        ) { args, _ ->
+        ) { args, ctx ->
             val taskId = args.optString("task_id").trim()
-            val existing = OperationTaskRegistry.status(taskId)
+            val result = OperationTaskRegistry.requestCancel(
+                id = taskId,
+                ownerId = ctx.ownerId
+            )
+            val task = result.task
                 ?: return@ToolSpec ToolResult(
                     false,
                     "task not found: $taskId",
                     errorCode = "TASK_NOT_FOUND"
                 )
-            val task = OperationTaskRegistry.cancel(taskId)
-                ?: existing
-            ToolResult(true, taskJson(task).toString())
+            ToolResult(
+                true,
+                taskJson(task)
+                    .put("accepted", result.accepted)
+                    .toString()
+            )
+        },
+        ToolSpec(
+            name = "task_list",
+            description = "List recent operation tasks owned by this assistant or MCP identity.",
+            inputSchema = schema("limit" to "integer")
+        ) { args, ctx ->
+            val limit = args.optInt("limit", 10).coerceIn(1, 50)
+            val array = org.json.JSONArray()
+            OperationTaskRegistry.list(ctx.ownerId, limit).forEach {
+                array.put(taskJson(it))
+            }
+            ToolResult(
+                true,
+                JSONObject().put("tasks", array).toString()
+            )
         },
         ToolSpec(
             name = "poll_tool",
             description = "Poll a safe, read-only status tool several times with a fixed interval. " +
-                "Use this for page loads, app startup and other asynchronous work. Pass tool and a JSON " +
+                "Use this only for UI text or external sources without internal task events. Pass tool and a JSON " +
                 "object in arguments; optionally set stop_when_contains, then the poll stops early when " +
-                "the result contains that text. Exhausting max_checks is a timeout, not success. To " +
-                "wait for visible app text, poll ui_observe and stop on the text. For an asynchronous " +
-                "operation, poll task_status with its task_id and " +
-                "stop_when_contains set to the terminal marker. Polling only reports state; use " +
+                "the result contains that text. Exhausting max_checks is a timeout, not success. " +
+                "For operation tasks use task_wait instead. Polling only reports state; use " +
                 "task_cancel when the user or model decides a slow operation should stop.",
             inputSchema = schema(
                 "tool" to "string",
@@ -121,7 +176,8 @@ internal fun ToolRegistry.sessionToolSpecs(): List<ToolSpec> = listOf(
                 "interval_ms" to "integer",
                 "stop_when_contains" to "string",
                 required = listOf("tool")
-            )
+            ),
+            maxWaitMs = 2_000L
         ) { args, ctx ->
             val tool = args.optString("tool").trim()
             if (tool !in pollableStatusTools) {
@@ -150,7 +206,7 @@ internal fun ToolRegistry.sessionToolSpecs(): List<ToolSpec> = listOf(
             val polled = pollUntil(
                 maxChecks = maxChecks,
                 intervalMs = intervalMs,
-                probe = { execute(tool, toolArgs, ctx) },
+                probe = { executeUntracked(tool, toolArgs, ctx) },
                 isComplete = {
                     stopWhen.isBlank() ||
                         it.text.contains(stopWhen, ignoreCase = true)
@@ -230,7 +286,8 @@ internal fun ToolRegistry.sessionToolSpecs(): List<ToolSpec> = listOf(
             description = "Send text to the AI assistant conversation. If text is omitted, sends the text " +
                 "previously injected by assistant_type. Waits for the assistant to finish by default and " +
                 "returns its new messages/tool trace.",
-            inputSchema = schema("text" to "string", "wait_ms" to "integer")
+            inputSchema = schema("text" to "string", "wait_ms" to "integer"),
+            maxWaitMs = 1_000L
         ) { args, _ ->
             val waitMs = args.optInt("wait_ms", 120_000).coerceIn(0, 180_000)
             val before = AssistantBridge.snapshot.value.messages.size
@@ -262,7 +319,8 @@ internal fun ToolRegistry.sessionToolSpecs(): List<ToolSpec> = listOf(
             name = "assistant_status",
             description = "Return the AI assistant's busy state and recent conversation/tool messages. " +
                 "Use wait_ms to wait for a running assistant turn to become idle.",
-            inputSchema = schema("wait_ms" to "integer")
+            inputSchema = schema("wait_ms" to "integer"),
+            maxWaitMs = 1_000L
         ) { args, _ ->
             val waitMs = args.optInt("wait_ms", 0).coerceIn(0, 180_000)
             val snapshot = if (waitMs > 0) {
@@ -336,10 +394,14 @@ internal fun ToolRegistry.sessionToolSpecs(): List<ToolSpec> = listOf(
 private fun taskJson(task: OperationTaskRegistry.Snapshot): JSONObject =
     JSONObject()
         .put("task_id", task.id)
+        .put("request_id", task.requestId ?: JSONObject.NULL)
+        .put("parent_task_id", task.parentTaskId ?: JSONObject.NULL)
         .put("kind", task.kind)
         .put("title", task.title)
         .put("state", task.state.api)
         .put("terminal", task.terminal)
+        .put("state_revision", task.stateRevision)
+        .put("progress_revision", task.progressRevision)
         .put("progress_percent", task.progressPercent ?: JSONObject.NULL)
         .put("progress_current", task.progressCurrent ?: JSONObject.NULL)
         .put("progress_total", task.progressTotal ?: JSONObject.NULL)
@@ -355,6 +417,8 @@ private fun taskJson(task: OperationTaskRegistry.Snapshot): JSONObject =
         .put("message", task.message)
         .put("result", task.result ?: "")
         .put("error", task.error ?: "")
+        .put("cleanup_error", task.cleanupError ?: "")
+        .put("idle_ms", task.idleMilliseconds)
         .put("created_at", task.createdAt)
         .put("updated_at", task.updatedAt)
         .put("finished_at", task.finishedAt)

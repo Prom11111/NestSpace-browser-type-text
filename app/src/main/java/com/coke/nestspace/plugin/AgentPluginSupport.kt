@@ -145,7 +145,8 @@ internal object AgentPluginSupport {
                     description = "[Plugin: ${provider.descriptor.name}] " +
                         spec.title + "\n" + spec.description,
                     inputSchema = schema,
-                    mutating = spec.isMutating
+                    mutating = spec.isMutating,
+                    maxWaitMs = spec.maxWaitMs.toLong()
                 ) { args, context ->
                     executePluginTool(binding, args, context)
                 }
@@ -185,7 +186,8 @@ internal object AgentPluginSupport {
                         "${provider.descriptor.name}] ${spec.title}\n" +
                         spec.description,
                     inputSchema = schema,
-                    mutating = spec.isMutating
+                    mutating = spec.isMutating,
+                    maxWaitMs = spec.maxWaitMs.toLong()
                 ) { args, context ->
                     executePluginCommand(binding, args, context)
                 }

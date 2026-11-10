@@ -572,10 +572,13 @@ class ContainerContext(
         newBase: Context,
         deviceProtected: Boolean = this.deviceProtected
     ): ContainerContext {
-        val adjusted = Resources(
-            targetResources.assets,
-            newBase.resources.displayMetrics,
-            newBase.resources.configuration
+        val adjusted = bindTargetClassLoader(
+            Resources(
+                targetResources.assets,
+                newBase.resources.displayMetrics,
+                newBase.resources.configuration
+            ),
+            targetClassLoader
         )
         val wrapped = ContainerContext(
             base = newBase,
@@ -600,6 +603,28 @@ class ContainerContext(
         wrapped.jobScheduler = jobScheduler
         wrapped.virtualRegistry = virtualRegistry
         return wrapped
+    }
+
+    private fun bindTargetClassLoader(
+        base: Resources,
+        classLoader: ClassLoader
+    ): Resources = runCatching {
+        val constructor = Resources::class.java
+            .getDeclaredConstructor(ClassLoader::class.java)
+            .apply { isAccessible = true }
+        val resources = constructor.newInstance(classLoader)
+        val impl = Resources::class.java
+            .getDeclaredField("mResourcesImpl")
+            .apply { isAccessible = true }
+        impl.set(resources, impl.get(base))
+        resources
+    }.getOrElse {
+        android.util.Log.w(
+            "ContainerContext",
+            "derived Resources classloader binding failed",
+            it
+        )
+        base
     }
 
     override fun startActivity(intent: Intent) {

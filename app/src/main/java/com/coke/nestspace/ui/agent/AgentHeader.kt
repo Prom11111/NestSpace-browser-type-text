@@ -16,7 +16,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AddComment
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.automirrored.rounded.ListAlt
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,12 +40,16 @@ import com.coke.nestspace.data.LlmConfig
 internal fun AgentHeader(
     llmConfig: LlmConfig,
     busy: Boolean,
+    externalTaskBusy: Boolean,
     onClear: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenMcpTasks: () -> Unit,
+    activeMcpTaskCount: Int,
     onOpenSettings: () -> Unit
 ) {
     val status = when {
         !llmConfig.isConfigured -> AppLanguage.tr("欢迎使用", "Welcome")
+        externalTaskBusy -> AppLanguage.tr("MCP 任务运行中…", "MCP task running…")
         busy -> AppLanguage.tr("正在处理，请稍候…", "Working on it…")
         else -> AppLanguage.tr("在线 · 随时可以开始", "Online · ready to help")
     }
@@ -107,6 +114,21 @@ internal fun AgentHeader(
                 contentDescription = AppLanguage.tr("运行记录", "Run history"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        IconButton(onClick = onOpenMcpTasks) {
+            BadgedBox(
+                badge = {
+                    if (activeMcpTaskCount > 0) {
+                        Badge { Text(activeMcpTaskCount.toString()) }
+                    }
+                }
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.ListAlt,
+                    contentDescription = AppLanguage.tr("MCP 任务", "MCP tasks"),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         IconButton(onClick = onOpenSettings) {
             Icon(

@@ -77,6 +77,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import com.coke.nestspace.agent.UserGateManager
 import com.coke.nestspace.ui.agent.DownloadProgressCard
+import com.coke.nestspace.task.OperationTaskRegistry
 import java.io.File
 
 private const val HOME_URL = BrowserSession.HOME_URL
@@ -291,6 +292,11 @@ fun BrowserScreen(
             downloads = downloads,
             onDismiss = { showDownloads = false },
             onOpen = { openDownloadedFile(context, it) },
+            onCancel = { download ->
+                download.taskId?.let { taskId ->
+                    OperationTaskRegistry.requestCancel(taskId, "user cancelled")
+                }
+            },
             onDelete = { BrowserSession.deleteDownload(context, it.id) }
         )
     }
@@ -301,6 +307,7 @@ private fun DownloadMenu(
     downloads: List<BrowserSession.DownloadState>,
     onDismiss: () -> Unit,
     onOpen: (BrowserSession.DownloadState) -> Unit,
+    onCancel: (BrowserSession.DownloadState) -> Unit,
     onDelete: (BrowserSession.DownloadState) -> Unit
 ) {
     var pendingDelete by remember { mutableStateOf<BrowserSession.DownloadState?>(null) }
@@ -329,11 +336,16 @@ private fun DownloadMenu(
                                 modifier = Modifier.weight(1f),
                                 onClick = download.state.takeIf { it == "done" }?.let {
                                     { onOpen(download) }
-                                }
+                                },
+                                onCancel = download.taskId?.takeIf {
+                                    download.state == "downloading" ||
+                                        download.state == "cancelling"
+                                }?.let { { onCancel(download) } }
                             )
                             IconButton(
                                 onClick = { pendingDelete = download },
-                                enabled = download.state != "downloading"
+                                enabled = download.state != "downloading" &&
+                                    download.state != "cancelling"
                             ) {
                                 Icon(
                                     Icons.Default.Delete,
@@ -422,20 +434,20 @@ private fun openDownloadedFile(
     val extension = download.name.substringAfterLast('.', "").lowercase()
     val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
         ?: if (extension == "apk") "application/vnd.android.package-archive" else "*/*"
-    if (mime.equals("text/html", true) ||
-        mime.equals("application/xhtml+xml", true) ||
-        mime.equals("image/svg+xml", true)
-    ) {
+    if (extension != "apk") {
         runCatching { BrowserSession.openLocalContent(context, uri) }.onFailure {
             Toast.makeText(
                 context,
-                AppLanguage.tr("无法在自带浏览器中打开这个文件", "Could not open this file in the browser"),
+                AppLanguage.tr(
+                    "无法在自带浏览器中打开这个文件",
+                    "Could not open this file in the built-in browser"
+                ),
                 Toast.LENGTH_SHORT
             ).show()
         }
         return
     }
-    val intent = Intent(Intent.ACTION_VIEW)
+    val intent = Intent(Intent.ACTION_INSTALL_PACKAGE)
         .setDataAndType(uri, mime)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
     runCatching { context.startActivity(intent) }.onFailure {

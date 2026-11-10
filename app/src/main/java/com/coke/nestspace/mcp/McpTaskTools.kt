@@ -20,13 +20,21 @@ object McpTaskTools {
                 "immediately. Use nestspace_task_status or nestspace_wait_task to follow it. " +
                 "Statuses: queued, running, waiting_for_user, done, failed, cancelled. " +
                 "Pass a request_id to make retries idempotent. Tasks live while the app " +
-                "process lives; after a restart retry with a request_id.",
+                "process lives; after a restart retry with a request_id. display_mode is " +
+                "background (no app window), mirror (small headless window), or visible " +
+                "(open the app normally). The default is background.",
             inputSchema = toolSchema(
                 "goal" to "string",
                 "request_id" to "string",
+                "display_mode" to "string",
                 required = listOf("goal")
-            )
-        ) { args, _ ->
+            ).apply {
+                getJSONObject("properties").getJSONObject("display_mode").put(
+                    "enum",
+                    JSONArray(listOf("background", "mirror", "visible"))
+                )
+            }
+        ) { args, ctx ->
             val goal = args.optString("goal").trim()
             if (goal.isBlank()) {
                 return@ToolSpec ToolResult(
@@ -38,7 +46,16 @@ object McpTaskTools {
             val requestId = args.optString("request_id")
                 .trim()
                 .takeIf { it.isNotBlank() }
-            when (val started = manager.start(goal, requestId)) {
+            val displayMode = com.coke.nestspace.tools.ContainerDisplayMode.parse(
+                args.optString("display_mode"),
+                com.coke.nestspace.tools.ContainerDisplayMode.BACKGROUND
+            )
+            when (val started = manager.start(
+                goal,
+                requestId,
+                ctx.ownerId,
+                displayMode
+            )) {
                 is McpTaskManager.StartResult.Started ->
                     ToolResult(true, taskJson(started.task).toString())
                 is McpTaskManager.StartResult.Error ->
@@ -55,7 +72,7 @@ object McpTaskTools {
                 "text" to "string",
                 required = listOf("task_id", "text")
             )
-        ) { args, _ ->
+        ) { args, ctx ->
             val id = args.optString("task_id").trim()
             val text = args.optString("text").trim()
             if (text.isBlank()) {
@@ -65,7 +82,7 @@ object McpTaskTools {
                     errorCode = "INVALID_ARGUMENT"
                 )
             }
-            val task = manager.steer(id, text)
+            val task = manager.steer(id, text, ctx.ownerId)
                 ?: return@ToolSpec ToolResult(
                     false,
                     "task is not running: $id",
@@ -86,9 +103,9 @@ object McpTaskTools {
             name = "nestspace_task_status",
             description = "Return one asynchronous assistant task's state, progress and answer.",
             inputSchema = toolSchema("task_id" to "string", required = listOf("task_id"))
-        ) { args, _ ->
+        ) { args, ctx ->
             val id = args.optString("task_id").trim()
-            val task = manager.status(id)
+            val task = manager.status(id, ctx.ownerId)
                 ?: return@ToolSpec ToolResult(
                     false,
                     "task not found: $id",
@@ -105,10 +122,10 @@ object McpTaskTools {
                 "timeout_s" to "integer",
                 required = listOf("task_id")
             )
-        ) { args, _ ->
+        ) { args, ctx ->
             val id = args.optString("task_id").trim()
             val timeout = args.optInt("timeout_s", 30).coerceIn(1, 50)
-            val task = manager.wait(id, timeout * 1_000L)
+            val result = manager.wait(id, timeout * 1_000L, ctx.ownerId)
                 ?: return@ToolSpec ToolResult(
                     false,
                     "task not found: $id",
@@ -116,16 +133,19 @@ object McpTaskTools {
                 )
             ToolResult(
                 true,
-                taskJson(task).put("timed_out", !task.status.terminal).toString()
+                taskJson(result.task)
+                    .put("changed", result.changed)
+                    .put("timed_out", result.timedOut)
+                    .toString()
             )
         },
         ToolSpec(
             name = "nestspace_cancel_task",
             description = "Cancel a queued or running assistant task.",
             inputSchema = toolSchema("task_id" to "string", required = listOf("task_id"))
-        ) { args, _ ->
+        ) { args, ctx ->
             val id = args.optString("task_id").trim()
-            val task = manager.cancel(id)
+            val task = manager.cancel(id, ctx.ownerId)
                 ?: return@ToolSpec ToolResult(
                     false,
                     "task not found: $id",
@@ -137,10 +157,10 @@ object McpTaskTools {
             name = "nestspace_list_tasks",
             description = "List recent asynchronous assistant tasks, newest first.",
             inputSchema = toolSchema("limit" to "integer")
-        ) { args, _ ->
+        ) { args, ctx ->
             val limit = args.optInt("limit", 10).coerceIn(1, 50)
             val array = JSONArray()
-            manager.list(limit).forEach { array.put(taskJson(it)) }
+            manager.list(limit, ctx.ownerId).forEach { array.put(taskJson(it)) }
             ToolResult(true, JSONObject().put("tasks", array).toString())
         }
     )
@@ -156,8 +176,10 @@ object McpTaskTools {
         .put("error", task.error ?: "")
         .put("progress", task.progress)
         .put("queue_position", task.queuePosition)
+        .put("revision", task.revision)
         .put(
             "request_id",
             task.requestId ?: JSONObject.NULL
         )
+        .put("display_mode", task.displayMode.api)
 }

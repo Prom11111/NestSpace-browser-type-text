@@ -9,6 +9,8 @@ public final class PluginCommandSpec {
 
     public static final int DEFAULT_TIMEOUT_MS = 30_000;
     public static final int MAX_TIMEOUT_MS = 120_000;
+    public static final int DEFAULT_MAX_WAIT_MS = 1_000;
+    public static final int MAX_MAX_WAIT_MS = 30_000;
 
     private final String id;
     private final String title;
@@ -16,6 +18,7 @@ public final class PluginCommandSpec {
     private final String argumentsSchemaJson;
     private final boolean mutating;
     private final int timeoutMs;
+    private final int maxWaitMs;
 
     public PluginCommandSpec(
         String id,
@@ -41,6 +44,30 @@ public final class PluginCommandSpec {
         boolean mutating,
         int timeoutMs
     ) {
+        this(
+            id,
+            title,
+            description,
+            argumentsSchemaJson,
+            mutating,
+            timeoutMs,
+            Math.min(timeoutMs, DEFAULT_MAX_WAIT_MS)
+        );
+    }
+
+    /**
+     * @param maxWaitMs maximum time the Agent waits synchronously before
+     *                  returning a task id. It does not cancel the command.
+     */
+    public PluginCommandSpec(
+        String id,
+        String title,
+        String description,
+        String argumentsSchemaJson,
+        boolean mutating,
+        int timeoutMs,
+        int maxWaitMs
+    ) {
         this.id = Objects.requireNonNull(id, "id").trim();
         this.title = limit(title, 100);
         this.description = limit(description, 1_000);
@@ -50,6 +77,10 @@ public final class PluginCommandSpec {
             : argumentsSchemaJson.trim();
         this.mutating = mutating;
         this.timeoutMs = Math.max(1_000, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+        this.maxWaitMs = Math.max(
+            50,
+            Math.min(maxWaitMs, MAX_MAX_WAIT_MS)
+        );
         if (!this.id.matches("[A-Za-z][A-Za-z0-9_.-]{0,63}")) {
             throw new IllegalArgumentException("invalid command id");
         }
@@ -80,6 +111,10 @@ public final class PluginCommandSpec {
 
     public int getTimeoutMs() {
         return timeoutMs;
+    }
+
+    public int getMaxWaitMs() {
+        return maxWaitMs;
     }
 
     private static String limit(String value, int maxChars) {

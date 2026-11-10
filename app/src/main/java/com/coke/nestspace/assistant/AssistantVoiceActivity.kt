@@ -99,6 +99,7 @@ import com.coke.nestspace.ui.agent.ModelDisconnectedIcon
 import com.coke.nestspace.data.AgentMessage
 import com.coke.nestspace.ui.markdown.MarkdownBlock
 import com.coke.nestspace.ui.markdown.markdownAnnotatedString
+import com.coke.nestspace.task.OperationTaskRegistry
 import com.coke.nestspace.ui.markdown.parseMarkdown
 import com.coke.nestspace.ui.theme.VirtualTheme
 import kotlinx.coroutines.CancellationException
@@ -694,7 +695,9 @@ private fun AssistantVoiceScreen(
     val accent = remember { Color(FloatingDotSettings.load(context).hostColor) }
     val focusRequester = remember { FocusRequester() }
     val downloads by BrowserSession.downloadsFlow.collectAsState()
-    val activeDownload = downloads.firstOrNull { it.state == "downloading" }
+    val activeDownload = downloads.firstOrNull {
+        it.state == "downloading" || it.state == "cancelling"
+    }
     val latestReply = remember(messages) {
         messages.lastOrNull {
             it.role == AgentMessage.Role.AGENT && !it.welcome
@@ -845,7 +848,15 @@ private fun AssistantVoiceScreen(
                 activeDownload?.let { download ->
                     DownloadProgressCard(
                         download = download,
-                        dark = true
+                        dark = true,
+                        onCancel = download.taskId?.let { taskId ->
+                            {
+                                OperationTaskRegistry.requestCancel(
+                                    taskId,
+                                    "user cancelled"
+                                )
+                            }
+                        }
                     )
                 }
 

@@ -4,13 +4,18 @@ import android.content.Context
 import com.coke.nestspace.agent.AssistantConversation
 import com.coke.nestspace.agent.UserGateManager
 import com.coke.nestspace.data.AgentMessage
+import com.coke.nestspace.task.OperationTaskRegistry
+import com.coke.nestspace.tools.ContainerDisplayMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import java.util.UUID
+import kotlinx.coroutines.withTimeoutOrNull
+import java.security.MessageDigest
 
 /**
  * Async task queue for the MCP control plane.
@@ -25,6 +30,7 @@ class McpTaskManager(context: Context) {
         QUEUED("queued"),
         RUNNING("running"),
         WAITING_FOR_USER("waiting_for_user"),
+        CANCELLING("cancelling"),
         DONE("done"),
         FAILED("failed"),
         CANCELLED("cancelled");
@@ -34,8 +40,10 @@ class McpTaskManager(context: Context) {
 
     data class TaskView(
         val id: String,
+        val ownerId: String,
         val goal: String,
         val requestId: String?,
+        val displayMode: ContainerDisplayMode,
         val status: Status,
         val createdAt: Long,
         val startedAt: Long,
@@ -43,7 +51,14 @@ class McpTaskManager(context: Context) {
         val answer: String,
         val error: String?,
         val progress: String,
-        val queuePosition: Int
+        val queuePosition: Int,
+        val revision: Long
+    )
+
+    data class WaitResult(
+        val task: TaskView,
+        val changed: Boolean,
+        val timedOut: Boolean
     )
 
     sealed class StartResult {
@@ -53,8 +68,10 @@ class McpTaskManager(context: Context) {
 
     private class Task(
         val id: String,
+        val ownerId: String,
         val goal: String,
         val requestId: String?,
+        val displayMode: ContainerDisplayMode,
         val createdAt: Long
     ) {
         var status: Status = Status.QUEUED
@@ -63,13 +80,14 @@ class McpTaskManager(context: Context) {
         var answer: String = ""
         var error: String? = null
         var messageBaseline: Int = 0
+        var revision: Long = 0L
+        val updates = MutableStateFlow(0L)
     }
 
     private val appContext = context.applicationContext
     private val lock = Any()
     private val tasks = LinkedHashMap<String, Task>()
     private val queue = ArrayDeque<String>()
-    private val byRequest = mutableMapOf<String, String>()
     private var activeId: String? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -83,35 +101,84 @@ class McpTaskManager(context: Context) {
                 }
             }
         }
-    }
-
-    fun start(goal: String, requestId: String?): StartResult {
-        synchronized(lock) {
-            if (requestId != null) {
-                val existingId = byRequest[requestId]
-                if (existingId != null) {
-                    val existing = tasks[existingId]
-                    if (existing != null) {
-                        return if (existing.goal == goal) {
-                            StartResult.Started(view(existing))
-                        } else {
-                            StartResult.Error(
-                                "REQUEST_ID_CONFLICT",
-                                "request_id already belongs to a different goal"
-                            )
-                        }
+        scope.launch {
+            combine(
+                UserGateManager.confirmation,
+                UserGateManager.takeover
+            ) { confirmation, takeover ->
+                confirmation != null || takeover != null
+            }.collect { waiting ->
+                synchronized(lock) {
+                    activeId?.let(tasks::get)?.let { task ->
+                        bumpLocked(task)
+                        OperationTaskRegistry.transition(
+                            task.id,
+                            if (waiting) {
+                                OperationTaskRegistry.State.WAITING_USER
+                            } else {
+                                OperationTaskRegistry.State.RUNNING
+                            },
+                            if (waiting) {
+                                "assistant task waiting for user"
+                            } else {
+                                "assistant task running"
+                            }
+                        )
                     }
                 }
             }
+        }
+    }
 
+    fun start(
+        goal: String,
+        requestId: String?,
+        ownerId: String,
+        displayMode: ContainerDisplayMode = ContainerDisplayMode.BACKGROUND
+    ): StartResult {
+        val operation = OperationTaskRegistry.start(
+            ownerId = ownerId,
+            kind = "assistant_task",
+            title = goal.take(80),
+            requestId = requestId,
+            requestHash = requestHash(goal)
+        )
+        val snapshot = operation.task
+            ?: return StartResult.Error(
+                operation.errorCode ?: "TASK_CREATE_FAILED",
+                "Could not create assistant task"
+            )
+        if (operation.errorCode != null) {
+            return StartResult.Error(
+                operation.errorCode,
+                "request_id already belongs to a different task"
+            )
+        }
+        synchronized(lock) {
+            tasks[snapshot.id]?.let {
+                return StartResult.Started(view(it))
+            }
+            if (!operation.created) {
+                val restored = taskFromOperation(snapshot)
+                tasks[restored.id] = restored
+                OperationTaskRegistry.setCancelCallback(restored.id) {
+                    cancelLocal(restored.id, "cancelled by client")
+                }
+                return StartResult.Started(view(restored))
+            }
             val task = Task(
-                id = UUID.randomUUID().toString(),
+                id = snapshot.id,
+                ownerId = ownerId,
                 goal = goal,
                 requestId = requestId,
-                createdAt = System.currentTimeMillis()
+                displayMode = displayMode,
+                createdAt = snapshot.createdAt
             )
             tasks[task.id] = task
-            if (requestId != null) byRequest[requestId] = task.id
+            bumpLocked(task)
+            OperationTaskRegistry.setCancelCallback(task.id) {
+                cancelLocal(task.id, "cancelled by client")
+            }
             pruneLocked()
 
             if (activeId == null && !AssistantConversation.busy.value) {
@@ -121,65 +188,117 @@ class McpTaskManager(context: Context) {
                 // submitting it to AssistantConversation while a user run is
                 // active would make steer/cancel target the wrong run.
                 queue.addLast(task.id)
+                task.status = Status.QUEUED
+                OperationTaskRegistry.transition(
+                    task.id,
+                    OperationTaskRegistry.State.QUEUED,
+                    "assistant task queued"
+                )
             }
             return StartResult.Started(view(task))
         }
     }
 
-    fun status(taskId: String): TaskView? = synchronized(lock) {
-        tasks[taskId]?.let(::view)
+    fun status(taskId: String, ownerId: String): TaskView? {
+        synchronized(lock) {
+            tasks[taskId]
+                ?.takeIf { it.ownerId == ownerId }
+                ?.let { return view(it) }
+        }
+        val snapshot = OperationTaskRegistry.status(taskId, ownerId)
+            ?: return null
+        return taskView(snapshot)
     }
 
-    fun list(limit: Int): List<TaskView> = synchronized(lock) {
-        tasks.values
+    fun list(limit: Int, ownerId: String): List<TaskView> {
+        val local = synchronized(lock) {
+            tasks.values.filter { it.ownerId == ownerId }.map(::view)
+        }
+        val all = LinkedHashMap<String, TaskView>()
+        local.forEach { all[it.id] = it }
+        OperationTaskRegistry.list(ownerId, limit.coerceIn(1, 50))
+            .filter { it.kind == "assistant_task" }
+            .forEach { all.putIfAbsent(it.id, taskView(it)) }
+        return all.values
             .sortedByDescending { it.createdAt }
             .take(limit.coerceIn(1, 50))
-            .map(::view)
     }
 
     /**
      * Inject a follow-up instruction into the task currently executing.
      * Returns null when the task is not the active run.
      */
-    fun steer(taskId: String, text: String): TaskView? {
+    fun steer(taskId: String, text: String, ownerId: String): TaskView? {
         synchronized(lock) {
-            val task = tasks[taskId] ?: return null
+            val task = tasks[taskId]
+                ?.takeIf { it.ownerId == ownerId }
+                ?: return null
             if (task.status != Status.RUNNING || activeId != taskId) return null
             if (!AssistantConversation.steer(text)) return null
             return view(task)
         }
     }
 
-    fun cancel(taskId: String): TaskView? {
+    fun cancel(taskId: String, ownerId: String): TaskView? {
+        val operation = OperationTaskRegistry.requestCancel(
+            taskId,
+            "cancelled by client",
+            ownerId
+        )
+        if (operation.task == null) return null
         synchronized(lock) {
-            val task = tasks[taskId] ?: return null
-            when (task.status) {
-                Status.QUEUED -> {
-                    queue.remove(taskId)
-                    task.status = Status.CANCELLED
-                    task.finishedAt = System.currentTimeMillis()
-                    task.error = "cancelled before start"
-                }
-                Status.RUNNING -> {
-                    task.status = Status.CANCELLED
-                    task.finishedAt = System.currentTimeMillis()
+            tasks[taskId]?.takeIf { it.ownerId == ownerId }?.let { task ->
+                if (!task.status.terminal && task.status != Status.CANCELLING) {
+                    task.status = Status.CANCELLING
                     task.error = "cancelled by client"
-                    AssistantConversation.cancel()
+                    bumpLocked(task)
                 }
-                else -> Unit
+                return view(task)
             }
-            return view(task)
         }
+        return taskView(operation.task)
     }
 
-    suspend fun wait(taskId: String, timeoutMs: Long): TaskView? {
-        val end = System.currentTimeMillis() + timeoutMs.coerceIn(1_000, 60_000)
-        while (System.currentTimeMillis() < end) {
-            val task = status(taskId) ?: return null
-            if (task.status.terminal) return task
-            delay(200)
+    suspend fun wait(
+        taskId: String,
+        timeoutMs: Long,
+        ownerId: String
+    ): WaitResult? {
+        val initial = synchronized(lock) {
+            tasks[taskId]
+                ?.takeIf { it.ownerId == ownerId }
+                ?.let(::view)
+        } ?: run {
+            val snapshot = OperationTaskRegistry.status(taskId, ownerId)
+                ?: return null
+            taskView(snapshot)
         }
-        return status(taskId)
+        if (initial.status.terminal) {
+            return WaitResult(initial, changed = false, timedOut = false)
+        }
+        val revision = initial.revision
+        val updates = synchronized(lock) {
+            tasks[taskId]?.updates
+        }
+        if (updates == null) {
+            val operation = OperationTaskRegistry.wait(
+                taskId,
+                timeoutMs,
+                ownerId
+            )
+            val task = operation.task?.let(::taskView) ?: return null
+            return WaitResult(task, operation.changed, operation.timedOut)
+        }
+        val observed = withTimeoutOrNull(timeoutMs.coerceIn(1_000, 60_000)) {
+            updates.first { it > revision }
+        }
+        val current = status(taskId, ownerId) ?: return null
+        val stateChanged = current.status != initial.status || current.status.terminal
+        return WaitResult(
+            task = current,
+            changed = stateChanged,
+            timedOut = observed == null && !stateChanged
+        )
     }
 
     private fun startLocked(task: Task) {
@@ -187,18 +306,30 @@ class McpTaskManager(context: Context) {
         task.startedAt = System.currentTimeMillis()
         task.messageBaseline = AssistantConversation.messages.value.size
         activeId = task.id
+        OperationTaskRegistry.transition(
+            task.id,
+            OperationTaskRegistry.State.RUNNING,
+            "assistant task running"
+        )
+        bumpLocked(task)
         val accepted = AssistantConversation.submit(
-            appContext,
-            task.goal,
-            queueIfBusy = true
-        ) { outcome, answer ->
-            finished(task.id, outcome, answer)
-        }
+            context = appContext,
+            command = task.goal,
+            queueIfBusy = true,
+            origin = com.coke.nestspace.data.AgentMessage.Origin.MCP,
+            displayMode = task.displayMode,
+            parentTaskId = task.id,
+            onFinished = { outcome, answer ->
+                finished(task.id, outcome, answer)
+            }
+        )
         if (!accepted) {
             task.status = Status.FAILED
             task.finishedAt = System.currentTimeMillis()
             task.error = "assistant is busy with another run"
             activeId = null
+            OperationTaskRegistry.fail(task.id, task.error!!)
+            bumpLocked(task)
             startNextLocked()
         }
     }
@@ -223,6 +354,23 @@ class McpTaskManager(context: Context) {
             }
             task.finishedAt = System.currentTimeMillis()
             if (activeId == taskId) activeId = null
+            when (task.status) {
+                Status.DONE -> OperationTaskRegistry.succeed(
+                    task.id,
+                    task.answer
+                )
+                Status.FAILED -> OperationTaskRegistry.fail(
+                    task.id,
+                    task.error ?: task.answer.ifBlank { "assistant failed" }
+                )
+                Status.CANCELLED, Status.CANCELLING ->
+                    OperationTaskRegistry.markCancelled(
+                        task.id,
+                        task.error ?: "cancelled"
+                    )
+                else -> Unit
+            }
+            bumpLocked(task)
             startNextLocked()
         }
     }
@@ -256,10 +404,13 @@ class McpTaskManager(context: Context) {
         } else {
             ""
         }
+        val queueIndex = queue.indexOf(task.id)
         return TaskView(
             id = task.id,
+            ownerId = task.ownerId,
             goal = task.goal,
             requestId = task.requestId,
+            displayMode = task.displayMode,
             status = visibleStatus,
             createdAt = task.createdAt,
             startedAt = task.startedAt,
@@ -267,8 +418,95 @@ class McpTaskManager(context: Context) {
             answer = task.answer,
             error = task.error,
             progress = progress,
-            queuePosition = queue.indexOf(task.id)
+            queuePosition = if (queueIndex >= 0) queueIndex + 1 else -1,
+            revision = task.revision
         )
+    }
+
+    private fun taskFromOperation(
+        snapshot: OperationTaskRegistry.Snapshot
+    ): Task = Task(
+        id = snapshot.id,
+        ownerId = snapshot.ownerId,
+        goal = snapshot.title,
+        requestId = snapshot.requestId,
+        displayMode = ContainerDisplayMode.BACKGROUND,
+        createdAt = snapshot.createdAt
+    ).apply {
+        status = snapshot.status()
+        startedAt = snapshot.createdAt
+        finishedAt = snapshot.finishedAt
+        answer = snapshot.result.orEmpty()
+        error = snapshot.error
+        revision = snapshot.stateRevision
+        updates.value = revision
+    }
+
+    private fun taskView(snapshot: OperationTaskRegistry.Snapshot): TaskView =
+        TaskView(
+            id = snapshot.id,
+            ownerId = snapshot.ownerId,
+            goal = snapshot.title,
+            requestId = snapshot.requestId,
+            displayMode = ContainerDisplayMode.BACKGROUND,
+            status = snapshot.status(),
+            createdAt = snapshot.createdAt,
+            startedAt = snapshot.createdAt,
+            finishedAt = snapshot.finishedAt,
+            answer = snapshot.result.orEmpty(),
+            error = snapshot.error,
+            progress = snapshot.message,
+            queuePosition = -1,
+            revision = snapshot.stateRevision
+        )
+
+    private fun OperationTaskRegistry.Snapshot.status(): Status = when (state) {
+        OperationTaskRegistry.State.QUEUED,
+        OperationTaskRegistry.State.PREPARING -> Status.QUEUED
+        OperationTaskRegistry.State.RUNNING -> Status.RUNNING
+        OperationTaskRegistry.State.WAITING_USER -> Status.WAITING_FOR_USER
+        OperationTaskRegistry.State.CANCELLING -> Status.CANCELLING
+        OperationTaskRegistry.State.SUCCEEDED -> Status.DONE
+        OperationTaskRegistry.State.FAILED -> Status.FAILED
+        OperationTaskRegistry.State.CANCELLED -> Status.CANCELLED
+        OperationTaskRegistry.State.PAUSED,
+        OperationTaskRegistry.State.FINALIZING -> Status.RUNNING
+    }
+
+    private fun cancelLocal(taskId: String, reason: String) {
+        var cancelConversation = false
+        var finishQueued = false
+        synchronized(lock) {
+            val task = tasks[taskId] ?: return
+            val queued = queue.remove(taskId)
+            if (queued) {
+                task.status = Status.CANCELLED
+                task.finishedAt = System.currentTimeMillis()
+                task.error = reason
+                finishQueued = true
+            } else if (!task.status.terminal) {
+                task.status = Status.CANCELLING
+                task.error = reason
+                cancelConversation = true
+            }
+            bumpLocked(task)
+        }
+        if (finishQueued) {
+            OperationTaskRegistry.markCancelled(taskId, reason)
+        }
+        if (cancelConversation) {
+            AssistantConversation.cancel()
+        }
+    }
+
+    private fun requestHash(goal: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(goal.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    private fun bumpLocked(task: Task) {
+        task.revision += 1L
+        task.updates.value = task.revision
     }
 
     private fun pruneLocked() {
@@ -279,7 +517,6 @@ class McpTaskManager(context: Context) {
         for (task in removable.take(tasks.size - MAX_TASKS)) {
             tasks.remove(task.id)
             queue.remove(task.id)
-            task.requestId?.let { byRequest.remove(it) }
         }
     }
 

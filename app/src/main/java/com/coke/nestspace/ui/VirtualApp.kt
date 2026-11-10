@@ -148,6 +148,7 @@ import com.coke.nestspace.ui.settings.ContainerSelfCheckScreen
 import com.coke.nestspace.ui.settings.McpClientSettingsScreen
 import com.coke.nestspace.ui.settings.MemorySkillsScreen
 import com.coke.nestspace.ui.settings.ModelOnboardingScreen
+import com.coke.nestspace.ui.agent.McpTasksScreen
 import com.coke.nestspace.ui.settings.ScheduledTasksScreen
 import com.coke.nestspace.ui.settings.EvaluationReplayScreen
 import com.coke.nestspace.ui.settings.TokenUsageScreen
@@ -175,6 +176,7 @@ private enum class SpacesPage {
     MODEL_EDIT,
     SYSTEM_PROMPT,
     MCP_CLIENTS,
+    MCP_TASKS,
     SLOTS,
     HOST_CONTROL,
     LOCATION,
@@ -213,6 +215,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
         mutableStateOf(HeadlessMirrorWindow.isBackEnabled())
     }
     var childRunsFromAssistant by remember { mutableStateOf(false) }
+    var mcpTasksFromAssistant by remember { mutableStateOf(false) }
     var historyFromAssistant by remember { mutableStateOf(false) }
     var modelSettingsFromAssistant by remember { mutableStateOf(false) }
     var assistantSettingsFromAssistant by remember { mutableStateOf(false) }
@@ -409,6 +412,11 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                 spacesPage = SpacesPage.ROOT
                 tab = 2
             }
+            spacesPage == SpacesPage.MCP_TASKS && mcpTasksFromAssistant -> {
+                mcpTasksFromAssistant = false
+                spacesPage = SpacesPage.ROOT
+                tab = 2
+            }
             spacesPage == SpacesPage.RUN_HISTORY && historyFromAssistant -> {
                 historyFromAssistant = false
                 spacesPage = SpacesPage.ROOT
@@ -526,6 +534,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                 }
             SpacesPage.SYSTEM_PROMPT -> AppLanguage.tr("系统提示词", "System prompt")
             SpacesPage.MCP_CLIENTS -> AppLanguage.tr("MCP 工具", "MCP tools")
+            SpacesPage.MCP_TASKS -> AppLanguage.tr("MCP 任务", "MCP tasks")
             SpacesPage.SLOTS -> AppLanguage.tr("容器槽位", "Container slots")
             SpacesPage.HOST_CONTROL -> AppLanguage.tr("宿主控制（Root）", "Host control (root)")
             SpacesPage.LOCATION -> AppLanguage.tr("坐标模拟", "Location simulation")
@@ -769,6 +778,7 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                     SpacesPage.SYSTEM_PROMPT -> SystemPromptScreen()
 
                     SpacesPage.MCP_CLIENTS -> McpClientSettingsScreen()
+                    SpacesPage.MCP_TASKS -> McpTasksScreen()
 
                     SpacesPage.HOST_CONTROL -> HostControlScreen()
                     SpacesPage.LOCATION -> LocationSimulationScreen()
@@ -858,6 +868,11 @@ fun VirtualApp(viewModel: VirtualViewModel = viewModel()) {
                     onOpenHistory = {
                         historyFromAssistant = true
                         spacesPage = SpacesPage.RUN_HISTORY
+                        tab = 1
+                    },
+                    onOpenMcpTasks = {
+                        mcpTasksFromAssistant = true
+                        spacesPage = SpacesPage.MCP_TASKS
                         tab = 1
                     },
                     onOpenSettings = {

@@ -44,6 +44,7 @@ interface ContainerEngine {
         packageName: String,
         instanceId: String? = null,
         headless: Boolean = false,
+        backgroundOnly: Boolean = false,
         requestedActivity: String? = null
     ): EngineResult<LaunchInfo>
 
@@ -70,7 +71,8 @@ interface ContainerEngine {
     suspend fun multiOpen(
         spaceId: String,
         packageName: String,
-        headless: Boolean = false
+        headless: Boolean = false,
+        backgroundOnly: Boolean = false
     ): EngineResult<LaunchInfo>
 
     /** Static app shortcuts declared by the APK (parsed lazily on first use). */
@@ -82,7 +84,8 @@ interface ContainerEngine {
         packageName: String,
         instanceId: String? = null,
         shortcut: AppShortcut,
-        headless: Boolean = false
+        headless: Boolean = false,
+        backgroundOnly: Boolean = false
     ): EngineResult<LaunchInfo>
 
     suspend fun stop(spaceId: String, packageName: String): EngineResult<Unit>
