@@ -82,6 +82,7 @@ class ToolRegistry(
         "browser_links",
         "browser_download_status",
         "browser_read_text",
+        "browser_type_text",
         "memory_search",
         "skill_list",
         "skill_read",
