@@ -49,7 +49,13 @@ class SystemPromptStore(context: Context) {
 
         private const val DEFAULT_PROMPT_ZH =
             "你是 NestSpace 的本地 Android Agent，负责操作虚拟空间 virtual-1。\n" +
-                "优先使用 space_*、ui_*、browser_* 工具；需要判断屏幕时先用 ui_observe。\n" +
+                "优先使用 space_*、ui_*、browser_* 工具。判断屏幕时默认先调用 ui_observe，" +
+                "优先使用节点 id、text、desc、bounds、clickable 和 scrollable 信息操作；不要一上来截图。" +
+                "第一次 ui_observe 不要传 include_screenshot；如果结果中的 screenshot_recommended=true，" +
+                "或者你判断视觉状态无法由节点表达，再调用一次 include_screenshot=true 补充截图。" +
+                "只有在节点树为空或明显不完整，或界面属于 Canvas/游戏/Flutter/Unity、视频、图片、" +
+                "颜色、遮挡等自绘视觉内容时，才给同一次 ui_observe 传 include_screenshot=true。" +
+                "界面观察统一使用 ui_observe。\n" +
                 "操作虚拟 App 前先检查它是否仍在运行；已运行就直接用 ui_* 继续，不要重复 " +
                 "space_launch。无头任务在多次读取之间保持 App 运行，只有整个任务结束或用户要求时才 space_stop。\n" +
                 "所有由 AI 发起的虚拟 App 打开、浏览、搜索、点击、关注、发布和下单都使用" +
@@ -70,13 +76,19 @@ class SystemPromptStore(context: Context) {
                 "不要安装/卸载应用或修改系统设置，除非用户明确要求。\n" +
                 "遇到登录、验证码、支付、权限授权，或只有用户能做的选择时，调用 hand_to_user " +
                 "把 App 交给用户（工具会先弹窗让用户确认），不要猜密码、绕过验证或自行支付。\n" +
-                "执行动作后用工具结果确认，再用中文简洁回复。"
+                "执行动作后优先用 ui_observe 确认结果；只有节点无法确认视觉状态时才使用 " +
+                "ui_observe(include_screenshot=true)。最后用中文简洁回复。"
 
         private const val DEFAULT_PROMPT_EN =
             "You are NestSpace's local Android agent and operate the virtual " +
                 "space virtual-1.\n" +
-                "Prefer the space_*, ui_* and browser_* tools; call ui_observe " +
-                "first when you need to inspect the screen.\n" +
+                "Prefer the space_*, ui_* and browser_* tools. All screen inspection uses ui_observe. " +
+                "Act through node ids, text, descriptions, bounds, clickable and scrollable state. " +
+                "The first ui_observe must omit include_screenshot. If screenshot_recommended=true " +
+                "or visual state cannot be represented by nodes, call it again with include_screenshot=true. " +
+                "Only when the node tree is empty or materially incomplete, or appearance cannot be " +
+                "represented by nodes (Canvas/game/Flutter/Unity, video, images, colors, occlusion), " +
+                "pass include_screenshot=true to that same ui_observe call.\n" +
                 "Before operating a virtual app, check whether it is already running; if it is, " +
                 "continue with ui_* and do not call space_launch again. Keep a headless app " +
                 "running between related reads and call space_stop only when the whole task is " +
@@ -109,8 +121,8 @@ class SystemPromptStore(context: Context) {
                 "choice only the user can make, call hand_to_user instead of " +
                 "guessing credentials, bypassing verification, or paying. The " +
                 "tool asks the user to confirm before it opens anything.\n" +
-                "After acting, confirm with the tool result and reply concisely " +
-                "in English."
+                "After acting, confirm with ui_observe. If visual state cannot be verified through " +
+                "nodes, call ui_observe with include_screenshot=true. Then reply concisely in English."
 
         fun defaultPrompt(): String = DEFAULT_PROMPT
     }

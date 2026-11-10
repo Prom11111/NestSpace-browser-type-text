@@ -340,7 +340,6 @@ private fun toolTitle(name: String): String = when (name) {
     "ui_set_text" -> AppLanguage.tr("输入文字", "Type text")
     "ui_wait_for" -> AppLanguage.tr("等待界面", "Wait for screen")
     "poll_tool" -> AppLanguage.tr("定时复查", "Poll status")
-    "ui_screenshot" -> AppLanguage.tr("截取界面", "Screenshot")
     "ui_key" -> AppLanguage.tr("返回按键", "Press key")
     "browser_open", "browser_navigate" -> AppLanguage.tr("打开网页", "Open page")
     "browser_read_text" -> AppLanguage.tr("读取网页", "Read page")
@@ -367,7 +366,7 @@ private fun toolIcon(name: String): ImageVector = when {
     name == "system_status" -> Icons.Rounded.Info
     name == "space_install_apk" || name == "browser_download" -> Icons.Rounded.Download
     name == "space_uninstall" -> Icons.Rounded.Delete
-    name == "ui_observe" || name == "ui_screenshot" -> Icons.Rounded.Visibility
+    name == "ui_observe" -> Icons.Rounded.Visibility
     name == "ui_tap" -> Icons.Rounded.TouchApp
     name == "ui_set_text" -> Icons.Rounded.Keyboard
     name == "ui_wait_for" || name == "poll_tool" -> Icons.Rounded.HourglassEmpty
@@ -477,7 +476,6 @@ private fun toolSummary(tool: ToolActivity, json: JSONObject?): String {
             "${json.optJSONArray("tasks")?.length() ?: 0} tasks"
         )
         "ui_key" -> AppLanguage.tr("已按下返回键", "Pressed back")
-        "ui_screenshot" -> AppLanguage.tr("已截取当前界面", "Captured the screen")
         "browser_open", "browser_navigate" -> {
             val title = json.optString("title")
             val url = json.optString("url")

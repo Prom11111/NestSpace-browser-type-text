@@ -25,7 +25,7 @@ internal object SkillDrafter {
         "skill_list", "skill_read", "skill_save",
         "memory_search", "memory_save", "memory_forget",
         "system_status", "assistant_status",
-        "ui_observe", "ui_screenshot", "browser_status", "browser_tabs"
+        "ui_observe", "browser_status", "browser_tabs"
     )
 
     fun eligible(toolNames: List<String>): Boolean {

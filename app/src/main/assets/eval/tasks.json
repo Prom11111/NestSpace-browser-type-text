@@ -25,10 +25,10 @@
     },
     {
       "id": "testapp-screenshot",
-      "title": "测试应用截图",
-      "goal": "以 headless 模式打开 virtual-1 的 com.coke.testapp，并截一张当前界面图。",
+      "title": "测试应用节点与截图",
+      "goal": "以 headless 模式打开 virtual-1 的 com.coke.testapp，先用 ui_observe 查看节点，再在同一次检查中附带当前界面截图。",
       "requires_app": "com.coke.testapp",
-      "expect_tools": ["space_launch", "ui_screenshot"],
+      "expect_tools": ["space_launch", "ui_observe"],
       "timeout_s": 90
     },
     {

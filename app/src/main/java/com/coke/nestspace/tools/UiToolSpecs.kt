@@ -7,21 +7,25 @@ import com.coke.nestspace.container.ContainerProcessPool
 import com.coke.nestspace.control.ContainerPreviewCapture
 import com.coke.nestspace.control.ContainerUiClient
 import com.coke.nestspace.control.ContainerUiKeepAlive
+import org.json.JSONArray
 import org.json.JSONObject
 import android.util.Base64
 
 internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
         ToolSpec(
             name = "ui_observe",
-            description = "Observe a virtual app's view tree. Optionally pass package/instance_id " +
-                "to target a specific container; otherwise the most recently launched one is used.",
+            description = "Primary screen-inspection tool. Return the virtual app's view tree with " +
+                "node ids, text, descriptions, bounds, clickable/scrollable/editable state. Prefer " +
+                "this before acting; it is more reliable and cheaper than a screenshot for normal " +
+                "Android views. Optionally pass package/instance_id to target a container.",
             inputSchema = schema(
                 "package" to "string",
                 "instance_id" to "string",
                 "process" to "string",
-                "slot" to "integer"
+                "slot" to "integer",
+                "include_screenshot" to "boolean"
             ),
-            maxWaitMs = 700L
+            maxWaitMs = 10_000L
         ) { args, ctx ->
             var slot = containerSlot(args)
             var observation = slot?.let { ContainerUiClient.observeJson(context, it) }
@@ -37,7 +41,39 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
             }
             slot?.let { ContainerUiKeepAlive.bind(context, it) }
             capturePreview(slot, args.optString("package"))
-            ToolResult(true, UserGateManager.annotateSensitive(observation))
+            val tree = runCatching {
+                JSONObject(UserGateManager.annotateSensitive(observation))
+            }.getOrElse {
+                JSONObject().put("text", UserGateManager.annotateSensitive(observation))
+            }
+            val nodes = tree.optJSONArray("nodes")
+            tree.put("node_count", nodes?.length() ?: 0)
+                .put(
+                    "screenshot_recommended",
+                    needsVisualFallback(nodes)
+                )
+            val includeScreenshot = args.optBoolean("include_screenshot", false)
+            val jpeg = if (includeScreenshot) {
+                val actualSlot = slot ?: ContainerProcessPool.lastSlot() ?: -1
+                ContainerPreviewCapture.capture(
+                    context = context,
+                    slot = actualSlot,
+                    label = args.optString("package"),
+                    rejectBlank = false
+                )
+            } else {
+                null
+            }
+            tree.put("screenshot_requested", includeScreenshot)
+                .put("screenshot_captured", jpeg != null)
+            ToolResult(
+                true,
+                tree.toString(),
+                imageBase64 = jpeg?.let {
+                    Base64.encodeToString(it, Base64.NO_WRAP)
+                },
+                imageMimeType = "image/jpeg"
+            )
         },
         ToolSpec(
             name = "ui_tap",
@@ -159,7 +195,8 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
                 "message" to "string",
                 "package" to "string",
                 "instance_id" to "string"
-            )
+            ),
+            mutating = true
         ) { args, _ ->
             val slot = containerSlot(args)
                 ?: return@ToolSpec noContainerResult(null, args)
@@ -270,35 +307,21 @@ internal fun ToolRegistry.uiToolSpecs(): List<ToolSpec> = listOf(
             capturePreview(slot, args.optString("package"))
             ToolResult(ok, if (ok) "found: $text" else "timeout: $text", errorCode = if (ok) null else "TIMEOUT")
         },
-        ToolSpec(
-            name = "ui_screenshot",
-            description = "Screenshot a virtual app's view hierarchy. Optionally pass package/instance_id " +
-                "to target a specific container.",
-            inputSchema = schema(
-                "package" to "string",
-                "instance_id" to "string",
-                "process" to "string",
-                "slot" to "integer"
-            ),
-            maxWaitMs = 700L
-        ) { args, _ ->
-            val slot = containerSlot(args)
-            if (missingRequestedContainer(args, slot)) {
-                return@ToolSpec noContainerResult(null, args)
-            }
-            val actualSlot = slot ?: ContainerProcessPool.lastSlot() ?: -1
-            val jpeg = ContainerPreviewCapture.capture(
-                context = context,
-                slot = actualSlot,
-                label = args.optString("package"),
-                rejectBlank = false
-            )
-                ?: return@ToolSpec noContainerResult(slot, args)
-            ToolResult(
-                true,
-                "screenshot captured",
-                imageBase64 = Base64.encodeToString(jpeg, Base64.NO_WRAP),
-                imageMimeType = "image/jpeg"
-            )
-        },
     )
+
+private fun needsVisualFallback(nodes: JSONArray?): Boolean {
+    if (nodes == null || nodes.length() == 0) return true
+    var useful = 0
+    for (index in 0 until nodes.length()) {
+        val node = nodes.optJSONObject(index) ?: continue
+        if (!node.optString("text").isNullOrBlank() ||
+            !node.optString("desc").isNullOrBlank() ||
+            node.optBoolean("clickable") ||
+            node.optBoolean("scrollable") ||
+            node.optBoolean("editable")
+        ) {
+            useful++
+        }
+    }
+    return useful < 2
+}

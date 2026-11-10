@@ -840,7 +840,6 @@ data class ControlLease(
 | 工具 | 作用 |
 |---|---|
 | `ui_observe` | 返回节点树（可选截图） |
-| `ui_screenshot` | 返回截图 |
 | `ui_tap` / `ui_long_press` | 点击/长按 |
 | `ui_swipe` / `ui_scroll` | 滑动/滚动 |
 | `ui_set_text` | 输入文本 |

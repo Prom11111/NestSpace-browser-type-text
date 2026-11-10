@@ -1356,7 +1356,7 @@ open class StageAActivity : Activity() {
         returnToDesktopIfRootTargetFinished()
         Log.d(TAG, "host onStop target=${current?.javaClass?.name}")
         // The headless window is no longer visible; restore drawing so
-        // ui_observe/ui_screenshot still see the target hierarchy.
+        // ui_observe still sees the target hierarchy.
         if (headless) root?.alpha = 1f
         if (TargetVisibilityPolicy.shouldKeepTargetActiveWhileHostHidden(
                 pipActive,

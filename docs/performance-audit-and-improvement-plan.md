@@ -78,7 +78,7 @@ NestSpace 主进程
 - [`ContainerPreviewCapture`](../app/src/main/java/com/coke/nestspace/control/ContainerPreviewCapture.kt) 按 slot 串行截图，并合并 600 ms 内的预览触发。
 - [`LivePreview.Frame`](../app/src/main/java/com/coke/nestspace/control/LivePreview.kt) 保存 JPEG 字节，不再保存 Base64。
 - [`AgentLivePreview`](../app/src/main/java/com/coke/nestspace/ui/agent/AgentLivePreview.kt) 直接从字节数组解码一次并显示。
-- [`ui_screenshot`](../app/src/main/java/com/coke/nestspace/tools/UiToolSpecs.kt) 只在最终提供给视觉模型的边界执行 Base64 编码。
+- [`ui_observe(include_screenshot=true)`](../app/src/main/java/com/coke/nestspace/tools/UiToolSpecs.kt) 只在最终提供给视觉模型的边界执行 Base64 编码。
 
 最终链路为：
 
@@ -121,7 +121,7 @@ Android 15
 - arm64 Debug APK 安装成功，系统实际 `primaryCpuAbi=arm64-v8a`。
 - `com.coke.testapp` 在 slot 0 以 headless 模式启动成功。
 - `ui_observe` 返回 18 个控件。
-- `ui_screenshot` 返回 `image/jpeg`，JPEG magic 为 `FF D8 FF`。
+- `ui_observe(include_screenshot=true)` 返回 `image/jpeg`，JPEG magic 为 `FF D8 FF`。
 - 单次截图约 16 ms，图像约 42 KB。
 - 点击测试页的“点击并 +1”后再次截图，图像哈希发生变化，确认截图不是旧缓存。
 - 日志中未发现本次链路的 `FATAL EXCEPTION`、`UnsatisfiedLinkError` 或 `TransactionTooLargeException`。
@@ -163,7 +163,7 @@ NativeLibsTest.sharedCacheIsReusedInvalidatedAndHonorsExclusions
 headless 场景：
 
 - 连续 4 次 `ui_observe`，耗时分别为 10ms、7ms、8ms、6ms。
-- 连续 3 次 `ui_screenshot`，耗时分别为 21ms、11ms、12ms。
+- 连续 3 次 `ui_observe(include_screenshot=true)`，耗时分别为 21ms、11ms、12ms。
 - `slot 0 connected` 日志只出现 1 次。
 - 空闲 12 秒后 `slot 0 binding closed` 为 0 次，确认 keep-alive 连接被保留。
 

@@ -70,7 +70,6 @@ class ToolRegistry(
         "space_list_installed",
         "ui_observe",
         "ui_wait_for",
-        "ui_screenshot",
         "appfn_status",
         "appfn_list",
         "browser_open",

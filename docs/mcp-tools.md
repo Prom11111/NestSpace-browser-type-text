@@ -66,7 +66,6 @@ MCP 调用未指定时默认 `background`，调用方可按任务自行选择。
 | `ui_tap` | 按文本、资源 ID 或坐标点击 |
 | `ui_set_text` | 向输入框写入文本 |
 | `ui_wait_for` | 旧调用兼容的 UI 文本等待快捷方式；新流程使用 `poll_tool` + `ui_observe` |
-| `ui_screenshot` | 截取容器画面 |
 | `ui_key` | 发送按键，目前支持 `back` |
 
 `ui_*` 支持用 `package` / `instance_id` 路由到指定容器实例；省略时操作最近启动的实例。目标 Activity 自建的 Dialog、底部弹窗等独立窗口也会合并进观察和截图。
