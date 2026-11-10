@@ -64,6 +64,7 @@ These tools run a fixed set of system commands through `su -c` (`uiautomator`, `
 | `browser_back` / `browser_forward` / `browser_reload` | Navigation actions; supports `tab_id` |
 | `browser_links` | List links, buttons, and image buttons; image buttons return a CSS selector that can be passed to `browser_click` |
 | `browser_click` | Click an element by visible text or CSS selector |
+| `browser_type_text` | Type text into an input, textarea, or contenteditable element by CSS selector; supports `clear_first` and `tab_id` |
 | `browser_read_text` | Read the visible text of a tab |
 | `browser_download` | Download a URL; when the URL is omitted, wait for a page-triggered download to finish |
 | `browser_upload` | Complete a file selection with a local path or a `content://` URI |

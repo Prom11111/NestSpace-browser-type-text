@@ -674,6 +674,107 @@ internal object BrowserTools {
             }
         },
         ToolSpec(
+            name = "browser_type_text",
+            description = "Type text into an input, textarea, or contenteditable element in the built-in browser. " +
+                "Provide a CSS selector; pass clear_first=true to replace existing content. Defaults to the active tab; pass tab_id to target another page.",
+            inputSchema = toolSchema(
+                "selector" to "string",
+                "text" to "string",
+                "clear_first" to "boolean",
+                "tab_id" to "string",
+                required = listOf("selector", "text")
+            )
+        ) { args, _ ->
+            val selector = args.optString("selector").trim()
+            val text = args.optString("text")
+            if (selector.isBlank()) return@ToolSpec ToolResult(
+                false, "selector is required", errorCode = "INVALID_ARGUMENT"
+            )
+            if (text.isEmpty()) return@ToolSpec ToolResult(
+                false, "text is required", errorCode = "INVALID_ARGUMENT"
+            )
+            val id = tabIdArg(args)
+            withContext(Dispatchers.Main) {
+                val webView = BrowserSession.webView(id)
+                    ?: return@withContext noTabResult(args)
+                val sel = JSONObject.quote(selector)
+                val value = JSONObject.quote(text)
+                val clearFirst = args.optBoolean("clear_first", false)
+                val script = """
+                    (function(){
+                      var selector=$sel, text=$value, clearFirst=$clearFirst;
+                      var el;
+                      try { el=document.querySelector(selector); }
+                      catch(e) { return JSON.stringify({typed:false,error:'invalid_selector',detail:String(e)}); }
+                      if (!el) return JSON.stringify({typed:false,error:'element_not_found'});
+                      var tag=(el.tagName||'').toLowerCase();
+                      var editable=el.isContentEditable || el.getAttribute('contenteditable')==='true';
+                      var input=(tag==='input' || tag==='textarea');
+                      if (!input && !editable) return JSON.stringify({typed:false,error:'not_editable'});
+                      if (el.disabled || el.readOnly || el.getAttribute('aria-disabled')==='true')
+                        return JSON.stringify({typed:false,error:'not_editable'});
+                      var rect=el.getBoundingClientRect(), style=getComputedStyle(el);
+                      if (!rect.width || !rect.height || style.visibility==='hidden' || style.display==='none')
+                        return JSON.stringify({typed:false,error:'element_not_visible'});
+                      el.scrollIntoView({block:'center',inline:'nearest'});
+                      el.focus();
+                      if (editable) {
+                        if (clearFirst) {
+                          el.textContent='';
+                          var range=document.createRange(); range.selectNodeContents(el);
+                          var selection=window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+                        }
+                        var inserted=false;
+                        try { inserted=document.execCommand('insertText',false,text); } catch(e) {}
+                        if (!inserted) {
+                          var selection=window.getSelection();
+                          if (selection && selection.rangeCount && el.contains(selection.anchorNode)) {
+                            var range=selection.getRangeAt(0); range.deleteContents();
+                            range.insertNode(document.createTextNode(text));
+                            range.collapse(false); selection.removeAllRanges(); selection.addRange(range);
+                          } else { el.appendChild(document.createTextNode(text)); }
+                        }
+                      } else {
+                        var proto=tag==='textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                        var setter=Object.getOwnPropertyDescriptor(proto,'value');
+                        if (clearFirst) {
+                          if (setter && setter.set) setter.set.call(el,''); else el.value='';
+                          el.setSelectionRange(0,0);
+                        }
+                        var start=typeof el.selectionStart==='number' ? el.selectionStart : el.value.length;
+                        var end=typeof el.selectionEnd==='number' ? el.selectionEnd : start;
+                        if (typeof el.setRangeText==='function') el.setRangeText(text,start,end,'end');
+                        else if (setter && setter.set) setter.set.call(el,el.value.slice(0,start)+text+el.value.slice(end));
+                        else el.value=el.value.slice(0,start)+text+el.value.slice(end);
+                      }
+                      var inputEvent;
+                      try { inputEvent=new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}); }
+                      catch(e) { inputEvent=new Event('input',{bubbles:true}); }
+                      el.dispatchEvent(inputEvent);
+                      el.dispatchEvent(new Event('change',{bubbles:true}));
+                      return JSON.stringify({typed:true,selector:selector,tag:tag,characters:text.length,value:(el.value!==undefined?el.value:el.innerText||'').slice(0,500)});
+                    })()
+                """.trimIndent()
+                val raw = evaluate(webView, script)
+                val result = runCatching { JSONObject(raw) }
+                    .getOrDefault(JSONObject().put("typed", false).put("error", "invalid_result"))
+                result.put("tab_id", id ?: BrowserSession.activeTabId())
+                val typed = result.optBoolean("typed", false)
+                if (typed) publishPreview(id)
+                ToolResult(
+                    typed,
+                    result.toString(),
+                    errorCode = if (typed) null else when (result.optString("error")) {
+                        "element_not_found" -> "ELEMENT_NOT_FOUND"
+                        "invalid_selector" -> "INVALID_SELECTOR"
+                        "element_not_visible" -> "ELEMENT_NOT_VISIBLE"
+                        "not_editable" -> "ELEMENT_NOT_EDITABLE"
+                        else -> "TYPE_TEXT_FAILED"
+                    }
+                )
+            }
+        },
+        ToolSpec(
             name = "browser_download",
             description = "Start a file download from a URL and return its download_id immediately. " +
                 "Use task_wait with task_id until terminal=true. " +
