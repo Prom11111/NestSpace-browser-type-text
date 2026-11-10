@@ -16,10 +16,10 @@ The container is not system-level virtualization; it runs inside NestSpace's own
 
 The runtime is split into two Gradle modules with explicit boundaries:
 
-- `runtime-api`: engine contracts, shared models, the Application factory registry, and host hooks.
-- `runtime-core`: APK and instance storage, sessions, Activity hosts, process slots, Providers, lifecycle handling, the native facade, MCP UI support, hardened Application bootstrap resolution, and the compatible Application factory.
+- `plugin-api`: the public Java plugin SDK, including Agent hooks, Host APIs, launch policies, runtime profiles, launch specs, class indexes, and ClassLoader scopes.
+- `app`: the control plane and runtime implementation, including Compose UI, Agent, plugin center, APK/instance storage, sessions, Activity hosts, process slots, Providers, lifecycle handling, the native facade, MCP UI, hardened Application bootstrap resolution, and the target Application factory.
 
-The dependency direction is `runtime-core → runtime-api`, while `app` is the control plane. Runtime backends are installed through `RuntimePluginLoader`; `app` does not call backend implementations directly.
+The only dependency direction is `app → plugin-api`. Runtime backends are installed through `RuntimePluginLoader`.
 
 ## Installation and launch
 

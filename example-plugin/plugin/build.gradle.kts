@@ -38,13 +38,6 @@ val pluginApiAar = providers.gradleProperty("nestspacePluginApiAar")
     ?: rootProject.file(
         "../plugin-api/build/outputs/aar/plugin-api-debug.aar"
     ).absolutePath
-val runtimeApiAar = providers.gradleProperty("nestspaceRuntimeApiAar")
-    .orNull
-    ?.trim()
-    ?.takeIf { it.isNotEmpty() }
-    ?: rootProject.file(
-        "../runtime-api/build/outputs/aar/runtime-api-debug.aar"
-    ).absolutePath
 
 android {
     namespace = "com.example.runtimedemo"
@@ -219,10 +212,8 @@ if (sourceMode) {
 dependencies {
     if (sourceMode) {
         compileOnly(project(":plugin-api"))
-        compileOnly(project(":runtime-api"))
     } else {
         compileOnly(files(pluginApiAar))
-        compileOnly(files(runtimeApiAar))
     }
 }
 

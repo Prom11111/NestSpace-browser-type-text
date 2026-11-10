@@ -40,8 +40,8 @@ interface RuntimePluginInstaller {
 }
 
 /**
- * The app composition root installs runtime backends by class name so the API
- * module does not need a compile-time dependency on runtime-core.
+ * The app composition root installs runtime backends by class name so plugin
+ * APIs do not need a compile-time dependency on runtime implementation code.
  */
 object RuntimePluginLoader {
     private val installed = LinkedHashMap<String, RuntimePluginInstaller>()

@@ -143,6 +143,10 @@ android {
             optimization {
                 enable = false
             }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {
@@ -165,8 +169,6 @@ android {
 
 dependencies {
     implementation(project(":plugin-api"))
-    implementation(project(":runtime-api"))
-    implementation(project(":runtime-core"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

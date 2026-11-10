@@ -16,7 +16,7 @@ import android.os.SystemClock
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.coke.nestspace.i18n.AppLanguage
-import com.coke.nestspace.runtime.core.R
+import com.coke.nestspace.R
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin

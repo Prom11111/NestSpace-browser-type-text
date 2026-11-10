@@ -15,3 +15,5 @@
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
+-keep interface com.coke.nestspace.runtime.plugin.** { *; }
+-keep class * implements com.coke.nestspace.runtime.plugin.RuntimeProfile { *; }

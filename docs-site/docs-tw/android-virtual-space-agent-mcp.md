@@ -426,7 +426,7 @@ interface AndroidAdapter {
 
 **Application：**
 
-- 由 `runtime-core` 的 `TargetApplicationFactory` 建立目標 Application，並處理一般、Tinker 與 ApplicationLike 啟動鏈。
+- 由 `app` 的 `TargetApplicationFactory` 建立目標 Application，並處理一般、Tinker 與 ApplicationLike 啟動鏈。
 - `attachBaseContext(targetContext)` → `onCreate()`。
 - 目標應用程式的 `ContentProvider` 初始化順序要模擬（`installContentProviders`）。
 
@@ -1204,7 +1204,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 - ✅ 多處理程序路由、元件橋接、Binder/UID 代理與 native 環境均已實作，不再侷限於單處理程序入口 Activity。
 - ✅ 引擎內的虛擬應用程式清單/啟動（非系統 PMS/AMS hook）、桌面入口與目標 PackageManager 虛擬化均已接入。
 
-實作位置：`runtime-core` 的 `engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/ContainerSession.kt`、`container/ContainerProcessPool.kt`，以及 `app` 的 `ui/DesktopScreen.kt`。
+實作位置：`app` 的 `engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/ContainerSession.kt`、`container/ContainerProcessPool.kt`，以及 `ui/DesktopScreen.kt`。
 
 ### 7.3 Stage C 的關鍵驗收（已實作）
 

@@ -88,7 +88,7 @@ Debug 宿主会自动发现 `example-plugin/plugin` 和 `dev-plugins/*`，把插
 构建公共 SDK：
 
 ```bash
-./gradlew :plugin-api:assembleDebug :runtime-api:assembleDebug
+./gradlew :plugin-api:assembleDebug
 ```
 
 构建完整示例插件安装包：
@@ -111,7 +111,6 @@ Debug APK 还会为源码插件自动生成仅供插件中心分享和导出的 
 ```bash
 ./gradlew \
   :plugin-api:testDebugUnitTest \
-  :runtime-api:testDebugUnitTest \
   :app:testDebugUnitTest
 ```
 

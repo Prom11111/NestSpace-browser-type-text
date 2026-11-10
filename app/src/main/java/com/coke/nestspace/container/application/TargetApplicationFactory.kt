@@ -11,7 +11,7 @@ import com.coke.nestspace.runtime.RuntimeApplicationSpec
 /**
  * Target Application construction backend. All hardened-Application detection
  * and manual attach rules live here; the generic container session only
- * invokes this factory through runtime-api.
+ * invokes this factory through the app runtime API.
  */
 object TargetApplicationFactory : RuntimeApplicationFactory {
     private const val TAG = "CompatAppFactory"

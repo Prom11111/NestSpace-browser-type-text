@@ -51,7 +51,7 @@
 | `.nestplugin` 安装包 | 开发版已实现 | 文件安装、路径/大小校验、DEX 加载和重启恢复；签名信任待补 |
 | Debug 源码插件直开 | 已实现 | Gradle 自动发现、资源隔离、宿主 ClassLoader 加载和外部同 ID 包遮蔽 |
 | 插件中心 UI | 应用中心风格 | 已安装插件网格、搜索、分类、详情、启停、自定义设置、分享、导出和删除 |
-| 运行时代理扩展 API | 已实现 | `runtime-api` 提供启动描述、Profile、类名索引和 ClassLoader scope |
+| 运行时代理扩展 API | 已实现 | `plugin-api` 提供启动描述、Profile、类名索引和 ClassLoader scope |
 | 外部运行时代理安全隔离 | 未实现 | 发布者签名、信任等级、独立插件进程和自动回滚仍待完成 |
 
 “已实现”表示当前 Debug 源码和开发版安装链路可用；外部插件正式发布仍受签名、信任等级
@@ -154,9 +154,7 @@ Kotlin 只用于 NestSpace 内部实现和适配。
 
 ```text
 :plugin-api       纯 Java 对外 SDK
-:runtime-api      共享运行时模型、控制面契约和稳定的运行时代理 Java API
-:runtime-core     容器、Agent 工具、启动编排、兼容 Application factory 和 Tinker/AppLike 解析
-:app              Compose UI、Agent、插件注册和能力适配
+:app              Compose UI、Agent、插件注册、容器运行时和 Target Application factory
 example-plugin/plugin 随 Debug 宿主编译的完整源码插件
 dev-plugins/      开发者自己的 Debug 源码插件
 ```
@@ -165,14 +163,11 @@ dev-plugins/      开发者自己的 Debug 源码插件
 
 ```text
 :app
-├── :plugin-api
-├── :runtime-api
-└── :runtime-core ──> :plugin-api
-                    └──> :runtime-api
+└── :plugin-api
 ```
 
-`plugin-api` 不依赖宿主实现。普通插件编译依赖该模块；需要目标运行时代理时再依赖
-`runtime-api`。插件可以按自身需要组合运行时代理和 Profile。
+`plugin-api` 不依赖宿主实现。普通插件和运行时代理都只编译依赖该模块。运行时实现、
+Application factory、Agent 和容器代码统一位于 `app`。
 
 ### 3.1 Debug 源码插件直开
 
@@ -1363,7 +1358,7 @@ Manifest `contributes` 指向的文件已有解析器：
 ## 11. 运行时代理
 
 声明式启动策略由 `RuntimeProxyPlugin` 提供。需要目标 Application、ClassLoader 或
-Activity 生命周期 Hook 时，插件使用 `runtime-api` 中的运行时代理契约：
+Activity 生命周期 Hook 时，插件使用 `plugin-api` 中的运行时代理契约：
 
 ```java
 public interface RuntimeProxyExtensionProvider {

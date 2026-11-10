@@ -37,7 +37,7 @@ import com.coke.nestspace.container.activity.TargetLifecycle
 import com.coke.nestspace.container.activity.TargetVisibilityPolicy
 import com.coke.nestspace.container.activity.TargetStateStore
 import com.coke.nestspace.runtime.RuntimeHostHooks
-import com.coke.nestspace.runtime.core.R
+import com.coke.nestspace.R
 import java.lang.ref.WeakReference
 import java.util.concurrent.CopyOnWriteArrayList
 

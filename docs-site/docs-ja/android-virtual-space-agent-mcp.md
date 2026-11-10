@@ -426,7 +426,7 @@ interface AndroidAdapter {
 
 **Application：**
 
-- `runtime-core` の `TargetApplicationFactory` で対象 Application を作成し、通常・Tinker・ApplicationLike の起動チェーンを処理します。
+- `app` の `TargetApplicationFactory` で対象 Application を作成し、通常・Tinker・ApplicationLike の起動チェーンを処理します。
 - `attachBaseContext(targetContext)` → `onCreate()`。
 - 対象アプリの `ContentProvider` 初期化順序を模擬する（`installContentProviders`）。
 
@@ -1204,7 +1204,7 @@ Android 7.1.1 x86 エミュレーターで検証：
 - ✅ マルチプロセスルーティング、コンポーネントブリッジ、Binder/UID プロキシ、ネイティブ環境を実装済み；単一プロセスの入口 Activity に限定されない。
 - ✅ エンジン内の仮想アプリ一覧/起動（システム PMS/AMS フックではない）、デスクトップ入口、対象 PackageManager の仮想化を統合済み。
 
-実装場所：`runtime-core` の `engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/ContainerSession.kt`、`container/ContainerProcessPool.kt`、および `app` の `ui/DesktopScreen.kt`。
+実装場所：`app` の `engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/ContainerSession.kt`、`container/ContainerProcessPool.kt`、および `ui/DesktopScreen.kt`。
 
 ### 7.3 Stage C の主要な受け入れ確認（実装済み）
 

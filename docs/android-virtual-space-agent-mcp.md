@@ -7,7 +7,7 @@
 > 约束：普通 APK、不能控制 ROM；**使用自研容器引擎**；本地 Agent 与远程 MCP 双通道都要支持。
 > 状态：Stage A/B + Stage C-lite + Stage C-D（独立进程/崩溃隔离、Job/通知虚拟化、宿主/系统广播桥接、Binder/UID 权限模型、完整 VPMS、跨虚拟应用查询、权限授予、多实例 .so 进程隔离）已实现并在 Android 7.1.1 / Android 16 / Android 17（API 37 模拟器）/ MuMu(Android 15, ARM bridge) 验证；本地 LLM Agent（Claude/OpenAI 兼容，共用 chat 协议）已实现并用 mock 与第三方 Anthropic 兼容端点实网验通；完整后台 Job/Alarm 唤醒与系统侧真实 UID 欺骗仍属于后续增强
 
-> 当前实现已拆分 `plugin-api` 和 `runtime-api`，并加入 Debug 源码插件、
+> 当前实现已拆分 `app` 和 `plugin-api`，并加入 Debug 源码插件、
 > 插件中心、自定义设置 View 和版本化运行时代理插件。本文保留早期容器设计背景；
 > 当前模块边界以 [架构与限制](architecture.md)、
 > [运行时模块边界](https://github.com/chuccp/NestSpace/blob/main/docs/runtime-modules.md) 和
@@ -424,7 +424,7 @@ interface AndroidAdapter {
 
 **Application：**
 
-- 由 `runtime-core` 的 `TargetApplicationFactory` 创建目标 Application，并处理普通、Tinker 和 ApplicationLike 启动链。
+- 由 `app` 的 `TargetApplicationFactory` 创建目标 Application，并处理普通、Tinker 和 ApplicationLike 启动链。
 - `attachBaseContext(targetContext)` → `onCreate()`。
 - 目标 App 的 `ContentProvider` 初始化顺序要模拟（`installContentProviders`）。
 
@@ -1202,7 +1202,7 @@ Agent                         MCP Server / ToolRegistry      Engine / Control
 - ✅ 多进程、组件路由、Binder/UID 代理和 native 环境均已接入，不再局限于单进程入口 Activity。
 - ✅ 引擎内的虚拟应用列表/启动（非系统 PMS/AMS hook）、桌面式入口和目标 `PackageManager` 虚拟化均已接入。
 
-实现位置：`runtime-core` 的 `engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/ContainerSession.kt`、`container/ContainerProcessPool.kt`，以及 `app` 的 `ui/DesktopScreen.kt`。
+实现位置：`app` 的 `engine/MiniContainerEngine.kt`、`container/ContainerContext.kt`、`container/ContainerSession.kt`、`container/ContainerProcessPool.kt`，以及 `ui/DesktopScreen.kt`。
 
 ### 7.3 Stage C 的关键验收（已实现）
 

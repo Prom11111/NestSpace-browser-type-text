@@ -73,10 +73,10 @@ NestSpace 主进程
 
 容器截图协议已经从 PNG/Base64 String 改为二进制 JPEG：
 
-- [`IContainerUi.screenshotJpeg()`](../runtime-core/src/main/aidl/com/coke/nestspace/container/IContainerUi.aidl) 直接返回 `byte[]`。
-- [`ContainerUiController.screenshotJpeg()`](../runtime-core/src/main/java/com/coke/nestspace/control/ContainerUiController.kt) 按预览目标宽度直接创建缩放 Bitmap，然后编码 JPEG。
-- [`ContainerPreviewCapture`](../runtime-core/src/main/java/com/coke/nestspace/control/ContainerPreviewCapture.kt) 按 slot 串行截图，并合并 600 ms 内的预览触发。
-- [`LivePreview.Frame`](../runtime-api/src/main/java/com/coke/nestspace/control/LivePreview.kt) 保存 JPEG 字节，不再保存 Base64。
+- [`IContainerUi.screenshotJpeg()`](../app/src/main/aidl/com/coke/nestspace/container/IContainerUi.aidl) 直接返回 `byte[]`。
+- [`ContainerUiController.screenshotJpeg()`](../app/src/main/java/com/coke/nestspace/control/ContainerUiController.kt) 按预览目标宽度直接创建缩放 Bitmap，然后编码 JPEG。
+- [`ContainerPreviewCapture`](../app/src/main/java/com/coke/nestspace/control/ContainerPreviewCapture.kt) 按 slot 串行截图，并合并 600 ms 内的预览触发。
+- [`LivePreview.Frame`](../app/src/main/java/com/coke/nestspace/control/LivePreview.kt) 保存 JPEG 字节，不再保存 Base64。
 - [`AgentLivePreview`](../app/src/main/java/com/coke/nestspace/ui/agent/AgentLivePreview.kt) 直接从字节数组解码一次并显示。
 - [`ui_screenshot`](../app/src/main/java/com/coke/nestspace/tools/UiToolSpecs.kt) 只在最终提供给视觉模型的边界执行 Base64 编码。
 
@@ -142,7 +142,7 @@ NativeLibsTest.sharedCacheIsReusedInvalidatedAndHonorsExclusions
 
 ### 4.1 最终实现
 
-[`ContainerUiClient`](../runtime-core/src/main/java/com/coke/nestspace/control/ContainerUiClient.kt) 现在按 slot 维护唯一的 `SlotBinding`：
+[`ContainerUiClient`](../app/src/main/java/com/coke/nestspace/control/ContainerUiClient.kt) 现在按 slot 维护唯一的 `SlotBinding`：
 
 - 首次调用只执行一次 `bindService()`，之后直接复用缓存的 `IContainerUi`。
 - 每次工具调用只借还 Binder lease，不再在 `finally` 中解绑。
@@ -152,7 +152,7 @@ NativeLibsTest.sharedCacheIsReusedInvalidatedAndHonorsExclusions
 - Binder 调用遇到 `DeadObjectException` 或 `RemoteException` 时，失效连接并自动重试一次。
 - 多调用并发时按 slot 串行建立连接，避免重复 bind。
 
-[`ContainerUiKeepAlive`](../runtime-core/src/main/java/com/coke/nestspace/control/ContainerUiKeepAlive.kt) 不再维护第二套 `ServiceConnection`，而是持有同一个连接池中的 slot：
+[`ContainerUiKeepAlive`](../app/src/main/java/com/coke/nestspace/control/ContainerUiKeepAlive.kt) 不再维护第二套 `ServiceConnection`，而是持有同一个连接池中的 slot：
 
 - headless 模式保持 binder，超过 10 秒也不释放。
 - 非 headless 模式只享受短时间复用，空闲后释放。
@@ -190,7 +190,7 @@ headless 场景：
 
 ### 5.1 周期性 Hook 刷新
 
-[`ContainerSession.startNativeHookPump()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerSession.kt) 当前采用：
+[`ContainerSession.startNativeHookPump()`](../app/src/main/java/com/coke/nestspace/container/ContainerSession.kt) 当前采用：
 
 - 启动后每 250 ms 刷新一次。
 - 20 秒后降为每 2 秒刷新一次。
@@ -253,13 +253,13 @@ std::atomic<const Environment*> g_environment{nullptr};
 
 APK 相关重复工作包括：
 
-- 安装时对临时 APK 执行 [`ApkInspector.inspect()`](../runtime-core/src/main/java/com/coke/nestspace/container/loader/ApkInspector.kt)。
+- 安装时对临时 APK 执行 [`ApkInspector.inspect()`](../app/src/main/java/com/coke/nestspace/container/loader/ApkInspector.kt)。
 - 移动为最终 APK 后再执行一次完整 inspect。
-- 启动时 [`MiniContainerEngine.launchLocked()`](../runtime-core/src/main/java/com/coke/nestspace/engine/MiniContainerEngine.kt) 再 inspect base APK。
-- 启动时 [`NativeLibs.abisOf()`](../runtime-core/src/main/java/com/coke/nestspace/engine/MiniContainerEngine.kt) 扫描所有 APK。
+- 启动时 [`MiniContainerEngine.launchLocked()`](../app/src/main/java/com/coke/nestspace/engine/MiniContainerEngine.kt) 再 inspect base APK。
+- 启动时 [`NativeLibs.abisOf()`](../app/src/main/java/com/coke/nestspace/engine/MiniContainerEngine.kt) 扫描所有 APK。
 - 容器进程创建时再次扫描所有 APK。
-- [`ApkInspector.nativeAbis()`](../runtime-core/src/main/java/com/coke/nestspace/container/loader/ApkInspector.kt) 遍历 ZIP 全部 entry。
-- [`NativeLibs.extractIfNeeded()`](../runtime-core/src/main/java/com/coke/nestspace/container/loader/NativeLibs.kt) 缓存未命中时再遍历全部 ZIP entry。
+- [`ApkInspector.nativeAbis()`](../app/src/main/java/com/coke/nestspace/container/loader/ApkInspector.kt) 遍历 ZIP 全部 entry。
+- [`NativeLibs.extractIfNeeded()`](../app/src/main/java/com/coke/nestspace/container/loader/NativeLibs.kt) 缓存未命中时再遍历全部 ZIP entry。
 
 `ApkPayloadIdentity.same()` 也会完整读取所有 APK 并计算 SHA-256。
 
@@ -321,7 +321,7 @@ APK 包名、签名、Manifest 组件、`minSdk`、`REQUIRE_SECURE_ENV` 和 spli
 
 ### 7.1 自动槽位与内存策略（已完成）
 
-当前 Manifest 定义 16 个容器槽位，[`android:largeHeap="true"`](../app/src/main/AndroidManifest.xml)，最大槽位常量为 [`SLOT_COUNT = 16`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt)。
+当前 Manifest 定义 16 个容器槽位，[`android:largeHeap="true"`](../app/src/main/AndroidManifest.xml)，最大槽位常量为 [`SLOT_COUNT = 16`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt)。
 
 产品语义：
 
@@ -330,11 +330,11 @@ APK 包名、签名、Manifest 组件、`minSdk`、`REQUIRE_SECURE_ENV` 和 spli
 
 最终实现：
 
-- [`SlotMemoryPolicy`](../runtime-core/src/main/java/com/coke/nestspace/container/SlotMemoryPolicy.kt) 负责纯内存计算。
-- [`slotLimit()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 在自动模式返回动态缓存值，固定模式直接返回用户选择。
-- [`refreshAutoSlotLimit()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 在启动、停止、设置和系统内存回调时刷新容量。
+- [`SlotMemoryPolicy`](../app/src/main/java/com/coke/nestspace/container/SlotMemoryPolicy.kt) 负责纯内存计算。
+- [`slotLimit()`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 在自动模式返回动态缓存值，固定模式直接返回用户选择。
+- [`refreshAutoSlotLimit()`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 在启动、停止、设置和系统内存回调时刷新容量。
 - [`NestSpaceApp.onTrimMemory()`](../app/src/main/java/com/coke/nestspace/NestSpaceApp.kt) 将系统内存压力传给主进程槽位池。
-- [`evictAutoExcess()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 只回收后台 slot，保护当前活动槽位。
+- [`evictAutoExcess()`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 只回收后台 slot，保护当前活动槽位。
 
 计算模型：
 
@@ -365,14 +365,14 @@ MuMu 实测：
 
 ### 7.2 杀死 slot 的等待路径
 
-[`killSlotProcess()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 在 `Process.killProcess()` 后最多等待 1.5 秒，每 50 ms 检查一次。
+[`killSlotProcess()`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 在 `Process.killProcess()` 后最多等待 1.5 秒，每 50 ms 检查一次。
 
 必须先明确：**槽位复用时先杀旧进程是设计约束，不能删除。** 同名 native library、JNI 全局状态和 linker 状态无法可靠卸载；跳过 kill 会造成跨 App native 状态污染。这里允许优化的是等待机制和锁范围，不是“不等待”或“直接复用旧进程”。
 
 改造前检查可能执行：
 
 - `ActivityManager.runningAppProcesses`。
-- [`pidOfProcess()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 遍历整个 `/proc`。
+- [`pidOfProcess()`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 遍历整个 `/proc`。
 - 读取 marker 文件和 `/proc/<pid>/status`。
 
 这会在槽位复用前引入固定延迟和额外 Binder/文件 I/O。
@@ -404,7 +404,7 @@ MuMu 实测：
 之后降为每 250 ms；VirtualDisplay 刷新固定为每秒一次。快速阶段保证
 Activity 切换和黑帧兜底，稳定阶段避免 headless 常驻时持续占用主线程。
 
-[`StageAActivity.mirrorFinishPoller`](../runtime-core/src/main/java/com/coke/nestspace/container/StageAActivity.kt) 在启动快速阶段每 50 ms 执行一次，稳定后降为每 250 ms：
+[`StageAActivity.mirrorFinishPoller`](../app/src/main/java/com/coke/nestspace/container/StageAActivity.kt) 在启动快速阶段每 50 ms 执行一次，稳定后降为每 250 ms：
 
 - 检查 target 是否 finishing。
 - 每秒刷新一次 mirror display。
@@ -423,7 +423,7 @@ Activity 切换和黑帧兜底，稳定阶段避免 headless 常驻时持续占�
 **状态：已完成。** 背景、halo 和 badge 三类 shader 仅在尺寸变化时创建；
 halo 呼吸通过 Canvas 缩放完成，60 FPS 独立渲染线程保留。
 
-[`LaunchLoadingView`](../runtime-core/src/main/java/com/coke/nestspace/container/LaunchLoadingView.kt) 在独立线程按约 60 FPS 绘制。
+[`LaunchLoadingView`](../app/src/main/java/com/coke/nestspace/container/LaunchLoadingView.kt) 在独立线程按约 60 FPS 绘制。
 
 改造前，每帧都会重新创建：
 
@@ -625,7 +625,7 @@ app_background_cpu_ms_per_min
 ContainerProcessPool.runningSlots(getApplication())
 ```
 
-[`runningSlots()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 并不轻量，可能执行：
+[`runningSlots()`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 并不轻量，可能执行：
 
 - `ActivityManager.runningAppProcesses`。
 - `pidOfProcess()` 遍历 `/proc`。
@@ -648,7 +648,7 @@ ContainerProcessPool.runningSlots(getApplication())
 锁外执行。每次分配都有 generation，旧 kill、旧进程探测或旧运行列表快照
 不能覆盖更新后的 owner。
 
-改造前，[`ContainerProcessPool.acquire()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 在全局锁内可能依次调用：
+改造前，[`ContainerProcessPool.acquire()`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 在全局锁内可能依次调用：
 
 - `reportIfDied()`。
 - `evictBackgroundForMemory()`。
@@ -656,9 +656,9 @@ ContainerProcessPool.runningSlots(getApplication())
 - `isProcessAlive()`。
 - `killSlotProcess()`。
 
-其中 [`killSlotProcess()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 最多等待 1.5 秒。旧实现会在整个等待期间持锁，其他启动、关闭或列表查询只能排队。
+其中 [`killSlotProcess()`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 最多等待 1.5 秒。旧实现会在整个等待期间持锁，其他启动、关闭或列表查询只能排队。
 
-[`runningSlots()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 的旧实现也会在锁内调用 ActivityManager、`/proc` 和 PSS 读取，运行管理页刷新时可能阻塞新的容器启动。
+[`runningSlots()`](../app/src/main/java/com/coke/nestspace/container/ContainerProcessPool.kt) 的旧实现也会在锁内调用 ActivityManager、`/proc` 和 PSS 读取，运行管理页刷新时可能阻塞新的容器启动。
 
 本次按以下边界完成改造：
 
@@ -708,11 +708,11 @@ Method，失败结果同样缓存；字段列表和 callback Method 只解析一
 
 改造前，以下路径位于 target 启动、Activity 生命周期和系统服务调用热路径：
 
-- [`TargetLifecycle.perform()`](../runtime-core/src/main/java/com/coke/nestspace/container/activity/TargetLifecycle.kt) 会重复遍历 `Activity::class.java.declaredMethods` 查找匹配方法。
-- [`TargetLifecycle.postResume()`](../runtime-core/src/main/java/com/coke/nestspace/container/activity/TargetLifecycle.kt) 会重复沿类继承链查找。
-- [`TargetApplicationLifecycle.dispatch()`](../runtime-core/src/main/java/com/coke/nestspace/container/activity/TargetApplicationLifecycle.kt) 会在每次生命周期事件中扫描 Application 字段。
+- [`TargetLifecycle.perform()`](../app/src/main/java/com/coke/nestspace/container/activity/TargetLifecycle.kt) 会重复遍历 `Activity::class.java.declaredMethods` 查找匹配方法。
+- [`TargetLifecycle.postResume()`](../app/src/main/java/com/coke/nestspace/container/activity/TargetLifecycle.kt) 会重复沿类继承链查找。
+- [`TargetApplicationLifecycle.dispatch()`](../app/src/main/java/com/coke/nestspace/container/activity/TargetApplicationLifecycle.kt) 会在每次生命周期事件中扫描 Application 字段。
 - `TargetApplicationLifecycle.invoke()` 会对每个 callback 重新执行 `Class.forName()` 和 `getMethod()`。
-- [`SystemServiceIdentity`](../runtime-core/src/main/java/com/coke/nestspace/container/identity/SystemServiceIdentity.kt) 会在系统服务结果改写时重复查找 `Class`、Builder 和 Method。
+- [`SystemServiceIdentity`](../app/src/main/java/com/coke/nestspace/container/identity/SystemServiceIdentity.kt) 会在系统服务结果改写时重复查找 `Class`、Builder 和 Method。
 - `rewritePackageOps()` 会在热路径中重复查找 `AppOpsManager$PackageOps` 及其方法。
 
 最终实现使用进程级反射缓存：
@@ -741,7 +741,7 @@ data class MethodKey(
 **状态：已完成。** target 和虚拟包都按 flags 只复制请求的组件、权限、签名和
 meta-data；常见 `flags=0` 查询使用 PackageInfo 字段浅拷贝，不再先完整 Parcel 深拷贝。
 
-[`ContainerPackageManager.getPackageInfo()`](../runtime-core/src/main/java/com/coke/nestspace/container/ContainerPackageManager.java) 对 target 调用 flags-aware 的 `copyPackageInfo(flags)`。
+[`ContainerPackageManager.getPackageInfo()`](../app/src/main/java/com/coke/nestspace/container/ContainerPackageManager.java) 对 target 调用 flags-aware 的 `copyPackageInfo(flags)`。
 
 改造前，`copyPackageInfo()` 无论调用者是否传入 `GET_ACTIVITIES`、`GET_SERVICES`、`GET_PROVIDERS` 等 flags，都会：
 
@@ -768,7 +768,7 @@ target App 启动时经常只用 `flags=0` 查询 package/version，旧实现却
 创建均已移出 registry monitor；锁内只检查和登记 loading，解析完成后再短锁发布。
 递归标记仍保留，避免目标查询 label/icon 时重入同一个包。
 
-[`VirtualPackageRegistry`](../runtime-core/src/main/java/com/coke/nestspace/container/vpm/VirtualPackageRegistry.kt) 的多数只读 map 查询仍使用短锁。改造前，[`loadEntry()`](../runtime-core/src/main/java/com/coke/nestspace/container/vpm/VirtualPackageRegistry.kt) 会在锁内执行 `ApkInspector.inspect()`、AssetManager 创建和 Resources 初始化。
+[`VirtualPackageRegistry`](../app/src/main/java/com/coke/nestspace/container/vpm/VirtualPackageRegistry.kt) 的多数只读 map 查询仍使用短锁。改造前，[`loadEntry()`](../app/src/main/java/com/coke/nestspace/container/vpm/VirtualPackageRegistry.kt) 会在锁内执行 `ApkInspector.inspect()`、AssetManager 创建和 Resources 初始化。
 
 当 target 第一次跨包查询组件或图标时，其他 PackageManager 查询会被 APK 解析阻塞。
 
@@ -820,14 +820,14 @@ target App 启动时经常只用 `flags=0` 查询 package/version，旧实现却
 
 ### 16.7 P1：共享库和 plugin 类路径重复扫描
 
-[`SharedLibraries.classPathEntries()`](../runtime-core/src/main/java/com/coke/nestspace/container/loader/SharedLibraries.kt) 每次创建容器 session 都会：
+[`SharedLibraries.classPathEntries()`](../app/src/main/java/com/coke/nestspace/container/loader/SharedLibraries.kt) 每次创建容器 session 都会：
 
 - 新建 AssetManager。
 - 挂载所有 APK。
 - 解析 AndroidManifest。
 - 遍历 `<uses-library>`。
 
-[`PluginClassPathResolver.resolveForComponent()`](../runtime-core/src/main/java/com/coke/nestspace/container/loader/PluginClassPathResolver.kt) 会枚举 plugin APK，并对候选 APK 逐个打开 `DexFile`、遍历全部 DEX entry，直到找到目标类。
+[`PluginClassPathResolver.resolveForComponent()`](../app/src/main/java/com/coke/nestspace/container/loader/PluginClassPathResolver.kt) 会枚举 plugin APK，并对候选 APK 逐个打开 `DexFile`、遍历全部 DEX entry，直到找到目标类。
 
 建议：
 

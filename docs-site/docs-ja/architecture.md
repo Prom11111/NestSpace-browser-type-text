@@ -16,10 +16,10 @@ NestSpace は 3 つの部分で構成されています。
 
 ランタイムは責務が明確な 2 つの Gradle モジュールに分かれています。
 
-- `runtime-api`：エンジン契約、共有モデル、Application factory レジストリ、ホスト hook。
-- `runtime-core`：APK とインスタンスの保存、Session、Activity Host、プロセススロット、Provider、ライフサイクル、Native Facade、MCP UI、難読化・加固された Application の起動チェーン解決、互換 Application factory。
+- `plugin-api`：公開 Java プラグイン SDK。Agent hook、Host API、起動ポリシー、ランタイム profile、起動記述、クラス索引、ClassLoader scope を含みます。
+- `app`：制御面とランタイム実装。Compose UI、Agent、プラグインセンター、APK とインスタンス保存、Session、Activity Host、プロセススロット、Provider、ライフサイクル、Native Facade、MCP UI、加固された Application の起動チェーン解決、対象 Application factory を含みます。
 
-依存方向は `runtime-core → runtime-api` で、`app` は制御面です。ランタイムバックエンドは `RuntimePluginLoader` からインストールされ、`app` が実装を直接呼び出すことはありません。
+依存方向は `app → plugin-api` のみです。ランタイムバックエンドは `RuntimePluginLoader` からインストールされます。
 
 ## インストールと起動
 

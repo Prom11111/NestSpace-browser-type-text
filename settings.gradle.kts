@@ -25,8 +25,6 @@ dependencyResolutionManagement {
 rootProject.name = "NestSpace"
 include(":app")
 include(":plugin-api")
-include(":runtime-api")
-include(":runtime-core")
 include(":testapp")
 
 fun sanitizeProjectName(value: String): String =

@@ -20,18 +20,14 @@ NestSpace 由四部分组成：
 
 当前主要 Gradle 模块：
 
-- `plugin-api`：Java 优先的外部插件 SDK、Agent Hook、Host API、设置 View、能力和
-  启动策略契约。
-- `runtime-api`：引擎契约、共享模型、Application factory 注册表、宿主 hook，以及目标
-  运行时代理 API、启动描述、类名索引和 ClassLoader scope。
-- `runtime-core`：APK 与实例存储、Session、Activity Host、进程槽位、Provider、生命周期、
-  Native Facade、MCP UI，以及加固 Application、Tinker/AppLike 启动链和兼容
-  Application factory。
-- `app`：Compose 控制面、Agent、插件中心、设置 View 宿主和插件注册。
+- `plugin-api`：唯一的 Java 优先外部插件 SDK，包括 Agent Hook、Host API、设置 View、
+  启动策略、运行时代理、启动描述、类名索引和 ClassLoader scope。
+- `app`：控制面与运行时实现，包括 Compose UI、Agent、插件中心、APK 与实例存储、
+  Session、Activity Host、进程槽位、Provider、生命周期、Native Facade、MCP UI，
+  以及加固 Application、Tinker/AppLike 启动链和 Target Application factory。
 - `example-plugin/plugin`、`dev-plugins/*`：只在 Debug 构建中发现和加载的源码插件。
 
-依赖方向为 `runtime-core → runtime-api`；`runtime-core` 还依赖 `plugin-api`，
-`app` 作为控制面依赖运行时模块。通用兼容后端
+唯一依赖方向为 `app → plugin-api`。运行时后端
 通过 `RuntimePluginLoader` 安装；目标包名、版本、完整类名和专用 Profile 放在独立插件
 模块，不进入通用容器代码。
 

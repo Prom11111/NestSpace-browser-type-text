@@ -117,7 +117,7 @@ private class HostProcessState(
             val configuredTheme = activityInfo?.theme ?: 0
             val themeResource = configuredTheme.takeIf {
                 it != 0 && runCatching { resources.getResourceName(it) }.isSuccess
-            } ?: com.coke.nestspace.runtime.core.R.style.Theme_Virtual_Container
+            } ?: com.coke.nestspace.R.style.Theme_Virtual_Container
             activity.setTheme(themeResource)
             val activeResources = runCatching { activity.resources }.getOrNull()
             Log.d(

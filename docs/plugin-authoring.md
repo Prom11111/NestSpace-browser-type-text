@@ -59,7 +59,7 @@ Android View，以及完整的插件设置页面。
 剪贴板、后台任务和事件总线，插件不需要自己持有 Android `Activity`。
 
 第四类是处理特定运行环境。插件可以按目标包名和版本选择启动策略，也可以使用
-`runtime-api` 为目标 APK 提供版本和类名绑定的运行时代理。
+`plugin-api` 为目标 APK 提供版本和类名绑定的运行时代理。
 
 ## 2. 插件如何被加载
 
@@ -107,9 +107,6 @@ namespace，确认它能在插件中心单独出现，再开始扩展。
 ```kotlin
 dependencies {
     compileOnly(project(":plugin-api"))
-
-    // 只有实现运行时代理时才需要
-    compileOnly(project(":runtime-api"))
 }
 ```
 
@@ -944,7 +941,7 @@ new RuntimeLaunchPolicy(
 | `BLOCKED` | 拒绝启动并返回原因 | 明确不安全或不支持 |
 
 如果需要在目标 Application attach、创建、目标 Activity 启动前安装 Hook，插件还要
-依赖 `runtime-api`，并在 `onAttach` 中注册
+使用 `plugin-api` 中的运行时代理 API，并在 `onAttach` 中注册
 `RuntimeProfileResolver`：
 
 ```java
@@ -1001,7 +998,7 @@ public final class ExampleRuntimeProfile
 
 插件可以使用可直接阅读的完整包名和类名作为匹配条件，也可以通过构建步骤生成这些
 常量。通用 Tinker、AppLike、Application attach 和系统服务代理仍然属于
-`runtime-core`，不能因为单个应用适配而修改核心分支。
+`app` 的通用运行时实现，不能因为单个应用适配而修改核心分支。
 
 ## 14. 调试开发中的插件
 
@@ -1084,7 +1081,7 @@ consumer keep rules、自定义设置 View、工具 View 和运行时代理入�
 [插件平台与 Java SDK](plugin-center.md)。公共 API 源码位于
 [plugin-api](https://github.com/chuccp/NestSpace/tree/main/plugin-api/src/main/java/com/coke/nestspace/plugin)，
 运行时代理 API 位于
-[runtime-api](https://github.com/chuccp/NestSpace/tree/main/runtime-api/src/main/java/com/coke/nestspace/runtime/plugin)。
+[plugin-api runtime/plugin](https://github.com/chuccp/NestSpace/tree/main/plugin-api/src/main/java/com/coke/nestspace/runtime/plugin)。
 
 ## 附录 A：插件接口索引
 

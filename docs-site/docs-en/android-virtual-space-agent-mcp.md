@@ -426,7 +426,7 @@ Instead of introducing a `StubActivity0..N` array, `StageAActivity` itself is re
 
 **Application:**
 
-- Create the target Application through `TargetApplicationFactory` in `runtime-core`, covering the regular, Tinker, and ApplicationLike startup chains.
+- Create the target Application through `TargetApplicationFactory` in `app`, covering the regular, Tinker, and ApplicationLike startup chains.
 - `attachBaseContext(targetContext)` → `onCreate()`.
 - Simulate the target app's `ContentProvider` initialization order (`installContentProviders`).
 
@@ -1204,7 +1204,7 @@ Verified on an Android 7.1.1 x86 emulator:
 - ✅ Multi-process routing, component bridging, Binder/UID proxies, and the native environment are implemented; the runtime is no longer limited to a single-process entry Activity.
 - ✅ The in-engine virtual app list/launch (not system PMS/AMS hooks), desktop entry, and target PackageManager virtualization are integrated.
 
-Implementation locations: `runtime-core` (`engine/MiniContainerEngine.kt`, `container/ContainerContext.kt`, `container/ContainerSession.kt`, and `container/ContainerProcessPool.kt`) and `app` (`ui/DesktopScreen.kt`).
+Implementation locations: `app` (`engine/MiniContainerEngine.kt`, `container/ContainerContext.kt`, `container/ContainerSession.kt`, `container/ContainerProcessPool.kt`, and `ui/DesktopScreen.kt`).
 
 ### 7.3 Key Stage C acceptance (implemented)
 
