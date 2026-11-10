@@ -1,6 +1,7 @@
 package com.coke.nestspace.agent
 
 import com.coke.nestspace.llm.ChatUsage
+import java.util.concurrent.atomic.AtomicReference
 
 /** Per-run counters copied into run.json and shown in run history. */
 data class RunMetricsSnapshot(
@@ -17,41 +18,34 @@ data class RunMetricsSnapshot(
 /** Thread-safe counters shared by the agent loop and the model usage sink. */
 class RunMetrics {
 
-    private val lock = Any()
-    private var modelRequests = 0
-    private var toolCalls = 0
-    private var inputTokens = 0L
-    private var outputTokens = 0L
-    private var reasoningTokens = 0L
-    private var cachedInputTokens = 0L
+    private val current = AtomicReference(RunMetricsSnapshot())
 
     fun recordRequest(usage: ChatUsage) {
-        synchronized(lock) {
-            modelRequests++
-            inputTokens += usage.inputTokens
-            outputTokens += usage.outputTokens
-            reasoningTokens += usage.reasoningTokens
-            cachedInputTokens += usage.cachedInputTokens
+        current.updateAndGet { snapshot ->
+            snapshot.copy(
+                modelRequests = snapshot.modelRequests + 1,
+                inputTokens = snapshot.inputTokens + usage.inputTokens,
+                outputTokens = snapshot.outputTokens + usage.outputTokens,
+                reasoningTokens =
+                    snapshot.reasoningTokens + usage.reasoningTokens,
+                cachedInputTokens =
+                    snapshot.cachedInputTokens + usage.cachedInputTokens
+            )
         }
     }
 
     fun recordToolCall() {
-        synchronized(lock) { toolCalls++ }
+        current.updateAndGet { snapshot ->
+            snapshot.copy(toolCalls = snapshot.toolCalls + 1)
+        }
     }
 
     fun addToolCalls(count: Int) {
         if (count <= 0) return
-        synchronized(lock) { toolCalls += count }
+        current.updateAndGet { snapshot ->
+            snapshot.copy(toolCalls = snapshot.toolCalls + count)
+        }
     }
 
-    fun snapshot(): RunMetricsSnapshot = synchronized(lock) {
-        RunMetricsSnapshot(
-            modelRequests = modelRequests,
-            toolCalls = toolCalls,
-            inputTokens = inputTokens,
-            outputTokens = outputTokens,
-            reasoningTokens = reasoningTokens,
-            cachedInputTokens = cachedInputTokens
-        )
-    }
+    fun snapshot(): RunMetricsSnapshot = current.get()
 }

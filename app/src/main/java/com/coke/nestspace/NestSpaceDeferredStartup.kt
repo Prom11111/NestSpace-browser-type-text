@@ -20,6 +20,8 @@ import com.coke.nestspace.schedule.ScheduledTaskManager
 import com.coke.nestspace.service.McpForegroundService
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Runs main-process work that is not required to draw the first UI frame.
@@ -40,7 +42,6 @@ internal object NestSpaceDeferredStartup {
     private const val TAG = "NestSpaceStartup"
     private const val FALLBACK_DELAY_MS = 500L
 
-    private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { task ->
         Thread(task, "nestspace-deferred-startup").apply {
@@ -48,21 +49,21 @@ internal object NestSpaceDeferredStartup {
         }
     }
 
-    private var appContext: Context? = null
-    private var processStartedAt: Long = 0L
-    private var scheduled = false
-    private var dispatched = false
-    private var dispatchedOnFirstFrame = false
+    private data class PendingStartup(
+        val context: Context,
+        val startedAt: Long
+    )
+
+    private val pending = AtomicReference<PendingStartup?>(null)
+    private val scheduled = AtomicBoolean(false)
+    private val dispatched = AtomicBoolean(false)
+    private val dispatchedOnFirstFrame = AtomicBoolean(false)
 
     private val fallback = Runnable { dispatch() }
 
     fun schedule(context: Context, startedAt: Long) {
-        synchronized(lock) {
-            if (scheduled) return
-            scheduled = true
-            appContext = context.applicationContext
-            processStartedAt = startedAt
-        }
+        if (!scheduled.compareAndSet(false, true)) return
+        pending.set(PendingStartup(context.applicationContext, startedAt))
         mainHandler.postDelayed(fallback, FALLBACK_DELAY_MS)
     }
 
@@ -77,9 +78,7 @@ internal object NestSpaceDeferredStartup {
                         observer.removeOnPreDrawListener(this)
                     }
                     view.post {
-                        synchronized(lock) {
-                            dispatchedOnFirstFrame = true
-                        }
+                        dispatchedOnFirstFrame.set(true)
                         dispatch()
                     }
                     return true
@@ -88,15 +87,16 @@ internal object NestSpaceDeferredStartup {
         )
     }
 
-    private fun isDispatched(): Boolean = synchronized(lock) { dispatched }
+    private fun isDispatched(): Boolean = dispatched.get()
 
     private fun dispatch() {
-        val state = synchronized(lock) {
-            if (dispatched) return
-            dispatched = true
-            appContext?.let {
-                DispatchState(it, processStartedAt, dispatchedOnFirstFrame)
-            }
+        if (!dispatched.compareAndSet(false, true)) return
+        val state = pending.get()?.let {
+            DispatchState(
+                it.context,
+                it.startedAt,
+                dispatchedOnFirstFrame.get()
+            )
         } ?: return
 
         mainHandler.removeCallbacks(fallback)
