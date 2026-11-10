@@ -134,7 +134,7 @@ NestSpace 内置 Streamable HTTP MCP Server，向本地 AI 助手和远程 MCP �
 | `nestspace_skill_config` | `list` / `enable` / `disable` / `delete` 技能；内置技能只能停用 |
 | `nestspace_child_runs` | `list` / `get` / `cancel` / `cancel_all` / `active` 子 Agent 运行 |
 
-`nestspace_llm_config` 的 `save` 省略 `api_key` 时保留原 Key，也可以用 `copy_key_from` 复制已有 Key；`context_tokens` 默认 800000，最低 100000；`max_tool_rounds` 默认 128。API Key 是只写字段，任何工具结果都不会返回明文。
+`nestspace_llm_config` 的 `save` 省略 `api_key` 时保留原 Key，也可以用 `copy_key_from` 复制已有 Key；使用 `plugin://` Provider 时可以不提供 Key。`context_tokens` 默认 800000，最低 100000；`max_tool_rounds` 默认 128；`streaming_enabled` 默认开启。API Key 是只写字段，任何工具结果都不会返回明文。
 
 ## 外部 MCP 工具
 

@@ -10,6 +10,7 @@ public final class PluginLlmRequest {
     private final String toolsJson;
     private final int maxTokens;
     private final double temperature;
+    private final boolean streamEnabled;
 
     public PluginLlmRequest(
         String modelId,
@@ -19,12 +20,33 @@ public final class PluginLlmRequest {
         int maxTokens,
         double temperature
     ) {
+        this(
+            modelId,
+            systemPrompt,
+            messagesJson,
+            toolsJson,
+            maxTokens,
+            temperature,
+            false
+        );
+    }
+
+    public PluginLlmRequest(
+        String modelId,
+        String systemPrompt,
+        String messagesJson,
+        String toolsJson,
+        int maxTokens,
+        double temperature,
+        boolean streamEnabled
+    ) {
         this.modelId = Objects.requireNonNull(modelId, "modelId");
         this.systemPrompt = systemPrompt == null ? "" : systemPrompt;
         this.messagesJson = messagesJson == null ? "[]" : messagesJson;
         this.toolsJson = toolsJson == null ? "[]" : toolsJson;
         this.maxTokens = Math.max(1, maxTokens);
         this.temperature = Math.max(0, Math.min(2, temperature));
+        this.streamEnabled = streamEnabled;
     }
 
     public String getModelId() {
@@ -49,5 +71,14 @@ public final class PluginLlmRequest {
 
     public double getTemperature() {
         return temperature;
+    }
+
+    /**
+     * Whether the caller wants incremental text events. Providers may use the
+     * same method and transport for both modes, but should only emit
+     * {@code onTextDelta} when this value is true.
+     */
+    public boolean isStreamEnabled() {
+        return streamEnabled;
     }
 }

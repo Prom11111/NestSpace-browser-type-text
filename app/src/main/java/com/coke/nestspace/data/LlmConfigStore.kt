@@ -60,6 +60,7 @@ class LlmConfigStore(context: Context) {
                     .put("maxTokens", config.maxTokens)
                     .put("temperature", temperature)
                     .put("reasoningEffort", config.reasoningEffort.name)
+                    .put("streamingEnabled", config.streamingEnabled)
             )
         }
         prefs.edit()
@@ -130,6 +131,12 @@ class LlmConfigStore(context: Context) {
             if (storedKey.isNotBlank() && !ApiKeyCipher.isEncrypted(storedKey)) {
                 needsSave = true
             }
+            val streamingEnabled = if (json.has("streamingEnabled")) {
+                json.optBoolean("streamingEnabled", true)
+            } else {
+                needsSave = true
+                true
+            }
             val config = LlmConfig(
                 id = json.optString("id").ifBlank { UUID.randomUUID().toString() },
                 name = json.optString("name"),
@@ -149,7 +156,8 @@ class LlmConfigStore(context: Context) {
                 temperature = json.optDouble("temperature", 0.7),
                 reasoningEffort = ReasoningEffort.entries.firstOrNull {
                     it.name == json.optString("reasoningEffort")
-                } ?: ReasoningEffort.MEDIUM
+                } ?: ReasoningEffort.MEDIUM,
+                streamingEnabled = streamingEnabled
             )
             val normalized = config.withCompleteEndpoint()
             if (normalized != config) needsSave = true

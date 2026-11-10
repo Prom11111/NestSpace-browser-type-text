@@ -26,6 +26,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,6 +69,9 @@ fun LlmConfigEditor(
     var maxTokens by remember(config) { mutableStateOf(config.maxTokens.toString()) }
     var temperature by remember(config) { mutableStateOf(config.temperature.toString()) }
     var reasoningEffort by remember(config) { mutableStateOf(config.reasoningEffort) }
+    var streamingEnabled by remember(config) {
+        mutableStateOf(config.streamingEnabled)
+    }
     var showPresets by remember(config) { mutableStateOf(false) }
 
     fun contextValue(): Int = (contextTokens.toIntOrNull() ?: config.contextTokens)
@@ -97,7 +101,8 @@ fun LlmConfigEditor(
             ?.takeIf { it.isFinite() }
             ?.coerceIn(0.0, 2.0)
             ?: config.temperature,
-        reasoningEffort = reasoningEffort
+        reasoningEffort = reasoningEffort,
+        streamingEnabled = streamingEnabled
     ).withNormalizedEndpoint()
 
     fun normalizedConfig(): LlmConfig {
@@ -227,6 +232,31 @@ fun LlmConfigEditor(
             placeholder = { Text(AppLanguage.tr("例如 claude-sonnet-5-5 / gpt-6.1-sol", "e.g. claude-sonnet-5-5 / gpt-6.1-sol")) },
             singleLine = true
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    AppLanguage.tr("流式输出", "Streaming output"),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    AppLanguage.tr(
+                        "边生成边显示；关闭后等待完整回答",
+                        "Show text while generating; wait for the full answer when off"
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = streamingEnabled,
+                onCheckedChange = { streamingEnabled = it }
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),

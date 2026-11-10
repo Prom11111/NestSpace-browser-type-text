@@ -3,21 +3,20 @@ package com.coke.nestspace.llm
 import com.coke.nestspace.data.LlmConfig
 import com.coke.nestspace.data.LlmProtocol
 import com.coke.nestspace.plugin.PluginDescriptor
-import com.coke.nestspace.plugin.PluginLlmListener
 import com.coke.nestspace.plugin.PluginLlmModel
 import com.coke.nestspace.plugin.PluginLlmProvider
 import com.coke.nestspace.plugin.PluginLlmProviders
 import com.coke.nestspace.plugin.PluginLlmRequest
 import com.coke.nestspace.plugin.PluginLlmResponse
-import com.coke.nestspace.plugin.PluginLlmStream
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.EnumSet
-import java.util.concurrent.CompletableFuture
 import com.coke.nestspace.plugin.PluginCapability
+import java.util.concurrent.CompletableFuture
+import java.util.function.Consumer
 
 class PluginChatServiceTest {
 
@@ -62,6 +61,17 @@ class PluginChatServiceTest {
         val streamed = service.streamChat(request, deltas::add)
         assertEquals("answer", streamed.text)
         assertEquals(listOf("ans", "wer"), deltas)
+
+        val nonStreamingDeltas = mutableListOf<String>()
+        val nonStreaming = ChatServices.create(
+            config.copy(streamingEnabled = false)
+        )
+        val completed = nonStreaming.streamChat(
+            request,
+            nonStreamingDeltas::add
+        )
+        assertEquals("answer", completed.text)
+        assertTrue(nonStreamingDeltas.isEmpty())
     }
 
     private fun provider(): PluginLlmProvider =
@@ -90,22 +100,15 @@ class PluginChatServiceTest {
                     )
                 )
 
-            override fun completeAsync(
-                request: PluginLlmRequest
-            ): CompletableFuture<PluginLlmResponse> =
-                CompletableFuture.completedFuture(response())
-
-            override fun stream(
+            override fun executeAsync(
                 request: PluginLlmRequest,
-                listener: PluginLlmListener
-            ): PluginLlmStream {
-                listener.onTextDelta("ans")
-                listener.onTextDelta("wer")
-                listener.onComplete(response())
-                return object : PluginLlmStream {
-                    override fun isClosed(): Boolean = true
-                    override fun close() = Unit
+                onTextDelta: Consumer<String>
+            ): CompletableFuture<PluginLlmResponse> {
+                if (request.isStreamEnabled()) {
+                    onTextDelta.accept("ans")
+                    onTextDelta.accept("wer")
                 }
+                return CompletableFuture.completedFuture(response())
             }
 
             private fun response(): PluginLlmResponse =

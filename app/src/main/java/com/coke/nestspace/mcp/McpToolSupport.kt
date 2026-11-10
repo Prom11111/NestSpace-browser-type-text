@@ -130,7 +130,11 @@ internal suspend fun llmConfig(context: Context, args: JSONObject): ToolResult {
                 existing?.apiKey?.isNotBlank() == true -> existing.apiKey
                 else -> findConfig(state, args.optString("copy_key_from"))?.apiKey.orEmpty()
             }
-            if (apiKey.isBlank()) {
+            val pluginProvider = baseUrl.startsWith(
+                "plugin://",
+                ignoreCase = true
+            )
+            if (apiKey.isBlank() && !pluginProvider) {
                 return invalid("api_key or copy_key_from is required for a new config")
             }
             val contextTokens = if (args.has("context_tokens")) {
@@ -150,6 +154,11 @@ internal suspend fun llmConfig(context: Context, args: JSONObject): ToolResult {
                     ?: return invalid("reasoning_effort must be off, low, medium or high")
             } else {
                 existing?.reasoningEffort ?: ReasoningEffort.MEDIUM
+            }
+            val streamingEnabled = if (args.has("streaming_enabled")) {
+                args.optBoolean("streaming_enabled")
+            } else {
+                existing?.streamingEnabled ?: true
             }
             val config = LlmConfig(
                 id = existing?.id ?: UUID.randomUUID().toString(),
@@ -171,7 +180,8 @@ internal suspend fun llmConfig(context: Context, args: JSONObject): ToolResult {
                 } else {
                     existing?.temperature ?: 0.7
                 },
-                reasoningEffort = reasoning
+                reasoningEffort = reasoning,
+                streamingEnabled = streamingEnabled
             ).withNormalizedEndpoint()
             val replace = existing?.id ?: config.id
             val next = state.configs.filterNot { it.id == replace } + config
@@ -325,6 +335,7 @@ internal fun configJson(config: LlmConfig): JSONObject = JSONObject()
     .put("reasoning_reserve_tokens", config.reasoningEffort.reasoningReserveTokens)
     .put("temperature", config.temperature)
     .put("reasoning_effort", config.reasoningEffort.name.lowercase())
+    .put("streaming_enabled", config.streamingEnabled)
 
 internal fun languageJson(): JSONObject = JSONObject()
     .put("mode", AppLanguage.mode().storageValue)

@@ -2,18 +2,16 @@ package com.coke.nestspace.llm
 
 import com.coke.nestspace.data.LlmConfig
 import com.coke.nestspace.data.LlmProtocol
-import com.coke.nestspace.plugin.PluginLlmListener
 import com.coke.nestspace.plugin.PluginLlmModel
 import com.coke.nestspace.plugin.PluginLlmProvider
 import com.coke.nestspace.plugin.PluginLlmProviders
 import com.coke.nestspace.plugin.PluginLlmRequest
 import com.coke.nestspace.plugin.PluginLlmResponse
-import com.coke.nestspace.plugin.PluginLlmStream
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.atomic.AtomicReference
+import java.util.function.Consumer
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -39,57 +37,41 @@ internal class PluginChatService(
         get() = model?.supportsVision() == true
 
     override suspend fun chat(request: ChatRequest): ChatResponse {
-        val response = provider.completeAsync(toPluginRequest(request))
-            .awaitCancellable()
-        return response.toChatResponse()
+        return execute(request, streamEnabled = false, onTextDelta = null)
     }
 
     override suspend fun streamChat(
         request: ChatRequest,
         onTextDelta: (String) -> Unit
     ): ChatResponse {
-        val completion = CompletableFuture<PluginLlmResponse>()
-        val stream = AtomicReference<PluginLlmStream?>()
-        return suspendCancellableCoroutine { continuation ->
-            try {
-                val active = provider.stream(
-                    toPluginRequest(request),
-                    object : PluginLlmListener {
-                        override fun onTextDelta(text: String) {
-                            if (text.isNotEmpty()) onTextDelta(text)
-                        }
-
-                        override fun onComplete(
-                            response: PluginLlmResponse
-                        ) {
-                            completion.complete(response)
-                        }
-
-                        override fun onFailure(error: Throwable) {
-                            completion.completeExceptionally(error)
-                        }
-                    }
-                )
-                stream.set(active)
-                continuation.invokeOnCancellation {
-                    runCatching { active.close() }
-                }
-            } catch (error: Throwable) {
-                completion.completeExceptionally(error)
-            }
-            completion.whenComplete { response, error ->
-                if (continuation.isActive) {
-                    if (error != null) {
-                        continuation.resumeWithException(error)
-                    } else {
-                        continuation.resume(response.toChatResponse())
-                    }
-                }
-            }
-        }
+        return execute(
+            request,
+            streamEnabled = config.streamingEnabled,
+            onTextDelta = onTextDelta.takeIf { config.streamingEnabled }
+        )
     }
 
-    private fun toPluginRequest(request: ChatRequest): PluginLlmRequest {
+    private suspend fun execute(
+        request: ChatRequest,
+        streamEnabled: Boolean,
+        onTextDelta: ((String) -> Unit)?
+    ): ChatResponse {
+        val deltaConsumer = Consumer<String> { text ->
+            if (streamEnabled && text.isNotEmpty()) {
+                onTextDelta?.invoke(text)
+            }
+        }
+        val response = provider.executeAsync(
+            toPluginRequest(request, streamEnabled),
+            deltaConsumer
+        ).awaitCancellable()
+        return response.toChatResponse()
+    }
+
+    private fun toPluginRequest(
+        request: ChatRequest,
+        streamEnabled: Boolean
+    ): PluginLlmRequest {
         val messages = JSONArray()
         request.messages.forEach { message ->
             val blocks = JSONArray()
@@ -147,7 +129,8 @@ internal class PluginChatService(
             messages.toString(),
             tools.toString(),
             request.maxTokens,
-            request.temperature
+            request.temperature,
+            streamEnabled
         )
     }
 

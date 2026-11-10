@@ -205,17 +205,22 @@ class LlmAgentRuntime(
                         maxOutputTokens = config.maxTokens,
                         budgetTokens = config.contextTokens
                     )
-                    var response = service.streamChat(
-                        ChatRequest(
-                            model = config.model,
-                            system = requestPrompt,
-                            messages = messages.toList(),
-                            tools = chatTools,
-                            maxTokens = config.maxTokens,
-                            temperature = config.temperature,
-                            reasoningEffort = config.reasoningEffort
-                        )
-                    ) { delta -> onTextDelta?.invoke(delta) }
+                    val chatRequest = ChatRequest(
+                        model = config.model,
+                        system = requestPrompt,
+                        messages = messages.toList(),
+                        tools = chatTools,
+                        maxTokens = config.maxTokens,
+                        temperature = config.temperature,
+                        reasoningEffort = config.reasoningEffort
+                    )
+                    var response = if (config.streamingEnabled) {
+                        service.streamChat(chatRequest) { delta ->
+                            onTextDelta?.invoke(delta)
+                        }
+                    } else {
+                        service.chat(chatRequest)
+                    }
                     if (response.text.isBlank() && response.toolUses.isEmpty() &&
                         response.stopReason?.lowercase() in setOf("length", "max_tokens")
                     ) {

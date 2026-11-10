@@ -37,6 +37,9 @@ internal fun mcpConfigToolSpecs(context: Context): List<ToolSpec> {
                     ),
                     "temperature" to numberProp(),
                     "reasoning_effort" to stringProp("off, low, medium or high"),
+                    "streaming_enabled" to boolProp(
+                        "show incremental text; defaults to true"
+                    ),
                     "select" to boolProp("make this config active"),
                     required = listOf("action")
                 )

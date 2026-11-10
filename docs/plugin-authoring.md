@@ -825,9 +825,18 @@ public CompletableFuture<List<PluginCommandSpec>> listCommandsAsync() {
 ```
 
 LLM Provider 允许插件接入自己的模型服务。实现 `PluginLlmProvider` 时，需要提供
-Provider ID、模型列表、非流式补全和流式补全。模型配置中使用
-`plugin://<provider-id>` 引用它。Provider 自己持有的凭据必须通过 `secrets()` 保存，
-宿主不会把用户已配置的其他模型密钥交给插件。
+Provider ID、模型列表和一个统一的 `executeAsync()` 请求入口。模型配置中使用
+`plugin://<provider-id>` 引用它。
+
+模型配置中的「流式输出」开关会写入 `PluginLlmRequest.isStreamEnabled()`：
+
+- 开启时，Provider 可以在 Future 完成前多次调用 `onTextDelta.accept()`；
+- 关闭时，Provider 只完成 Future，不发送文本增量；
+- 最终 `PluginLlmResponse`、异常和取消统一由 Future 表达；
+- 宿主取消协程时会调用 `future.cancel(true)`，Provider 应同时关闭上游请求。
+
+Provider 自己持有的凭据必须通过 `secrets()` 保存，宿主不会把用户已配置的其他模型
+密钥传给插件。
 
 Provider 的基本结构如下：
 
@@ -855,24 +864,27 @@ public final class HelloProvider implements PluginLlmProvider {
     }
 
     @Override
-    public CompletableFuture<PluginLlmResponse> completeAsync(
-        PluginLlmRequest request
+    public CompletableFuture<PluginLlmResponse> executeAsync(
+        PluginLlmRequest request,
+        Consumer<String> onTextDelta
     ) {
-        return CompletableFuture.completedFuture(
-            new PluginLlmResponse(
-                "Hello from the provider",
+        return CompletableFuture.supplyAsync(() -> {
+            String answer = "Hello from the provider";
+            if (request.isStreamEnabled()) {
+                onTextDelta.accept("Hello ");
+                onTextDelta.accept("from the provider");
+            }
+            return new PluginLlmResponse(
+                answer,
                 "[]",
                 "stop",
                 0,
                 0
-            )
-        );
+            );
+        });
     }
 }
 ```
-
-流式 Provider 还要实现 `stream()`，在收到数据时调用 `PluginLlmListener`，并在结束、
-取消或 detach 时关闭 `PluginLlmStream`。
 
 ## 13. 运行时代理
 

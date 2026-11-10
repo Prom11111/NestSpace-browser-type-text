@@ -39,12 +39,10 @@ import com.coke.nestspace.plugin.PluginFilePickerRequest;
 import com.coke.nestspace.plugin.PluginHttpMethod;
 import com.coke.nestspace.plugin.PluginHttpRequest;
 import com.coke.nestspace.plugin.PluginLifecycle;
-import com.coke.nestspace.plugin.PluginLlmListener;
 import com.coke.nestspace.plugin.PluginLlmModel;
 import com.coke.nestspace.plugin.PluginLlmProvider;
 import com.coke.nestspace.plugin.PluginLlmRequest;
 import com.coke.nestspace.plugin.PluginLlmResponse;
-import com.coke.nestspace.plugin.PluginLlmStream;
 import com.coke.nestspace.plugin.PluginNotification;
 import com.coke.nestspace.plugin.PluginNotificationAction;
 import com.coke.nestspace.plugin.PluginPageSpec;
@@ -84,6 +82,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * Broad, non-hardening plugin example.
@@ -703,21 +702,17 @@ public final class RuntimeDemoPlugin implements
     }
 
     @Override
-    public CompletableFuture<PluginLlmResponse> completeAsync(
-        PluginLlmRequest request
-    ) {
-        return CompletableFuture.completedFuture(demoResponse(request));
-    }
-
-    @Override
-    public PluginLlmStream stream(
+    public CompletableFuture<PluginLlmResponse> executeAsync(
         PluginLlmRequest request,
-        PluginLlmListener listener
+        Consumer<String> onTextDelta
     ) {
-        listener.onTextDelta("Runtime ");
-        listener.onTextDelta("Demo");
-        listener.onComplete(demoResponse(request));
-        return new ClosedStream();
+        return CompletableFuture.supplyAsync(() -> {
+            if (request.isStreamEnabled()) {
+                onTextDelta.accept("Runtime ");
+                onTextDelta.accept("Demo");
+            }
+            return demoResponse(request);
+        });
     }
 
     private PluginLlmResponse demoResponse(PluginLlmRequest request) {
@@ -793,17 +788,6 @@ public final class RuntimeDemoPlugin implements
         public void onOpen(PluginWebSocket socket) {
             socket.sendText("runtime-demo");
             socket.close(1000, "demo complete");
-        }
-    }
-
-    private static final class ClosedStream implements PluginLlmStream {
-        @Override
-        public boolean isClosed() {
-            return true;
-        }
-
-        @Override
-        public void close() {
         }
     }
 

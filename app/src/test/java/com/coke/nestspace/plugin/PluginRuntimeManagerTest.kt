@@ -96,19 +96,13 @@ class PluginRuntimeManagerTest {
 
         override fun getModels(): List<PluginLlmModel> = emptyList()
 
-        override fun completeAsync(
-            request: PluginLlmRequest
-        ): CompletableFuture<PluginLlmResponse> =
-            CompletableFuture.completedFuture(
+        override fun executeAsync(
+            request: PluginLlmRequest,
+            onTextDelta: java.util.function.Consumer<String>
+        ): CompletableFuture<PluginLlmResponse> {
+            return CompletableFuture.completedFuture(
                 PluginLlmResponse("", "[]", "stop", 0, 0)
             )
-
-        override fun stream(
-            request: PluginLlmRequest,
-            listener: PluginLlmListener
-        ): PluginLlmStream = object : PluginLlmStream {
-            override fun isClosed(): Boolean = true
-            override fun close() = Unit
         }
     }
 

@@ -39,7 +39,7 @@
 | 通知动作 | 已实现 | 通知按钮通过事件总线回传插件 |
 | 分享与剪贴板 | 已实现 | 文本/文件分享和敏感剪贴板标记 |
 | UI 页面与 Renderer | 部分实现 | 注册表、Manifest 和 JSON 解析已完成，通用 Compose 宿主页待接 |
-| LLM Provider | 已实现 | `plugin://provider-id` 接入模型配置，支持流式和工具调用 |
+| LLM Provider | 已实现 | `plugin://provider-id` 接入模型配置；统一 `executeAsync()`，按用户开关返回流式或完整结果 |
 | 通知 Host API | 已实现 | 插件命名空间、独立渠道、动作和权限检查 |
 | 网络 Host API | 已实现 | HTTP(S)、域名白名单、超时和大小限制 |
 | SSE Host API | 已实现 | HTTP/HTTPS 流式事件、多行 data、事件 ID 和 retry |
@@ -1096,8 +1096,11 @@ Manifest 的 `contributes.pages` 和 `contributes.result_renderers` 注册声明
 plugin://example-provider
 ```
 
-宿主将内部 ChatProtocol 转换为 JSON messages/tools，插件返回文本、工具调用、停止原因
-和 token 用量。Provider 可实现同步完成或流式输出；流式文本会直接进入 Agent UI。
+宿主将内部 ChatProtocol 转换为 JSON messages/tools，并通过唯一的
+`executeAsync(request, onTextDelta)` 调用 Provider。模型配置的「流式输出」开关决定
+`request.isStreamEnabled()`；开启时插件可以通过 `Consumer<String>` 发送文本增量，
+关闭时不发送增量。两种模式都返回同一个 `CompletableFuture<PluginLlmResponse>`，
+其中包含文本、工具调用、停止原因和 token 用量。
 
 插件 Provider 自己持有凭据，应通过 `secrets()` 保存。宿主不会把其他模型的 API Key
 传给 Provider。

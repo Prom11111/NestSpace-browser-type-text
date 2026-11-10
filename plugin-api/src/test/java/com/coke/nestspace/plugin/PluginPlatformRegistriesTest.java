@@ -8,6 +8,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
@@ -244,20 +245,13 @@ public class PluginPlatformRegistriesTest {
             }
 
             @Override
-            public CompletableFuture<PluginLlmResponse> completeAsync(
-                PluginLlmRequest request
+            public CompletableFuture<PluginLlmResponse> executeAsync(
+                PluginLlmRequest request,
+                Consumer<String> onTextDelta
             ) {
                 return CompletableFuture.completedFuture(
                     new PluginLlmResponse("ok", null, "stop", 1, 1)
                 );
-            }
-
-            @Override
-            public PluginLlmStream stream(
-                PluginLlmRequest request,
-                PluginLlmListener listener
-            ) {
-                throw new UnsupportedOperationException();
             }
         };
     }

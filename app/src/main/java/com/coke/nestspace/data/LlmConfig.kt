@@ -72,7 +72,9 @@ data class LlmConfig(
     /** Visible answer budget. Hidden reasoning is added by providers on top. */
     val maxTokens: Int = 2048,
     val temperature: Double = 0.7,
-    val reasoningEffort: ReasoningEffort = ReasoningEffort.MEDIUM
+    val reasoningEffort: ReasoningEffort = ReasoningEffort.MEDIUM,
+    /** Ask the provider for incremental text while generating the answer. */
+    val streamingEnabled: Boolean = true
 ) {
     val isConfigured: Boolean
         get() = if (pluginProviderId() != null) {
