@@ -408,8 +408,8 @@ class ToolRegistry(
 
     /**
      * Models often skip space_launch when an app is already running. Enforce
-     * the current user's presentation intent at the ui_* boundary so an
-     * information request cannot silently continue in a visible app.
+     * the presentation mode at the ui_* boundary so assistant-controlled apps
+     * stay in the mirror unless the caller explicitly requests visible mode.
      */
     internal suspend fun alignAssistantPresentation(args: JSONObject, ctx: ToolContext) {
         if (ctx.caller != Caller.LOCAL_AGENT &&
@@ -425,12 +425,7 @@ class ToolRegistry(
         val instanceId = requestedInstance ?: owner?.instanceId ?: return
         val mirrored = ContainerUiClient.isMirrorMode(context, slot)
             ?: (HeadlessMirrorWindow.activeSlot() == slot)
-        val desired = when (ctx.displayMode) {
-            ContainerDisplayMode.BACKGROUND,
-            ContainerDisplayMode.MIRROR -> AssistantPresentation.HEADLESS
-            ContainerDisplayMode.VISIBLE -> AssistantPresentation.VISIBLE
-            ContainerDisplayMode.AUTO -> assistantPresentation(ctx.userUtterances)
-        }
+        val desired = assistantPresentation(ctx.displayMode)
         val offscreen = ctx.displayMode == ContainerDisplayMode.BACKGROUND
         val wantsMirror = desired == AssistantPresentation.HEADLESS
         if (mirrored == wantsMirror) {

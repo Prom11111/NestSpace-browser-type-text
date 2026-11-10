@@ -26,37 +26,16 @@ internal enum class AssistantPresentation { VISIBLE, HEADLESS }
 /**
  * Presentation policy for virtual apps driven by the in-app assistant.
  *
- * Explicit in-app actions win over information words: "open Douyin and search"
- * is visible, while "open Douyin and check what is shown" remains headless.
+ * AUTO always uses the mirror. A visible app is reserved for an explicit
+ * display override or a user takeover; wording such as "open" or "search"
+ * must never promote an assistant-controlled app to full screen.
  */
-internal fun assistantPresentation(userUtterances: List<String>): AssistantPresentation {
-    val text = userUtterances.joinToString(" ").lowercase()
-    val operation = listOf(
-        "搜索", "搜一下", "搜一搜", "查找", "点击", "点一下", "点开",
-        "关注", "点赞", "收藏", "评论", "发布", "下单", "购买", "支付",
-        "预约", "转发", "分享", "播放",
-        "search", "tap", "click", "follow", "like", "comment", "post",
-        "order", "buy", "play", "share"
-    ).any(text::contains)
-    if (operation) return AssistantPresentation.VISIBLE
-
-    val open = listOf("打开", "启动", "进入", "open", "launch", "start")
-        .any(text::contains)
-    val information = listOf(
-        "获取", "查看", "读取", "整理", "总结", "汇总", "列出", "告诉我",
-        "发我", "给我", "标题", "结果", "列表", "提取", "找出", "返回",
-        "有哪些", "是什么", "多少", "热门", "推荐", "热榜", "排名", "资讯",
-        "内容", "查一下", "看看",
-        "read", "get", "check", "collect", "summarize", "tell me", "send me",
-        "title", "titles", "result", "results", "list", "extract", "what",
-        "trending", "ranking"
-    ).any(text::contains)
-    return if (open && !information) {
+internal fun assistantPresentation(displayMode: ContainerDisplayMode): AssistantPresentation =
+    if (displayMode == ContainerDisplayMode.VISIBLE) {
         AssistantPresentation.VISIBLE
     } else {
         AssistantPresentation.HEADLESS
     }
-}
 
 data class ToolContext(
     val sessionId: String,
