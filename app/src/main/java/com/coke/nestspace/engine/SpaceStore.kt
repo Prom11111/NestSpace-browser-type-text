@@ -11,7 +11,6 @@ internal data class StoredInstance(
     val createdAt: Long,
     val lastLaunchedAt: Long,
     val environmentVersion: Int = CURRENT_ENVIRONMENT_VERSION,
-    val compatibilityProfile: String? = null,
     val lastProbeResult: String? = null,
 )
 
@@ -144,7 +143,6 @@ internal data class StoredApp(
                         .put("created_at", instance.createdAt)
                         .put("last_launched_at", instance.lastLaunchedAt)
                         .put("environment_version", instance.environmentVersion)
-                        .put("compatibility_profile", instance.compatibilityProfile ?: JSONObject.NULL)
                         .put("last_probe_result", instance.lastProbeResult ?: JSONObject.NULL)
                 )
             }
@@ -175,8 +173,6 @@ internal data class StoredApp(
                                 "environment_version",
                                 CURRENT_ENVIRONMENT_VERSION
                             ),
-                            compatibilityProfile = item.optString("compatibility_profile")
-                                .takeIf { it.isNotBlank() && it != "null" },
                             lastProbeResult = item.optString("last_probe_result")
                                 .takeIf { it.isNotBlank() && it != "null" },
                         )

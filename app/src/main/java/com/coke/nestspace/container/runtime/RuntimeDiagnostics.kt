@@ -27,7 +27,6 @@ object RuntimeDiagnostics {
         processUid: Int,
         processPid: Int,
         headless: Boolean,
-        compatibilityProfile: String?,
         pathMapProbe: String? = null,
         externalPathMapProbe: String? = null,
         procViewProbe: String? = null,
@@ -55,7 +54,6 @@ object RuntimeDiagnostics {
         .put("android_api", probeAndroidApi(environment))
         .put("page_size", native?.pageSize ?: probe?.pageSize ?: 0L)
         .put("headless", headless)
-        .put("compatibility_profile", compatibilityProfile ?: JSONObject.NULL)
         .put(
             "storage",
             JSONObject()

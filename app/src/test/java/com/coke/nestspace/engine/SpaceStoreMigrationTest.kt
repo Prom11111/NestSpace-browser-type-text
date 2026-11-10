@@ -42,7 +42,6 @@ class SpaceStoreMigrationTest {
 
         val instance = app!!.instances.single()
         assertEquals(CURRENT_ENVIRONMENT_VERSION, instance.environmentVersion)
-        assertNull(instance.compatibilityProfile)
         assertNull(instance.lastProbeResult)
     }
 
@@ -53,7 +52,6 @@ class SpaceStoreMigrationTest {
             createdAt = 10,
             lastLaunchedAt = 20,
             environmentVersion = 1,
-            compatibilityProfile = "profile-v1",
             lastProbeResult = "consistent"
         )
         val json = JSONObject()
@@ -67,7 +65,6 @@ class SpaceStoreMigrationTest {
                 .put("created_at", instance.createdAt)
                 .put("last_launched_at", instance.lastLaunchedAt)
                 .put("environment_version", instance.environmentVersion)
-                .put("compatibility_profile", instance.compatibilityProfile)
                 .put("last_probe_result", instance.lastProbeResult)))
 
         val restored = StoredApp.fromJson(json)!!.instances.single()

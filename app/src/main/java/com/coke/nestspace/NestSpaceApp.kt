@@ -74,9 +74,6 @@ class NestSpaceApp : Application() {
 
     private fun installRuntimeHooks() {
         RuntimeHostIdentity.packageName = packageName
-        com.coke.nestspace.plugin.PluginCenterStore.applyProcessRuntimePlugins(
-            this
-        )
         RuntimeHostHooks.openBrowser = { context, url ->
             context.startActivity(
                 Intent(context, BrowserActivity::class.java)

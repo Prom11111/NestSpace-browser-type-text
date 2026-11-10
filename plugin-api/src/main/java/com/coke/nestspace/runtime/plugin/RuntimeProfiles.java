@@ -1,6 +1,9 @@
 package com.coke.nestspace.runtime.plugin;
 
+import com.coke.nestspace.plugin.PluginCapability;
+
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,25 +14,31 @@ import java.util.Map;
 public final class RuntimeProfiles {
 
     private static final Object LOCK = new Object();
-    private static final Map<String, RuntimeProfileResolver> RESOLVERS =
+    private static final Map<String, RuntimeProfileProvider> RESOLVERS =
         new LinkedHashMap<>();
 
     private RuntimeProfiles() {
     }
 
-    public static void register(
-        String pluginId,
-        RuntimeProfileResolver resolver
-    ) {
-        String id = pluginId == null ? "" : pluginId.trim();
-        if (id.isEmpty()) {
-            throw new IllegalArgumentException("pluginId is required");
+    public static void install(RuntimeProfileProvider provider) {
+        if (provider == null) {
+            throw new IllegalArgumentException("profile provider is required");
         }
-        if (resolver == null) {
-            throw new IllegalArgumentException("resolver is required");
+        String id = provider.getDescriptor() == null
+            ? ""
+            : provider.getDescriptor().getId().trim();
+        if (id.isEmpty()) {
+            throw new IllegalArgumentException("plugin id is required");
+        }
+        if (!provider.getDescriptor().getCapabilities().contains(
+            PluginCapability.RUNTIME_HOOKS
+        )) {
+            throw new IllegalArgumentException(
+                "RuntimeProfileProvider requires RUNTIME_HOOKS"
+            );
         }
         synchronized (LOCK) {
-            RESOLVERS.put(id, resolver);
+            RESOLVERS.put(id, provider);
         }
     }
 
@@ -43,12 +52,23 @@ public final class RuntimeProfiles {
         RuntimeLaunchSpec spec,
         ClassLoader loader
     ) {
-        List<RuntimeProfileResolver> ordered;
+        List<RuntimeProfileProvider> ordered;
         synchronized (LOCK) {
             ordered = new ArrayList<>(RESOLVERS.values());
         }
-        for (RuntimeProfileResolver resolver : ordered) {
-            RuntimeProfile profile = resolver.resolve(spec, loader);
+        ordered.sort(
+            Comparator
+                .comparingInt(
+                    (RuntimeProfileProvider provider) ->
+                        provider.getDescriptor().getPriority()
+                )
+                .reversed()
+                .thenComparing(
+                    provider -> provider.getDescriptor().getId()
+                )
+        );
+        for (RuntimeProfileProvider provider : ordered) {
+            RuntimeProfile profile = provider.resolve(spec, loader);
             if (profile != null) return profile;
         }
         return null;

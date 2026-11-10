@@ -1,14 +1,13 @@
 package com.coke.nestspace.runtime
 
-import android.app.Application
 import android.content.Context
 import android.content.pm.ApplicationInfo
 
 /**
- * Narrow process-boundary contracts shared by the runtime implementations.
+ * Runtime data shared by the container and target Application factory.
  *
- * No container implementation, lifecycle helper or process-pool state belongs
- * here. The app installs plugins; each runtime owns its implementation.
+ * Host hooks remain here because target class loaders call into the host while
+ * avoiding a compile-time dependency on UI implementation classes.
  */
 data class RuntimeApplicationSpec(
     val packageName: String,
@@ -16,53 +15,6 @@ data class RuntimeApplicationSpec(
     val baseApkPath: String,
     val splitApkPaths: List<String>
 )
-
-interface RuntimeApplicationFactory {
-    fun create(
-        spec: RuntimeApplicationSpec,
-        loader: ClassLoader,
-        containerContext: Context
-    ): Application?
-}
-
-object RuntimeApplicationFactories {
-    @Volatile
-    var target: RuntimeApplicationFactory? = null
-}
-
-interface RuntimePluginInstaller {
-    fun install()
-}
-
-/**
- * The app composition root installs runtime backends by class name so plugin
- * APIs do not need a compile-time dependency on runtime implementation code.
- */
-object RuntimePluginLoader {
-    private val installed = LinkedHashMap<String, RuntimePluginInstaller>()
-
-    private val coreInstallers = listOf(
-        "com.coke.nestspace.container.application.ApplicationRuntimeInstaller"
-    )
-
-    @Synchronized
-    fun installCore() {
-        installClasses(coreInstallers)
-    }
-
-    private fun installClasses(classNames: List<String>) {
-        classNames.forEach { className ->
-            if (installed.containsKey(className)) return@forEach
-            val plugin = runCatching {
-                val type = Class.forName(className)
-                type.getDeclaredConstructor().newInstance() as RuntimePluginInstaller
-            }.getOrNull() ?: return@forEach
-            runCatching { plugin.install() }.onSuccess {
-                installed[className] = plugin
-            }
-        }
-    }
-}
 
 object RuntimeHostIdentity {
     @Volatile

@@ -27,7 +27,6 @@ data class VirtualInstance(
     val lastLaunchedAt: Long,
     val dataDir: String,
     val environmentVersion: Int = 1,
-    val compatibilityProfile: String? = null,
     val lastProbeResult: String? = null
 )
 

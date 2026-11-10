@@ -5,6 +5,7 @@ package com.coke.nestspace.plugin;
  */
 public enum PluginCapability {
     RUNTIME_LAUNCH_POLICY,
+    RUNTIME_HOOKS,
     AGENT_PROMPT,
     AGENT_QUESTION,
     AGENT_MODEL_REQUEST,
@@ -30,6 +31,5 @@ public enum PluginCapability {
     NETWORK,
     WEBSOCKET,
     ANDROID_APIS,
-    STORAGE,
-    RUNTIME_PROXY
+    STORAGE
 }

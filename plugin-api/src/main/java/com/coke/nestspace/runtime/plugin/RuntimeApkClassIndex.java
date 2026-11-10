@@ -4,6 +4,7 @@ import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -33,7 +34,7 @@ public final class RuntimeApkClassIndex {
             DexFile dex = null;
             try {
                 dex = new DexFile(path);
-                java.util.Enumeration<String> entries = dex.entries();
+                Enumeration<String> entries = dex.entries();
                 while (entries.hasMoreElements()) {
                     names.add(entries.nextElement());
                 }

@@ -27,7 +27,7 @@ class PluginSourceRegistryTest {
                   "id": "test.disabled.source",
                   "name": "Disabled source",
                   "version": "1.0.0",
-                  "api_version": 2,
+                  "api_version": 1,
                   "entry_class": "test.DisabledPlugin",
                   "permissions": []
                 }

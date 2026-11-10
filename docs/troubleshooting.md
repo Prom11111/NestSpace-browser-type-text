@@ -191,7 +191,7 @@ Android 会按内存和后台策略回收进程。NestSpace 只能保证前台�
 ### 插件设置页打不开或显示错误
 
 - 确认 Manifest 声明了 `settings`；
-- 确认入口类实现 `PluginSettingsViewProvider`；
+- 确认 Manifest 声明 `settings`，且 `contributes.settings` 指向可解析的 Schema；
 - 如果是 Schema 回退模式，检查 `contributions.settings` JSON；
 - 查看 `AndroidRuntime`，确认自定义 View 没有在非 UI 线程创建或访问已关闭的 Context。
 

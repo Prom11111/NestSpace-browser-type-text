@@ -8,7 +8,7 @@
 > 状态：Stage A/B + Stage C-lite + Stage C-D（独立进程/崩溃隔离、Job/通知虚拟化、宿主/系统广播桥接、Binder/UID 权限模型、完整 VPMS、跨虚拟应用查询、权限授予、多实例 .so 进程隔离）已实现并在 Android 7.1.1 / Android 16 / Android 17（API 37 模拟器）/ MuMu(Android 15, ARM bridge) 验证；本地 LLM Agent（Claude/OpenAI 兼容，共用 chat 协议）已实现并用 mock 与第三方 Anthropic 兼容端点实网验通；完整后台 Job/Alarm 唤醒与系统侧真实 UID 欺骗仍属于后续增强
 
 > 当前实现已拆分 `app` 和 `plugin-api`，并加入 Debug 源码插件、
-> 插件中心、自定义设置 View 和版本化运行时代理插件。本文保留早期容器设计背景；
+> 插件中心、声明式 SettingView 和版本化运行时代理插件。本文保留早期容器设计背景；
 > 当前模块边界以 [架构与限制](architecture.md)、
 > [运行时模块边界](https://github.com/chuccp/NestSpace/blob/main/docs/runtime-modules.md) 和
 > [插件编写指南](plugin-authoring.md) 为准。

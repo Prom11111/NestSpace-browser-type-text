@@ -1,6 +1,8 @@
 package com.coke.nestspace.plugin
 
 import com.coke.nestspace.speech.SpeechGateway
+import com.coke.nestspace.runtime.plugin.RuntimeProfileProvider
+import com.coke.nestspace.runtime.plugin.RuntimeProfiles
 
 /**
  * Attaches one instantiated plugin to every Hook registry it implements.
@@ -21,8 +23,8 @@ internal object PluginRuntimeManager {
             if (plugin is RuntimeProxyPlugin) {
                 RuntimeProxyPlugins.install(plugin)
             }
-            if (plugin is RuntimeProxyExtensionProvider) {
-                RuntimeProxyExtensions.install(plugin)
+            if (plugin is RuntimeProfileProvider) {
+                RuntimeProfiles.install(plugin)
             }
             if (plugin is AgentHookPlugin) {
                 AgentPlugins.install(plugin)
@@ -51,9 +53,6 @@ internal object PluginRuntimeManager {
             if (plugin is PluginSpeechProvider) {
                 PluginSpeechProviders.install(plugin)
             }
-            if (plugin is PluginSettingsViewProvider) {
-                PluginSettingsViewPlugins.install(plugin, context)
-            }
         } catch (error: Throwable) {
             detach(plugin, descriptor, context)
             throw error
@@ -71,7 +70,7 @@ internal object PluginRuntimeManager {
     ) {
         val id = descriptor.id
         RuntimeProxyPlugins.uninstall(id)
-        RuntimeProxyExtensions.uninstall(id)
+        RuntimeProfiles.unregister(id)
         AgentPlugins.uninstall(id)
         AgentModelPlugins.uninstall(id)
         AgentToolPlugins.uninstall(id)
@@ -79,7 +78,6 @@ internal object PluginRuntimeManager {
         AgentToolPresentationPlugins.uninstall(id)
         PluginCommandPlugins.uninstall(id)
         PluginUiPlugins.uninstall(id)
-        PluginSettingsViewPlugins.uninstall(id)
         if (plugin is PluginLlmProvider) {
             PluginLlmProviders.uninstallProvider(plugin.providerId)
         }
@@ -97,7 +95,7 @@ internal object PluginRuntimeManager {
 
     private fun descriptorOf(plugin: Any): PluginDescriptor = when (plugin) {
         is RuntimeProxyPlugin -> plugin.descriptor
-        is RuntimeProxyExtensionProvider -> plugin.descriptor
+        is RuntimeProfileProvider -> plugin.descriptor
         is AgentHookPlugin -> plugin.descriptor
         is AgentModelHookPlugin -> plugin.descriptor
         is AgentToolProvider -> plugin.descriptor
@@ -107,7 +105,6 @@ internal object PluginRuntimeManager {
         is PluginUiProvider -> plugin.descriptor
         is PluginLlmProvider -> plugin.descriptor
         is PluginSpeechProvider -> plugin.descriptor
-        is PluginSettingsViewProvider -> plugin.descriptor
         else -> error("plugin does not expose a descriptor")
     }
 }

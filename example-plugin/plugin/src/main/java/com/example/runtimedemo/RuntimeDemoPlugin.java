@@ -1,12 +1,12 @@
 package com.example.runtimedemo;
 
+import android.app.Application;
+import android.app.Activity;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.View;
-import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.Switch;
 import android.widget.TextView;
 
 import com.coke.nestspace.plugin.AgentHookPlugin;
@@ -49,8 +49,6 @@ import com.coke.nestspace.plugin.PluginPageSpec;
 import com.coke.nestspace.plugin.PluginPickedFile;
 import com.coke.nestspace.plugin.PluginRendererSpec;
 import com.coke.nestspace.plugin.PluginShareRequest;
-import com.coke.nestspace.plugin.PluginSettingsViewContext;
-import com.coke.nestspace.plugin.PluginSettingsViewProvider;
 import com.coke.nestspace.plugin.PluginSseConnection;
 import com.coke.nestspace.plugin.PluginSseEvent;
 import com.coke.nestspace.plugin.PluginSseListener;
@@ -72,6 +70,9 @@ import com.coke.nestspace.plugin.RuntimeLaunchMode;
 import com.coke.nestspace.plugin.RuntimeLaunchPolicy;
 import com.coke.nestspace.plugin.RuntimeProxyPlugin;
 import com.coke.nestspace.plugin.RuntimeVersionMatcher;
+import com.coke.nestspace.runtime.plugin.RuntimeLaunchSpec;
+import com.coke.nestspace.runtime.plugin.RuntimeProfile;
+import com.coke.nestspace.runtime.plugin.RuntimeProfileProvider;
 
 import org.json.JSONObject;
 
@@ -96,7 +97,7 @@ public final class RuntimeDemoPlugin implements
     PluginCommandProvider,
     PluginUiProvider,
     PluginLlmProvider,
-    PluginSettingsViewProvider,
+    RuntimeProfileProvider,
     RuntimeProxyPlugin {
 
     private static final String PLUGIN_ID = "com.example.runtime.demo";
@@ -136,7 +137,7 @@ public final class RuntimeDemoPlugin implements
             PluginCapability.NETWORK,
             PluginCapability.WEBSOCKET,
             PluginCapability.RUNTIME_LAUNCH_POLICY,
-            PluginCapability.RUNTIME_PROXY
+            PluginCapability.RUNTIME_HOOKS
         )
     );
 
@@ -162,60 +163,17 @@ public final class RuntimeDemoPlugin implements
     }
 
     @Override
-    public View createSettingsView(PluginSettingsViewContext settingsContext) {
-        Context ui = settingsContext.getContext();
-        int padding = Math.round(20 * ui.getResources().getDisplayMetrics().density);
-        LinearLayout layout = new LinearLayout(ui);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(padding, padding, padding, padding);
-
-        TextView title = new TextView(ui);
-        title.setText("Runtime Demo settings");
-        title.setTextSize(22);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        layout.addView(title);
-
-        TextView description = new TextView(ui);
-        description.setText(
-            "This screen is a plugin-owned Android View. Replace it with any " +
-                "layout, controls or custom drawing you need."
-        );
-        description.setPadding(0, padding / 2, 0, padding);
-        layout.addView(description);
-
-        Switch enabled = new Switch(ui);
-        enabled.setText("Enable demo tool");
-        layout.addView(enabled);
-
-        Button save = new Button(ui);
-        save.setText("Save");
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        saveParams.topMargin = padding;
-        layout.addView(save, saveParams);
-
-        TextView status = new TextView(ui);
-        status.setPadding(0, padding / 2, 0, 0);
-        layout.addView(status);
-
-        settingsContext.getHost().settings()
-            .getBoolean("enabled", true)
-            .thenAccept(value -> layout.post(() -> enabled.setChecked(value)));
-        save.setOnClickListener(view -> {
-            save.setEnabled(false);
-            status.setText("Saving…");
-            settingsContext.getHost().settings()
-                .putBoolean("enabled", enabled.isChecked())
-                .whenComplete((ignored, error) -> layout.post(() -> {
-                    save.setEnabled(true);
-                    status.setText(
-                        error == null ? "Saved" : error.getMessage()
-                    );
-                }));
-        });
-        return layout;
+    public RuntimeProfile resolve(
+        RuntimeLaunchSpec spec,
+        ClassLoader loader
+    ) {
+        if (!DEMO_PACKAGE_NAME.equals(spec.getPackageName()) ||
+            !RuntimeVersionMatcher.glob(DEMO_VERSION_GLOB)
+                .matches(spec.getVersionCode())
+        ) {
+            return null;
+        }
+        return new DemoRuntimeProfile();
     }
 
     @Override
@@ -817,6 +775,78 @@ public final class RuntimeDemoPlugin implements
             params.topMargin = 10;
             root.addView(body, params);
             return root;
+        }
+    }
+
+    /**
+     * Generic teaching profile. A real profile should load and validate only
+     * the target classes it needs before installing version-specific hooks.
+     */
+    private static final class DemoRuntimeProfile implements RuntimeProfile {
+        @Override
+        public String getId() {
+            return "runtime-demo-profile";
+        }
+
+        @Override
+        public void beforeApplicationAttach(
+            RuntimeLaunchSpec spec,
+            ClassLoader loader,
+            Context context
+        ) {
+            logHook("beforeApplicationAttach", spec);
+        }
+
+        @Override
+        public void afterApplicationCreated(
+            RuntimeLaunchSpec spec,
+            ClassLoader loader,
+            Context context,
+            Application application
+        ) {
+            logHook("afterApplicationCreated", spec);
+        }
+
+        @Override
+        public void afterEmbeddedApplicationCreated(
+            RuntimeLaunchSpec spec,
+            ClassLoader loader,
+            Context context,
+            Application application
+        ) {
+            logHook("afterEmbeddedApplicationCreated", spec);
+        }
+
+        @Override
+        public void beforeTargetActivity(
+            RuntimeLaunchSpec spec,
+            ClassLoader loader,
+            Context context,
+            Class<? extends Activity> activityClass
+        ) {
+            logHook("beforeTargetActivity", spec);
+        }
+
+        @Override
+        public AutoCloseable installFirstActivityHooks(
+            RuntimeLaunchSpec spec,
+            ClassLoader loader,
+            Context context
+        ) {
+            logHook("installFirstActivityHooks", spec);
+            return () -> {
+            };
+        }
+
+        private static void logHook(
+            String hook,
+            RuntimeLaunchSpec spec
+        ) {
+            android.util.Log.d(
+                "RuntimeDemoPlugin",
+                hook + " target=" + spec.getPackageName() +
+                    "@" + spec.getVersionCode()
+            );
         }
     }
 }

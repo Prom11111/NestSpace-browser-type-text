@@ -1,7 +1,6 @@
 package com.coke.nestspace.container
 
 import com.coke.nestspace.i18n.AppLanguage
-import com.coke.nestspace.runtime.RuntimeApplicationFactories
 import com.coke.nestspace.runtime.RuntimeApplicationSpec
 import com.coke.nestspace.runtime.RuntimeHostHooks
 import com.coke.nestspace.runtime.webUrlFromViewIntent
@@ -17,6 +16,7 @@ import com.coke.nestspace.container.loader.PluginClassPathResolver
 import com.coke.nestspace.container.loader.SharedLibraries
 import com.coke.nestspace.container.loader.withContainerClassLoader
 import com.coke.nestspace.container.remote.ContainerProcessBrokerClient
+import com.coke.nestspace.container.application.TargetApplicationFactory
 import com.coke.nestspace.container.application.toRuntimeApplicationSpec
 import com.coke.nestspace.runtime.plugin.RuntimeProfile
 import com.coke.nestspace.runtime.plugin.RuntimeProfiles
@@ -555,6 +555,7 @@ class ContainerSession private constructor(
                 "target does not expose an embedded ApplicationLike"
             )
         }
+        refreshNativeHooks()
         startupCoordinator.run(AndroidStartupPhase.STARTUP_COMPATIBILITY) {
             runtimeProfile?.afterEmbeddedApplicationCreated(
                 applicationSpec,
@@ -563,7 +564,6 @@ class ContainerSession private constructor(
                 application
             )
         }
-        refreshNativeHooks()
         // Target Application.onCreate often registers its own uncaught
         // exception handler (crash reporting) that terminates the host process.
         // Re-install the guard so target-thread failures stay contained.
@@ -706,7 +706,6 @@ class ContainerSession private constructor(
                 processUid = ContainerIdentity.hostUid(),
                 processPid = android.os.Process.myPid(),
                 headless = headless,
-                compatibilityProfile = runtimeProfile?.id,
                 pathMapProbe = pathMapProbe,
                 externalPathMapProbe = externalPathMapProbe,
                 procViewProbe = procViewProbe,
@@ -1782,7 +1781,6 @@ class ContainerSession private constructor(
                 loader,
                 context
             )
-
             ContainerLaunchProgress.advance(LaunchProgressStage.ATTACHING_APPLICATION)
             val applicationAttachStartedAt = SystemClock.elapsedRealtime()
             val application = ProcessNameCompat.withProcessName(spec.targetProcessName) {
@@ -1944,19 +1942,18 @@ class ContainerSession private constructor(
                 baseApkPath = spec.baseApkPath,
                 splitApkPaths = spec.splitApkPaths
             )
-            val factory = RuntimeApplicationFactories.target
-                ?: error("No compatibility application runtime installed")
-            val application = factory.create(applicationSpec, loader, context)
-                ?: error(
-                    "${factory.javaClass.name} failed to create target Application"
-                )
+            val application = TargetApplicationFactory.create(
+                applicationSpec,
+                loader,
+                context
+            )
             if (context is ContainerContext) {
                 context.targetApplication = application
             }
             Log.d(
                 TAG,
                 "attached Application ${application.javaClass.name} through " +
-                    factory.javaClass.name
+                TargetApplicationFactory.javaClass.name
             )
             return application
         }

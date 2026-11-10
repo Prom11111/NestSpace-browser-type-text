@@ -34,7 +34,7 @@
 | 托管任务 | 已实现 | 后台任务、进度、取消、超时和 detach 回收 |
 | 插件事件总线 | 已实现 | 按事件类型订阅，来源强制使用插件 ID |
 | 设置与密钥 | 已实现 | 普通设置和 Android Keystore 加密密钥 |
-| 插件设置 View | 已实现 | 插件通过 Java API 返回任意 Android View；设置页作为独立 Activity 承载 |
+| 插件设置表单 | 已实现 | `PluginSettingView` 导入 Schema，宿主统一渲染、校验和持久化 |
 | 文件选择与导出 | 已实现 | SAF 选择、读取、另存为用户可见文件 |
 | 通知动作 | 已实现 | 通知按钮通过事件总线回传插件 |
 | 分享与剪贴板 | 已实现 | 文本/文件分享和敏感剪贴板标记 |
@@ -89,6 +89,7 @@ Kotlin 只用于 NestSpace 内部实现和适配。
 | Capability | 能力 |
 | --- | --- |
 | `RUNTIME_LAUNCH_POLICY` | 根据目标包名和版本选择启动策略 |
+| `RUNTIME_HOOKS` | 为目标 Application 和 Activity 提供版本化深层 Hook |
 | `AGENT_PROMPT` | 贡献 Agent 提示词 |
 | `AGENT_QUESTION` | 在模型前处理问答 |
 | `AGENT_MODEL_REQUEST` | 检查或修改模型请求 |
@@ -115,7 +116,6 @@ Kotlin 只用于 NestSpace 内部实现和适配。
 | `WEBSOCKET` | 建立受控 `ws`/`wss` 会话并收发消息 |
 | `ANDROID_APIS` | 使用受控 Android API 门面 |
 | `STORAGE` | 读写插件私有文件 |
-| `RUNTIME_PROXY` | 按目标包名和版本贡献运行时代理描述 |
 
 后续能力计划：
 
@@ -136,7 +136,8 @@ Kotlin 只用于 NestSpace 内部实现和适配。
 - 启动策略匹配使用目标包名和 `versionCode`；目标专用 Profile 可以使用启动描述中
   公开的包名、版本、APK 和类名信息。
 - Android API 门面属于高权限能力，默认不授予。
-- 工具展示 View 和插件设置 View 获得短生命周期、受控的 Android `Context`；插件仍不能
+- 只有工具展示 View 获得短生命周期、受控的 Android `Context`；插件设置不创建 View；
+  插件仍不能
   直接获得宿主 Application 或任意 Activity。
 - 插件设置和密钥按插件 ID 命名空间隔离。
 - 插件工具结果进入模型前，展示 Hook 不能改写原始结果。
@@ -530,7 +531,6 @@ AgentToolPresentation presentation = new AgentToolPresentation(
 - `PluginCommandPlugins`
 - `PluginUiPlugins`
 - `PluginLlmProviders`
-- `RuntimeProxyExtensions`
 
 共同规则：
 
@@ -925,49 +925,45 @@ host.secrets().put("api_key", key);
 String key = host.secrets().get("api_key", "").get();
 ```
 
-两者都按插件 ID 的 SHA-256 命名空间隔离。设置 Schema 通过
-`PluginSettingsSchemaParser` 解析，支持 `text`、`boolean`、`integer`、`select`
-和 `secret`。
+两者都按插件 ID 的 SHA-256 命名空间隔离。设置 Schema 由
+`PluginSettingView.importSchema()` 导入，支持 `text`、`boolean`、`integer`、
+`select` 和 `secret`，并支持必填、长度、URL/Email/Host、整数范围和正则校验。
 
-### 8.8.1 自定义设置 View
+### 8.8.1 声明式 SettingView
 
-插件可以实现 `PluginSettingsViewProvider`，自己创建完整的 Android 设置界面：
+插件不创建 Android View。Manifest 的 `contributes.settings` 指向一份 Schema，
+宿主把它导入为 `PluginSettingView` 并统一渲染：
 
-```java
-public final class ExamplePlugin implements
-    PluginLifecycle,
-    PluginSettingsViewProvider {
-
-    @Override
-    public View createSettingsView(PluginSettingsViewContext context) {
-        LinearLayout layout = new LinearLayout(context.getContext());
-        layout.setOrientation(LinearLayout.VERTICAL);
-
-        Switch enabled = new Switch(context.getContext());
-        enabled.setText("Enable feature");
-        layout.addView(enabled);
-
-        Button save = new Button(context.getContext());
-        save.setOnClickListener(view ->
-            context.getHost().settings()
-                .putBoolean("enabled", enabled.isChecked())
-        );
-        layout.addView(save);
-        return layout;
+```json
+{
+  "title": "Provider settings",
+  "fields": [
+    {
+      "id": "endpoint",
+      "title": "Endpoint",
+      "type": "text",
+      "format": "url",
+      "required": true
+    },
+    {
+      "id": "api_key",
+      "title": "API key",
+      "type": "secret",
+      "required": true
     }
+  ]
 }
 ```
 
 规则：
 
 - 必须声明 `SETTINGS` Capability；
-- `createSettingsView()` 在 UI 线程调用；
-- `getContext()` 只用于创建或 inflate View，页面关闭后不得保留；
-- `getHost()` 提供设置、密钥及其它有权限的 Host API；
-- 保存后可以调用 `context.close()` 回到插件中心；
-- 页面关闭时宿主调用 `onSettingsViewClosed(View)`；
-- 设置页是独立 Activity，系统返回后回到插件中心；
-- `contributes.settings` Schema 在没有自定义 View 时作为回退表单。
+- 宿主负责输入控件、错误提示、保存和再次打开时的回填；
+- `required`、`format`、`min_length`、`max_length`、`min`、`max`、`pattern`
+  均由宿主执行；
+- `secret` 使用 Keystore 加密，已保存值不会回显；
+- 插件运行时通过 `context.getHost().settings()` 和 `secrets()` 读取同一个命名空间；
+- 插件无法通过设置能力获得 Activity 或 View。
 
 ### 8.9 缓存与 SQLite
 
@@ -1189,7 +1185,7 @@ example.nestplugin
   "version": "1.2.0",
   "publisher": "Example Studio",
   "description": "Adds custom Agent tools and settings.",
-  "api_version": 2,
+  "api_version": 1,
   "min_host_version": "1.5.0",
   "entry_class": "com.example.ai.tools.AiToolsPlugin",
   "priority": 100,
@@ -1317,8 +1313,7 @@ Set<String> webSocketHosts = manifest.getWebSocketHosts();
 - **启用与停用**：长按菜单根据当前状态显示“停用”或“启用”；停用后图标变暗并显示
   “停用”角标，插件 Hook、工具、Provider、设置页和运行时代理立即从当前进程移除；
 - **长按菜单**：启用/停用、设置、重命名、分享、导出；第三方安装包额外提供删除；
-- **设置 View**：插件通过 `PluginSettingsViewProvider` 返回自己的 Android View，
-  宿主使用独立 Activity 承载；
+- **设置表单**：插件通过 Schema 声明 `PluginSettingView`，宿主统一渲染、校验和保存；
 - **重命名**：只改变插件中心显示名称，不修改 Manifest ID；
 - **分享与导出**：源码插件和第三方插件都生成可安装的 `.nestplugin`；
 - **删除**：仅第三方安装包可删除，并清理插件包、私有存储、缓存、SQLite、设置和密钥；
@@ -1351,7 +1346,7 @@ Manifest `contributes` 指向的文件已有解析器：
 
 - `tools.json`：`PluginContributionParser.parseTools()`；
 - `commands.json`：`PluginContributionParser.parseCommands()`；
-- `settings.schema.json`：`PluginSettingsSchemaParser.parse()`；
+- `settings.schema.json`：`PluginSettingView.importSchema()`；
 - 页面：`PluginUiDocumentParser.parse()`。
 
 示例位于：
@@ -1370,41 +1365,42 @@ Manifest `contributes` 指向的文件已有解析器：
 
 复杂页面使用受限 WebView，JS Bridge 只暴露白名单方法。插件不直接依赖 Compose。
 
-## 11. 运行时代理
+## 11. 启动策略
 
-声明式启动策略由 `RuntimeProxyPlugin` 提供。需要目标 Application、ClassLoader 或
-Activity 生命周期 Hook 时，插件使用 `plugin-api` 中的运行时代理契约：
+启动决策由 `RuntimeProxyPlugin` 负责：
+
+- `CONTAINER`：继续普通容器；
+- `HOST_FALLBACK`：启动宿主已安装的同包名应用；
+- `BLOCKED`：拒绝启动并返回原因。
+
+目标 Application、ClassLoader 和 Activity 生命周期仍由通用容器实现管理。插件不直接
+获得容器内部对象；需要版本化 Hook 时，实现 `RuntimeProfileProvider`。宿主按能力自动
+注册和注销 Provider，插件不再手工修改静态注册表。
 
 ```java
-public interface RuntimeProxyExtensionProvider {
-    PluginDescriptor getDescriptor();
-    CompletableFuture<RuntimeProxyContribution> resolveAsync(
-        RuntimeProxyContext context
-    );
+public final class ExampleRuntime implements RuntimeProfileProvider {
+    @Override
+    public PluginDescriptor getDescriptor() {
+        return DESCRIPTOR;
+    }
+
+    @Override
+    public RuntimeProfile resolve(
+        RuntimeLaunchSpec spec,
+        ClassLoader loader
+    ) {
+        return matches(spec) ? new TargetRuntimeProfile() : null;
+    }
 }
 ```
 
-插件在 `PluginLifecycle.onAttach()` 中注册 `RuntimeProfileResolver`，
-在 `onDetach()` 中反注册。Profile 可以使用：
+Profile 可覆盖：
 
-- `RuntimeLaunchSpec` 的版本、进程、APK 和 Activity 信息；
-- `RuntimeApkClassIndex` 枚举目标 DEX 类名；
-- 可直接比较的完整类名；
-- `RuntimePluginRuntime.withContainerClassLoader(...)`；
-- Application attach、创建、目标 Activity 前和首个 Activity Hook 生命周期。
-
-目标专用 Profile 的约束：
-
-- 必须匹配目标包名，并使用精确或明确的模糊版本匹配器；
-- 安装 Hook 前校验所需完整类名；
-- `RuntimeProxyContribution` 携带目标包名、版本和参数 JSON；
-- 必须有独立 API 版本；
-- 容器兼容扩展只能作用于目标槽位；
-- 插件异常不能导致宿主主进程崩溃；
-- 卸载不能影响正在启动的容器。
-
-发布者签名、信任等级、独立插件进程和自动回滚仍未实现，因此当前扩展 API 属于开发版
-能力。完整的运行时代理代码结构见[插件编写指南](plugin-authoring.md)。
+- `beforeApplicationAttach`
+- `afterApplicationCreated`
+- `afterEmbeddedApplicationCreated`
+- `beforeTargetActivity`
+- `installFirstActivityHooks`
 
 ## 12. 安全模型
 
@@ -1416,7 +1412,7 @@ public interface RuntimeProxyExtensionProvider {
 - `AGENT_TOOL_PRESENTATION`：高权限；自定义 Android View 会获得短作用域视图 Context；
 - `UI_PAGES`、`UI_RENDERERS`：中权限；
 - `NOTIFICATIONS`：中权限；
-- `SETTINGS`：高权限；自定义设置 View 会获得短作用域 Activity Context；
+- `SETTINGS`：高权限；只提供声明式 SettingView，不获得 Activity 或 View；
 - `SECRETS`：高权限；
 - `CACHE`：中权限；
 - `DATABASE`：中权限；
@@ -1433,14 +1429,14 @@ public interface RuntimeProxyExtensionProvider {
 - `AGENT_TOOLS`：高权限；
 - `LLM_PROVIDERS`：高权限；
 - `SPEECH_PROVIDERS`：高权限，可生成音频但只能通过宿主播放；
-- `RUNTIME_PROXY`：高权限；
+- `RUNTIME_HOOKS`：最高权限，可执行目标进程内的版本化 Hook；
 - 原生代码：最高权限。
 
 ### 12.2 插件不能获得
 
 - 宿主或其他插件的 API Key；
 - Authorization Header；
-- 工具展示 View 和插件设置 View 之外的 Android Context；
+- 工具展示 View 之外的 Android Context；
 - 宿主 Application 或任意 Activity；
 - 插件私有存储目录之外的任意文件。
 - 其他实例文件；
@@ -1527,7 +1523,7 @@ public final class ExamplePlugin implements AgentHookPlugin {
 | --- | --- | --- |
 | Java Hook | 统一 API、注册表、异常 fallback、动态卸载 | 二进制 ABI 报告、Hook 统计和在线诊断 |
 | Agent Tool | ToolProvider、Tool Hook、MCP 共用、动态启停 | 工具调用历史和能力开关细化 |
-| 设置与 UI | 自定义设置 View、工具 View、详情 HTML | 通用声明式页面宿主和受限 WebView |
+| 设置与 UI | 声明式 SettingView、工具 View、详情 HTML | 通用声明式页面宿主和受限 WebView |
 | 安装器 | 文件安装、验证、DEX 加载、重启恢复、删除 | 发布者签名、信任等级、原子升级和回滚 |
 | 源码插件 | Debug 自动发现、资源隔离、Run/Apply Changes、自动分享包 | IDE 热重载细化和更完整调试工具 |
 | 插件中心 | 应用中心式网格、搜索、分类、详情、长按操作 | 在线市场、更新、评分和截图 |

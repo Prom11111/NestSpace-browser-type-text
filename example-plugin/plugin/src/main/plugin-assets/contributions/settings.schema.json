@@ -1,5 +1,6 @@
 {
   "title": "Runtime Demo settings",
+  "description": "Host-rendered settings with validation and persisted values.",
   "fields": [
     {
       "id": "enabled",
@@ -15,9 +16,28 @@
       "default": "offline"
     },
     {
+      "id": "endpoint",
+      "title": "Example endpoint",
+      "description": "Optional HTTP endpoint used by the demo.",
+      "type": "text",
+      "format": "url",
+      "placeholder": "https://example.com/api",
+      "max_length": 2048
+    },
+    {
       "id": "demo_secret",
       "title": "Demo secret",
-      "type": "secret"
+      "type": "secret",
+      "min_length": 8,
+      "max_length": 512
+    },
+    {
+      "id": "timeout",
+      "title": "Request timeout",
+      "type": "integer",
+      "default": "30",
+      "min": 1,
+      "max": 300
     }
   ]
 }

@@ -1,5 +1,9 @@
 package com.coke.nestspace.plugin
 
+import com.coke.nestspace.runtime.plugin.RuntimeLaunchSpec
+import com.coke.nestspace.runtime.plugin.RuntimeProfile
+import com.coke.nestspace.runtime.plugin.RuntimeProfileProvider
+import com.coke.nestspace.runtime.plugin.RuntimeProfiles
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,6 +30,9 @@ class PluginRuntimeManagerTest {
         assertTrue(PluginLlmProviders.snapshot().any {
             it.providerId == "test-provider"
         })
+        assertTrue(
+            RuntimeProfiles.resolve(launchSpec(), plugin.javaClass.classLoader) != null
+        )
 
         PluginRuntimeManager.detach(plugin, context)
         assertTrue(plugin.detached.get())
@@ -38,13 +45,17 @@ class PluginRuntimeManagerTest {
         assertFalse(PluginLlmProviders.snapshot().any {
             it.providerId == "test-provider"
         })
+        assertFalse(
+            RuntimeProfiles.resolve(launchSpec(), plugin.javaClass.classLoader) != null
+        )
     }
 
     private class TestPlugin :
         PluginLifecycle,
         AgentToolProvider,
         PluginCommandProvider,
-        PluginLlmProvider {
+        PluginLlmProvider,
+        RuntimeProfileProvider {
         val attached = AtomicBoolean()
         val detached = AtomicBoolean()
         private val pluginDescriptor = PluginDescriptor(
@@ -56,7 +67,8 @@ class PluginRuntimeManagerTest {
             EnumSet.of(
                 PluginCapability.AGENT_TOOLS,
                 PluginCapability.COMMANDS,
-                PluginCapability.LLM_PROVIDERS
+                PluginCapability.LLM_PROVIDERS,
+                PluginCapability.RUNTIME_HOOKS
             )
         )
 
@@ -104,6 +116,13 @@ class PluginRuntimeManagerTest {
                 PluginLlmResponse("", "[]", "stop", 0, 0)
             )
         }
+
+        override fun resolve(
+            spec: RuntimeLaunchSpec,
+            loader: ClassLoader
+        ): RuntimeProfile? = object : RuntimeProfile {
+            override fun getId(): String = "test-profile"
+        }
     }
 
     private class FakeContext(
@@ -116,9 +135,9 @@ class PluginRuntimeManagerTest {
               "id": "${pluginDescriptor.id}",
               "name": "Runtime manager",
               "version": "1",
-              "api_version": 2,
+              "api_version": 1,
               "entry_class": "test.Plugin",
-              "permissions": ["agent_tools", "commands", "llm_providers"]
+              "permissions": ["agent_tools", "commands", "llm_providers", "runtime_hooks"]
             }
             """.trimIndent()
         )
@@ -140,5 +159,14 @@ class PluginRuntimeManagerTest {
 
         override fun storage(): PluginStorageApi =
             error("not used")
+    }
+
+    private companion object {
+        fun launchSpec(): RuntimeLaunchSpec =
+            RuntimeLaunchSpec.Builder()
+                .packageName("com.example.target")
+                .baseApkPath("/tmp/target.apk")
+                .versionCode(1)
+                .build()
     }
 }

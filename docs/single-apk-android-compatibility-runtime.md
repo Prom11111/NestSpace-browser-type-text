@@ -19,7 +19,7 @@
 - 显式子进程组件若不在 base APK，会从实例已下载插件中定位包含该类的 APK，并按需统一挂载 DEX、Resources 和当前 ABI 的 native library 目录。
 - 已实现 manifest BroadcastReceiver 的跨进程路由：当前进程只分发本进程 receiver，其他 `android:process` 去重后异步绑定对应槽位；ordered broadcast 暂保持本地语义。
 - 已将 `SpaceStore` 升级为 v2，实例记录包含环境版本、兼容策略和最近探测结果，并兼容 v1 数据。
-- 已将目标业务 Hook 收拢到独立插件模块中的 `RuntimeProfile`。
+- 目标业务 Hook 由通用容器实现；目标版本差异通过 `RuntimeProfileProvider` 插件隔离。
 - 已将 `FragmentPagerAdapter` 首次布局归一化从版本化 profile 提升为所有目标共用的 AndroidX UI 兼容层。
 - 已对目标 native 模块启用受控 GOT/PLT Hook，覆盖 UID 读取和基础路径 API；宿主/系统库不 patch。
 - `/proc/self/status`、`cmdline`、`maps`、`mountinfo` 已支持只读合成和 fd→虚拟路径映射；property 的 `get/find/read_callback/read/serial` 已读取 Java Build 设备快照；直接 inline syscall 和完整跨进程自动化矩阵仍需继续实现。
@@ -691,7 +691,6 @@ data class VirtualInstance(
     val lastLaunchedAt: Long,
     val dataDir: String,
     val environmentVersion: Int,
-    val compatibilityProfile: String?,
     val lastProbeResult: String?
 )
 ```
@@ -779,7 +778,6 @@ Android 版本适配
   "selinux_context": "virtual",
   "direct_syscall_probe": "unknown",
   "native_hooks": [],
-  "compatibility_profile": null
 }
 ```
 
@@ -828,10 +826,8 @@ StageAActivity 显示 LaunchLoadingView
 | `PROCESS_APPLICATION` | 36% | 发布目标进程身份 |
 | `CONTENT_PROVIDERS` | 46% | 安装并创建目标 Provider |
 | `APPLICATION_CREATE` | 58% | 执行目标 `Application.onCreate()` |
-| `APPLICATION_COMPATIBILITY` | 68% | 执行 Application 创建后的兼容初始化 |
 | `HOST_BRIDGES` | 75% | 建立宿主广播等桥接 |
 | `EMBEDDED_APPLICATION_CREATE` | 80% | 创建 Embedded ApplicationLike；没有时记录 skipped |
-| `STARTUP_COMPATIBILITY` | 86% | 执行 Embedded Application 后的兼容初始化 |
 | `CRASH_GUARD` | 90% | 重新安装目标进程崩溃保护 |
 | `READY` | 94% | Session 初始化完成 |
 | `FIRST_ACTIVITY_SCHEDULED` | 97% | 首个目标 Activity 已调度或已有 Session 再次打开 Activity |
@@ -900,7 +896,7 @@ StageAActivity 显示 LaunchLoadingView
 后台目标线程的可隔离异常仍由 `TargetCrashGuard` 记录并继续容器。这样单个目标的半初始化
 状态不会拖垮其他实例，下一次启动会通过进程池的崩溃恢复流程重新创建槽位。
 
-启动页只覆盖容器初始化。目标 App 自己的 Splash、网络、图片、WebView 和首屏内容加载没有统一 Framework 回调，不能声称已经由容器精确观测；详见 13.1.4。目标业务初始化仍可由用户安装的版本化 `RuntimeProfile` 插件补齐，不再编译进通用容器。
+启动页只覆盖容器初始化。目标 App 自己的 Splash、网络、图片、WebView 和首屏内容加载没有统一 Framework 回调，不能声称已经由容器精确观测；详见 13.1.4。
 
 交付：
 
@@ -1020,7 +1016,7 @@ StageAActivity 显示 LaunchLoadingView
 - headless：宿主被移到后台后，虚拟 Activity 现在仍会执行 `onStart/onResume`，并在 observe/screenshot 前强制目标 View 树完成 measure/layout。MCP 已能看到搜索栏、频道、内容卡片文字和底栏。
 - headless 图片边界：虚拟显示中的目标窗口仍被系统标记为 `isShown=false`，Fresco 等图片管线可能不提交真实图片请求；因此当前 headless 文字和布局可用，但截图中海报可能仍是占位背景。
 - 启动进度：目标应用冷启动时连续截到 `Loading app resources`、`Running app startup` 和 `Opening the app`，对应阶段权重约为 16%、58% 和 97%，随后进入目标首屏 Activity。当前测试机语言为英文，因此状态文字为英文，目标 App label 保持目标 APK 自身提供的名称。
-- 启动耗时样本：本次目标应用冷启动日志为 `CLASS_LOADER` 约 2.49 秒、`APPLICATION_ATTACH` 约 0.48 秒、`CONTENT_PROVIDERS` 约 0.09 秒、`APPLICATION_CREATE` 约 0.61 秒、`STARTUP_COMPATIBILITY` 约 0.33 秒。耗时只代表该次模拟器样本，不能作为固定 ETA。
+- 启动耗时样本：本次目标应用冷启动日志为 `CLASS_LOADER` 约 2.49 秒、`APPLICATION_ATTACH` 约 0.48 秒、`CONTENT_PROVIDERS` 约 0.09 秒、`APPLICATION_CREATE` 约 0.61 秒。耗时只代表该次模拟器样本，不能作为固定 ETA。
 - 启动失败边界：`ContainerSession` 创建、首 Activity 调度或首 Activity 打开抛出未处理异常时，进度标记为 `FAILED` 并进入错误页；这不等同于已成功打开目标页面。
 - 运营商特权边界：目标应用启动后，运营商登录 SDK 调用 `getDataNetworkTypeForSubscriber` 收到系统 `SecurityException`；异常由 SDK 捕获，没有 FATAL/SIGSEGV，首屏和普通网络正常。同期测试 App 为 `network=active all=1`。该问题记录为现有 MediaSession、AppOps、Connectivity、Clipboard 和 InputMethod 代理之外的剩余 Telephony 身份边界，详见 4.4。
 - 自动化验证：`LaunchProgressStageTest` 检查真实阶段映射单调且最终到达 100%，`AndroidStartupCoordinatorTest` 检查 `phaseStarted` 在阶段 block 执行前通知。`./gradlew :app:testDebugUnitTest :app:assembleDebug -PnestspaceHostAbi=universal` 通过。

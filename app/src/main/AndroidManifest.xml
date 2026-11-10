@@ -121,14 +121,6 @@
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode" />
 
         <activity
-            android:name=".ui.plugins.PluginSettingsActivity"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:label="插件设置"
-            android:theme="@style/Theme.Virtual"
-            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode" />
-
-        <activity
             android:name=".browser.BrowserFileChooserActivity"
             android:exported="false"
             android:excludeFromRecents="true"

@@ -16,10 +16,10 @@ NestSpace 由三部分組成：
 
 執行階段拆分為兩個界線明確的 Gradle 模組：
 
-- `plugin-api`：公開 Java 外掛 SDK，包括 Agent Hook、Host API、啟動策略、執行階段 Profile、啟動描述、類名索引和 ClassLoader scope。
+- `plugin-api`：公開 Java 外掛 SDK，包括 Agent Hook、Host API、宣告式設定、LLM Provider、Speech Provider 和啟動策略。
 - `app`：控制面與執行階段實作，包括 Compose UI、Agent、外掛中心、APK 與執行個體儲存、Session、Activity Host、處理程序槽位、Provider、生命週期、Native Facade、MCP UI、加固 Application 啟動鏈解析和目標 Application factory。
 
-唯一相依方向為 `app → plugin-api`。執行階段後端透過 `RuntimePluginLoader` 安裝。
+唯一相依方向為 `app → plugin-api`。容器實作直接位於 `app`；目標啟動決策使用 `RuntimeProxyPlugin`，版本化 Application/Activity Hook 使用 `RuntimeProfileProvider`。
 
 ## 安裝與啟動
 

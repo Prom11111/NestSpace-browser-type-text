@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "publisher": "NestSpace Examples",
   "description": "A broad non-hardening example covering Agent, UI, services and runtime proxy APIs.",
-  "api_version": 2,
+  "api_version": 1,
   "min_host_version": "1.0.0",
   "entry_class": "com.example.runtimedemo.RuntimeDemoPlugin",
   "priority": 100,
@@ -33,7 +33,7 @@
     "network",
     "websocket",
     "runtime_launch_policy",
-    "runtime_proxy"
+    "runtime_hooks"
   ],
   "host_permissions": [
     "https://example.com/*",

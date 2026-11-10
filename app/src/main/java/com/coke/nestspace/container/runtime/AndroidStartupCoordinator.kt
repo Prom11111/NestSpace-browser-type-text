@@ -52,7 +52,7 @@ data class AndroidStartupReport(
  * Executes the target process startup in Android's observable order and keeps
  * failures attached to the phase that produced them. This is intentionally a
  * scheduler/reporting boundary: framework-specific work stays in
- * ContainerSession, while target-version exceptions stay in CompatibilityProfile.
+ * ContainerSession.
  */
 class AndroidStartupCoordinator(
     private val clock: () -> Long = SystemClock::elapsedRealtime,

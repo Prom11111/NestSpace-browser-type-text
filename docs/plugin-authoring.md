@@ -15,7 +15,7 @@ Java 接口为准。
 1. 阅读第 1、2 节，理解源码插件和安装包插件为什么使用不同的加载路径。
 2. 按第 3 节复制示例，先得到一个能在插件中心出现的“Hello Plugin”。
 3. 用第 4、5 节把 Manifest、入口类、权限和生命周期改正确。
-4. 按要扩展的方向选择第 6 至 9 节：Agent、工具展示或设置 View。
+4. 按要扩展的方向选择第 6 至 9 节：Agent、工具展示或声明式设置。
 5. 需要存储或网络时，读取第 10、11 节，并按能力最小化原则声明权限。
 6. 只有目标应用确实有运行时差异时，才阅读第 13 节。
 7. 提交前使用第 14 至 16 节完成调试和检查。
@@ -27,7 +27,7 @@ Java 接口为准。
 
 - 第 1–2 节：插件模型和加载路径；
 - 第 3–5 节：创建工程、Manifest 和生命周期；
-- 第 6–9 节：Agent 工具、Hook、工具 View 和设置 View；
+- 第 6–9 节：Agent 工具、Hook、工具 View 和声明式设置；
 - 第 10–12 节：Host API、网络、命令、页面和模型 Provider；
 - 第 13 节：运行时代理；
 - 第 14–16 节：调试、发布和设计检查；
@@ -92,7 +92,7 @@ Debug 构建还会为源码插件自动生成一份仅供分享和导出的 `.ne
 ## 3. 创建第一个插件
 
 最快的开始方式是复制仓库中的示例模块。示例已经包含源码资源隔离、consumer keep rules、
-运行时代理示例、设置 View、自动分享包和安装包任务。
+运行时代理示例、声明式设置、自动分享包和安装包任务。
 
 ```bash
 cd /Users/cao/Documents/GitHub/NestSpace
@@ -154,7 +154,7 @@ namespace 和 Java 包名是否一致。宿主日志中的 `PluginSourceLoader` 
   "version": "1.0.0",
   "publisher": "Example Studio",
   "description": "Example NestSpace plugin",
-  "api_version": 2,
+  "api_version": 1,
   "min_host_version": "1.0.0",
   "entry_class": "com.example.hello.HelloPlugin",
   "priority": 100,
@@ -226,7 +226,7 @@ Capability 可以保持兼容；删除方法、改变方法签名或更换类型
 | `commands` | 注册命令 |
 | `tasks` | 提交托管后台任务 |
 | `events` | 发布和订阅事件 |
-| `settings` | 普通设置和自定义设置 View |
+| `settings` | 普通设置和声明式 SettingView |
 | `secrets` | Keystore 加密密钥 |
 | `cache` | TTL 缓存 |
 | `database` | 私有 SQLite |
@@ -242,7 +242,7 @@ Capability 可以保持兼容；删除方法、改变方法签名或更换类型
 | `android_apis` | 受控 Android API 门面 |
 | `storage` | 插件私有文件 |
 | `runtime_launch_policy` | 启动策略 |
-| `runtime_proxy` | 运行时代理描述 |
+| `runtime_hooks` | 目标 Application / Activity 深层 Hook |
 
 `host_permissions` 同时承担网络白名单作用。HTTP 和 SSE 的 Host 需要 `network`，
 `ws`/`wss` 的 Host 需要 `websocket`。插件只能请求白名单内的 Host，不能通过重定向或
@@ -487,93 +487,97 @@ View 工厂在 UI 线程调用。`PluginToolViewContext.getContext()` 只用于�
 文字可访问性和资源释放。展示失败时宿主会回退为普通卡片，因此业务结果仍应放在
 `PluginToolResult.text` 中，不能只存在于自定义 View。
 
-## 9. 设置页是一个插件自己实现的 View
+## 9. 使用声明式 SettingView
 
-设置入口不是固定表单，也不要求插件使用 Compose。宿主提供一个独立设置 Activity、标题栏
-和生命周期，插件只需返回一个 Android View。
-
-入口类实现 `PluginSettingsViewProvider`，Manifest 声明 `settings`：
-
-```java
-public final class HelloPlugin implements
-    PluginLifecycle,
-    PluginSettingsViewProvider {
-
-    @Override
-    public View createSettingsView(PluginSettingsViewContext context) {
-        Context ui = context.getContext();
-
-        LinearLayout layout = new LinearLayout(ui);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(48, 48, 48, 48);
-
-        Switch enabled = new Switch(ui);
-        enabled.setText("Enable Hello Plugin");
-        layout.addView(enabled);
-
-        Button save = new Button(ui);
-        save.setText("Save");
-        save.setOnClickListener(view -> {
-            context.getHost().settings()
-                .putBoolean("enabled", enabled.isChecked())
-                .thenRun(context::close);
-        });
-        layout.addView(save);
-
-        context.getHost().settings()
-            .getBoolean("enabled", true)
-            .thenAccept(value -> layout.post(() ->
-                enabled.setChecked(value)
-            ));
-
-        return layout;
-    }
-}
-```
-
-`PluginSettingsViewContext` 提供三件事：`getContext()` 用于构建 View，
-`getHost()` 提供插件的设置、密钥和其他 Host API，`close()` 结束设置页并回到插件中心。
-页面关闭后，宿主调用 `onSettingsViewClosed(View)`，插件可以在这里停止动画、取消订阅
-或释放 View 级资源。
-
-设置读取和保存应与插件实际业务使用同一个 `settings()` 命名空间。宿主使用插件 ID 的
-SHA-256 派生存储前缀，因此不同插件即使使用相同 key 也不会互相覆盖。敏感值必须使用
-`secrets()`，不要写进普通设置。
-
-如果只需要简单键值参数，可以同时提供 Schema：
+插件不创建 Android View。`PluginSettingView` 是纯数据表单，宿主负责渲染、校验、
+保存和重新打开时的回填。Manifest 声明 `settings`，并把
+`contributes.settings` 指向表单 Schema：
 
 ```json
 {
-  "title": "Hello settings",
+  "permissions": ["settings", "secrets"],
+  "contributes": {
+    "settings": "contributions/settings.schema.json"
+  }
+}
+```
+
+`contributions/settings.schema.json`：
+
+```json
+{
+  "title": "TTS settings",
+  "description": "Configure the plugin provider",
   "fields": [
     {
-      "id": "enabled",
-      "title": "Enable plugin",
-      "type": "boolean",
-      "default": "true"
-    },
-    {
-      "id": "mode",
-      "title": "Mode",
-      "type": "select",
-      "options": ["compact", "detailed"],
-      "default": "compact"
+      "id": "endpoint",
+      "title": "Endpoint",
+      "type": "text",
+      "required": true,
+      "format": "url",
+      "placeholder": "https://api.example.com/tts",
+      "max_length": 2048
     },
     {
       "id": "api_key",
       "title": "API key",
-      "type": "secret"
+      "type": "secret",
+      "required": true,
+      "min_length": 8
+    },
+    {
+      "id": "voice",
+      "title": "Default voice",
+      "type": "select",
+      "options": ["alloy", "nova"],
+      "default": "alloy"
+    },
+    {
+      "id": "timeout",
+      "title": "Timeout",
+      "type": "integer",
+      "default": "30",
+      "min": 1,
+      "max": 300
+    },
+    {
+      "id": "model",
+      "title": "Model ID",
+      "type": "text",
+      "pattern": "^[a-z0-9-]+$",
+      "pattern_message": "Use lowercase letters, digits and hyphens"
     }
   ]
 }
 ```
 
-Schema 支持 `text`、`boolean`、`integer`、`select` 和 `secret`。`secret` 字段使用
-Keystore 加密存储。复杂设置仍应使用自定义 View，因为插件可以完全控制校验、布局和
-交互状态。
+支持的字段类型：
 
-Manifest 中仍然可以声明 `contributions.settings`。没有自定义设置 View 的插件会回退到
-Schema 表单，但复杂插件更适合自己实现 View。
+| 类型 | 控件 | 校验 |
+| --- | --- | --- |
+| `text` | 单行/多行文本框 | 必填、长度、URL、Email、Host、正则 |
+| `secret` | 密码输入 | 必填、长度、格式、正则；值使用 Keystore 加密 |
+| `integer` | 数字输入 | 整数、`min`、`max` |
+| `boolean` | 开关 | `true` / `false` |
+| `select` | 选项控件 | 值必须属于 `options` |
+
+通用字段：
+
+- `required`：必填。
+- `default`：首次打开时的默认值。
+- `placeholder`：输入提示。
+- `format`：`none`、`url`、`email` 或 `host`。
+- `min_length`、`max_length`：文本和密钥长度。
+- `min`、`max`：整数范围。
+- `pattern`、`pattern_message`：Java 正则校验及自定义错误文字。
+
+宿主在保存前和真正写入前都会执行校验。普通值写入 `settings()` 命名空间，`secret`
+写入 `secrets()` 命名空间。重新打开设置页时，宿主读取已保存值；已保存的 secret 不回显
+明文，只显示“已保存，留空保持不变”。
+
+插件运行时仍通过 `context.getHost().settings()` 和 `secrets()` 读取配置。也可以在
+Java 测试中使用 `PluginSettingView.importSchema(json)` 导入同一份 Schema，复用字段和
+校验定义。
 
 ## 10. 使用宿主提供的服务和数据
 
@@ -796,7 +800,7 @@ public CompletableFuture<List<PluginCommandSpec>> listCommandsAsync() {
 声明式页面通过 `contributions.pages` 和 `PluginUiProvider` 注册。页面文件是 JSON，
 由 `PluginUiDocumentParser` 解析。Renderer 用于工具展示中的特定结果类型。当前页面
 注册、解析和 Renderer 数据模型已经存在，通用 Compose 页面宿主仍在完善；复杂交互
-优先使用设置 View 或工具结果 View。
+优先使用声明式 SettingView 或工具结果 View。
 
 页面声明示例：
 
@@ -1007,65 +1011,33 @@ new RuntimeLaunchPolicy(
 | `HOST_FALLBACK` | 启动宿主已安装的同包名应用 | 容器路径确定不可用 |
 | `BLOCKED` | 拒绝启动并返回原因 | 明确不安全或不支持 |
 
-如果需要在目标 Application attach、创建、目标 Activity 启动前安装 Hook，插件还要
-使用 `plugin-api` 中的运行时代理 API，并在 `onAttach` 中注册
-`RuntimeProfileResolver`：
+目标 Application、ClassLoader 和 Activity 生命周期属于通用容器核心，不向插件开放
+内部对象。需要版本化 Hook 时实现 `RuntimeProfileProvider`：
 
 ```java
-context = host;
+public final class HelloRuntimeProfileProvider
+    implements RuntimeProfileProvider {
 
-RuntimeProfiles.register(
-    PLUGIN_ID,
-    (spec, loader) -> ExampleRuntimeProfile.resolve(spec, loader)
-);
-```
+    @Override
+    public PluginDescriptor getDescriptor() {
+        return DESCRIPTOR;
+    }
 
-对应地在 `onDetach` 中反注册。Profile 可以检查包名和版本号，使用
-`RuntimeApkClassIndex.classNames(spec.getApkPaths())` 直接校验目标 DEX 类名，并通过
-`RuntimePluginRuntime.withContainerClassLoader` 在正确的 ClassLoader scope 中执行 Hook。
-
-一个最小 Profile 骨架如下：
-
-```java
-public final class ExampleRuntimeProfile
-    implements RuntimeProfile {
-
-    public static RuntimeProfile resolve(
+    @Override
+    public RuntimeProfile resolve(
         RuntimeLaunchSpec spec,
         ClassLoader loader
     ) {
-        if (!TARGET_PACKAGE_NAME.equals(spec.getPackageName()) ||
-            !TARGET_VERSION_MATCHER.matches(spec.getVersionCode())) {
-            return null;
-        }
-        Set<String> classes = new HashSet<>(RuntimeApkClassIndex.classNames(
-            spec.getApkPaths()
-        ));
-        return classes.containsAll(REQUIRED_CLASS_NAMES)
-            ? new ExampleRuntimeProfile()
+        return matchesPackageAndVersion(spec)
+            ? new HelloRuntimeProfile()
             : null;
-    }
-
-    @Override
-    public String getId() {
-        return "example-runtime-profile";
-    }
-
-    @Override
-    public void afterApplicationCreated(
-        RuntimeLaunchSpec spec,
-        ClassLoader loader,
-        Context context,
-        Application application
-    ) {
-        // 只在目标包名、版本和完整类名列表都匹配后执行。
     }
 }
 ```
 
-插件可以使用可直接阅读的完整包名和类名作为匹配条件，也可以通过构建步骤生成这些
-常量。通用 Tinker、AppLike、Application attach 和系统服务代理仍然属于
-`app` 的通用运行时实现，不能因为单个应用适配而修改核心分支。
+`HelloRuntimeProfile` 可以覆盖 Application attach、创建、目标 Activity 启动前和首个
+Activity Hook。Profile 必须同时校验包名、`versionCode` 和需要的关键类名。源码示例位于
+`example-plugin/plugin/.../RuntimeDemoPlugin.java` 的 `DemoRuntimeProfile`。
 
 ## 14. 调试开发中的插件
 
@@ -1084,7 +1056,7 @@ public final class ExampleRuntimeProfile
 常见问题通常来自四处。入口类找不到，说明 Manifest 类名、Java 包名或 keep rules
 不一致。Host API 抛 `UnsupportedOperationException`，说明 Manifest 没声明对应
 Capability。网络 Host 被拒绝，说明 `host_permissions` 缺失。设置页打不开，通常是
-`settings` 权限或 `PluginSettingsViewProvider` 没有注册。
+`settings` 权限或 `contributes.settings` Schema 缺失。
 
 | 症状 | 优先检查 |
 | --- | --- |
@@ -1093,11 +1065,11 @@ Capability。网络 Host 被拒绝，说明 `host_permissions` 缺失。设置�
 | 工具没有出现在 Agent 中 | `agent_tools` 权限、`AgentToolProvider`、工具 Schema |
 | Host API 抛异常 | 对应 Capability 是否在 Manifest 声明 |
 | 网络请求被拒绝 | `host_permissions`、HTTP/WebSocket 对应权限 |
-| 设置页打开后显示错误 | Provider 注册、`settings` 权限、View 创建异常 |
+| 设置页打开后显示错误 | `settings` 权限、Schema 路径、字段类型或校验规则 |
 | 重启后提示恢复失败 | 安装包 Manifest、DEX、入口类和手机存储目录 |
 | 插件分享包无法安装 | 是否包含 `manifest.json` 和有效 `classes.dex` |
 
-自定义 View 的问题需要额外检查线程和生命周期。View 必须在 UI 线程创建，后台数据回调
+工具 View 的问题需要额外检查线程和生命周期。View 必须在 UI 线程创建，后台数据回调
 必须切回主线程。页面关闭后不能继续使用保存的 Activity Context。工具 View 不能依赖
 只在第一次创建时存在的状态，因为列表滚动和重新组合可能重新创建它。
 
@@ -1131,9 +1103,9 @@ Capability。网络 Host 被拒绝，说明 `host_permissions` 缺失。设置�
 `secrets()` 读取，用户文件通过选择器读取，不再自行猜测路径。
 
 插件错误应被局部处理，不能让一个 Hook 异常破坏整个 Agent 回合。耗时调用使用 Host
-任务或受控异步执行器，网络和 WebSocket 在页面关闭或 detach 时释放。自定义 View
-需要适配深色主题、屏幕旋转和字体缩放，设置 View 需要能滚动，保存后要从同一个
-`settings()` 命名空间重新读取。
+任务或受控异步执行器，网络和 WebSocket 在页面关闭或 detach 时释放。工具 View
+需要适配深色主题、屏幕旋转和字体缩放。设置由宿主渲染，插件只需保证 Schema 唯一、
+校验完整，并在运行时从同一个 `settings()` / `secrets()` 命名空间读取。
 
 涉及运行时代理时，先证明问题确实来自目标运行时。能用通用容器能力解决的内容放回
 容器层；只有目标包名、版本、类名或运行时结构可以决定的行为才放进插件。这样插件才是
@@ -1142,7 +1114,7 @@ Capability。网络 Host 被拒绝，说明 `host_permissions` 缺失。设置�
 第一次实现插件时，建议先复制
 [example-plugin](https://github.com/chuccp/NestSpace/tree/main/example-plugin)
 并跑通源码直开，再逐步删除不需要的能力。示例已经包含资源隔离、自动分享包、
-consumer keep rules、自定义设置 View、工具 View 和运行时代理入口。
+consumer keep rules、声明式设置 Schema、工具 View 和运行时代理入口。
 
 接口细节、Capability 全表和安装器限制见
 [插件平台与 Java SDK](plugin-center.md)。公共 API 源码位于
@@ -1160,13 +1132,13 @@ consumer keep rules、自定义设置 View、工具 View 和运行时代理入�
 | `AgentToolProvider` | 提供工具 | `agent_tools` |
 | `AgentToolHookPlugin` | 工具前后 Hook | `agent_tool_hooks` |
 | `AgentToolPresentationPlugin` | 工具结果 View | `agent_tool_presentation` |
-| `PluginSettingsViewProvider` | 自定义设置页 | `settings` |
+| `PluginSettingView` | 导入 Schema 的宿主渲染设置表单 | `settings` |
 | `PluginCommandProvider` | 命令 | `commands` |
 | `PluginUiProvider` | 页面和 Renderer | `ui_pages`、`ui_renderers` |
 | `PluginLlmProvider` | 模型 Provider | `llm_providers` |
 | `PluginSpeechProvider` | 文字转 PCM 语音 Provider | `speech_providers` |
 | `RuntimeProxyPlugin` | 启动策略 | `runtime_launch_policy` |
-| `RuntimeProxyExtensionProvider` | 运行时扩展描述 | `runtime_proxy` |
+| `RuntimeProfileProvider` | 目标 Application / Activity Hook | `runtime_hooks` |
 
 可以只实现其中一个接口，也可以在一个入口类中组合多个接口。组合时应保证所有接口使用
 同一个 `PluginDescriptor` 和插件 ID。
@@ -1229,7 +1201,7 @@ Agent 与 Hook：
 
 界面：
 
-- [ ] 设置 View 可以在手机上滚动和操作。
+- [ ] SettingView 的字段、必填、默认值和格式校验正确，重新打开能回填已保存值。
 - [ ] 工具 View 在深色主题、屏幕旋转和字体缩放下可读。
 - [ ] 页面关闭后不再使用保存的 Activity Context。
 - [ ] HTML 页面不依赖外部网络资源。

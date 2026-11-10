@@ -5,18 +5,17 @@ import android.content.Context
 import android.util.Log
 import com.coke.nestspace.container.ContainerCompat
 import com.coke.nestspace.container.ContainerContext
-import com.coke.nestspace.runtime.RuntimeApplicationFactory
 import com.coke.nestspace.runtime.RuntimeApplicationSpec
 
 /**
  * Target Application construction backend. All hardened-Application detection
- * and manual attach rules live here; the generic container session only
- * invokes this factory through the app runtime API.
+ * and manual attach rules live here; the container session calls this factory
+ * directly.
  */
-object TargetApplicationFactory : RuntimeApplicationFactory {
+object TargetApplicationFactory {
     private const val TAG = "CompatAppFactory"
 
-    override fun create(
+    fun create(
         spec: RuntimeApplicationSpec,
         loader: ClassLoader,
         containerContext: Context

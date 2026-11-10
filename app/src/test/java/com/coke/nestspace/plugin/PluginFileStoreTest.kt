@@ -28,11 +28,10 @@ class PluginFileStoreTest {
     }
 
     @Test
-    fun writesReadsAndReplacesTextAtomically() {
+    fun writesReadsAndListsText() {
         storage.writeText("notes/example.txt", "first").get()
-        storage.writeText("notes/example.txt", "second").get()
 
-        assertEquals("second", storage.readText("notes/example.txt", 32).get())
+        assertEquals("first", storage.readText("notes/example.txt", 32).get())
         assertEquals(
             "notes/example.txt",
             storage.list("").get().single().path

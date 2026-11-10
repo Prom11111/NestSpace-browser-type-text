@@ -135,11 +135,11 @@ open class StageAActivity : Activity() {
     private var mirrorRoot: FrameLayout? = null
     private var mirrorParentSlot = -1
     private var targetStartScheduled = false
-    private var targetRequestParameterHook: AutoCloseable? = null
     private var predictiveBackCallback: Any? = null
     private var containerEntry = false
     private var backCallbackRunning = false
     private var backLaunchBlocked = false
+    private var targetRequestParameterHook: AutoCloseable? = null
 
     private data class MirrorBackEntry(
         val target: Activity,
@@ -1736,8 +1736,6 @@ open class StageAActivity : Activity() {
         if (mirrorRequested && mirrorParentSlot >= 0) {
             HeadlessMirrorWindow.setActiveSlot(mirrorParentSlot)
         }
-        targetRequestParameterHook?.close()
-        targetRequestParameterHook = null
         RuntimeHostHooks.setOverlayHidden?.invoke(this, launchOverlayReason(), false)
         SystemServiceIdentity.clearRootFinishInterceptor()
         SystemServiceIdentity.setAiInfoCaptureActive(false)
@@ -1748,6 +1746,8 @@ open class StageAActivity : Activity() {
         mirrorRoot = null
         unregisterPredictiveBack()
         if (isFinishing) targetStateKey?.let { TargetStateStore.remove(it) }
+        targetRequestParameterHook?.close()
+        targetRequestParameterHook = null
         closeCurrent()
         while (mirrorBackStack.isNotEmpty()) {
             val entry = mirrorBackStack.removeLast()

@@ -20,16 +20,16 @@ NestSpace 由四部分组成：
 
 当前主要 Gradle 模块：
 
-- `plugin-api`：唯一的 Java 优先外部插件 SDK，包括 Agent Hook、Host API、设置 View、
-  启动策略、运行时代理、启动描述、类名索引和 ClassLoader scope。
+- `plugin-api`：唯一的 Java 优先外部插件 SDK，包括 Agent Hook、Host API、SettingView、
+  LLM Provider、Speech Provider 和启动策略。
 - `app`：控制面与运行时实现，包括 Compose UI、Agent、插件中心、APK 与实例存储、
   Session、Activity Host、进程槽位、Provider、生命周期、Native Facade、MCP UI，
   以及加固 Application、Tinker/AppLike 启动链和 Target Application factory。
 - `example-plugin/plugin`、`dev-plugins/*`：只在 Debug 构建中发现和加载的源码插件。
 
-唯一依赖方向为 `app → plugin-api`。运行时后端
-通过 `RuntimePluginLoader` 安装；目标包名、版本、完整类名和专用 Profile 放在独立插件
-模块，不进入通用容器代码。
+唯一依赖方向为 `app → plugin-api`。通用容器实现直接位于 `app`；目标包名和版本相关的
+启动策略由 `RuntimeProxyPlugin` 提供，深层 Hook 由能力受限的
+`RuntimeProfileProvider` 自动注册，不再使用运行时后端反射加载。
 
 ## 安装与启动
 
@@ -74,7 +74,7 @@ NestSpace 由四部分组成：
 - **外部 MCP 工具**：本地助手可以连接外部 MCP Server，工具名以 `mcp_<id>_` 前缀隔离，不暴露给远程客户端。
 - **浏览器**：内置多标签 WebView，无头标签由 Agent 创建，可被可见浏览器接管；网页弹窗、外部回退链接和下载页不会交给系统浏览器。
 - **插件平台**：插件可以扩展 Agent 提示、问答、模型请求、工具和工具展示，也可以提供
-  自定义设置 View、网络、任务、事件、缓存和 SQLite。Debug 源码插件直接使用宿主
+  声明式 SettingView、网络、任务、事件、缓存和 SQLite。Debug 源码插件直接使用宿主
   ClassLoader；正式 `.nestplugin` 当前使用 `DexClassLoader`。
 
 ## 已知限制

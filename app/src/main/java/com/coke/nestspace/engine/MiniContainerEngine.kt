@@ -33,7 +33,6 @@ import com.coke.nestspace.data.LaunchInfo
 import com.coke.nestspace.data.VirtualApp
 import com.coke.nestspace.data.VirtualInstance
 import com.coke.nestspace.plugin.RuntimeLaunchMode
-import com.coke.nestspace.plugin.RuntimeProxyExtensions
 import com.coke.nestspace.plugin.RuntimeProxyContext
 import com.coke.nestspace.plugin.RuntimeProxyPlugins
 import kotlinx.coroutines.CancellationException
@@ -253,28 +252,6 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                     RuntimeLaunchMode.CONTAINER -> Unit
                 }
             }
-            RuntimeProxyExtensions.resolve(
-                RuntimeProxyContext(
-                    app.packageName,
-                    app.versionCode,
-                    Build.VERSION.SDK_INT
-                )
-            )?.let { extension ->
-                when (extension.mode) {
-                    RuntimeLaunchMode.HOST_FALLBACK -> launchHostFallback(
-                        app = app,
-                        instanceId = instance.id,
-                        fallbackReason = extension.reason,
-                        pluginId = extension.id,
-                        policyId = extension.id
-                    ).let { return@withLock it }
-                    RuntimeLaunchMode.BLOCKED -> return@withLock EngineResult.Error(
-                        "RUNTIME_BLOCKED_BY_PLUGIN",
-                        extension.reason
-                    )
-                    RuntimeLaunchMode.CONTAINER -> Unit
-                }
-            }
             launchLocked(
                 app = app,
                 instanceId = instance.id,
@@ -367,7 +344,6 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                     lastLaunchedAt = instance.lastLaunchedAt,
                     dataDir = dataDirFor(packageName, instance.id).absolutePath,
                     environmentVersion = instance.environmentVersion,
-                    compatibilityProfile = instance.compatibilityProfile,
                     lastProbeResult = instance.lastProbeResult
                 )
             )
@@ -1290,7 +1266,6 @@ class MiniContainerEngine(private val context: Context) : ContainerEngine {
                 lastLaunchedAt = it.lastLaunchedAt,
                 dataDir = dataDirFor(packageName, it.id).absolutePath,
                 environmentVersion = it.environmentVersion,
-                compatibilityProfile = it.compatibilityProfile,
                 lastProbeResult = it.lastProbeResult
             )
         },

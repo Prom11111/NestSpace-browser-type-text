@@ -65,7 +65,6 @@ class RuntimeDiagnosticsTest {
             processUid = environment.hostUid,
             processPid = environment.virtualPid,
             headless = true,
-            compatibilityProfile = null,
             pathMapProbe = environment.dataRoot,
             externalPathMapProbe = "/storage/instance",
             procViewProbe = "Name:\tapp\nUid:\t10123\t10123\t10123\t10123\n",
@@ -130,7 +129,6 @@ class RuntimeDiagnosticsTest {
             processUid = 10123,
             processPid = 4567,
             headless = false,
-            compatibilityProfile = "test-profile"
         )
 
         assertFalse(
@@ -143,7 +141,6 @@ class RuntimeDiagnosticsTest {
                 .getJSONObject(0)
                 .getString("outcome")
         )
-        assertEquals("test-profile", json.getString("compatibility_profile"))
     }
 
     private fun environment() = VirtualEnvironment(

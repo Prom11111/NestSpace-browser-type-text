@@ -25,7 +25,6 @@ public class PluginPlatformRegistriesTest {
         PluginCommandPlugins.uninstall(ID);
         PluginUiPlugins.uninstall(ID);
         PluginLlmProviders.uninstallProvider("test-provider");
-        RuntimeProxyExtensions.uninstall(ID);
     }
 
     @Test
@@ -70,16 +69,14 @@ public class PluginPlatformRegistriesTest {
     }
 
     @Test
-    public void commandsUiLlmsAndRuntimeExtensionsRegister() {
+    public void commandsUiAndLlmsRegister() {
         PluginCommandPlugins.install(commandProvider());
         PluginUiPlugins.install(uiProvider());
         PluginLlmProviders.install(llmProvider());
-        RuntimeProxyExtensions.install(runtimeProvider());
 
         assertEquals(1, PluginCommandPlugins.snapshot().size());
         assertEquals(1, PluginUiPlugins.snapshot().size());
         assertEquals(1, PluginLlmProviders.snapshot().size());
-        assertEquals(1, RuntimeProxyExtensions.snapshot().size());
     }
 
     @Test
@@ -251,33 +248,6 @@ public class PluginPlatformRegistriesTest {
             ) {
                 return CompletableFuture.completedFuture(
                     new PluginLlmResponse("ok", null, "stop", 1, 1)
-                );
-            }
-        };
-    }
-
-    private static RuntimeProxyExtensionProvider runtimeProvider() {
-        return new RuntimeProxyExtensionProvider() {
-            @Override
-            public PluginDescriptor getDescriptor() {
-                return descriptor(
-                    ID,
-                    EnumSet.of(PluginCapability.RUNTIME_PROXY)
-                );
-            }
-
-            @Override
-            public CompletableFuture<RuntimeProxyContribution> resolveAsync(
-                RuntimeProxyContext context
-            ) {
-                return CompletableFuture.completedFuture(
-                    new RuntimeProxyContribution(
-                        "proxy",
-                        context.getPackageName(),
-                        context.getVersionCode(),
-                        "Proxy",
-                        "{}"
-                    )
                 );
             }
         };

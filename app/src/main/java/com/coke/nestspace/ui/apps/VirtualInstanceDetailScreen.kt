@@ -156,10 +156,6 @@ internal fun VirtualInstanceDetailScreen(
                     AppLanguage.tr("环境版本", "Environment version"),
                     instance.environmentVersion.toString()
                 )
-                instance.compatibilityProfile?.takeIf { it.isNotBlank() }?.let {
-                    HorizontalDivider()
-                    InstanceInfoRow(AppLanguage.tr("兼容配置", "Compatibility profile"), it)
-                }
                 instance.lastProbeResult?.takeIf { it.isNotBlank() }?.let {
                     HorizontalDivider()
                     InstanceInfoRow(AppLanguage.tr("最近探测", "Last probe"), it)

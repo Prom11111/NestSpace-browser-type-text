@@ -9,5 +9,6 @@
 -keep class * implements com.coke.nestspace.plugin.PluginCommandProvider { *; }
 -keep class * implements com.coke.nestspace.plugin.PluginUiProvider { *; }
 -keep class * implements com.coke.nestspace.plugin.PluginLlmProvider { *; }
--keep class * implements com.coke.nestspace.plugin.PluginSettingsViewProvider { *; }
 -keep class * implements com.coke.nestspace.plugin.RuntimeProxyPlugin { *; }
+-keep class * implements com.coke.nestspace.runtime.plugin.RuntimeProfileProvider { *; }
+-keep class * implements com.coke.nestspace.runtime.plugin.RuntimeProfile { *; }

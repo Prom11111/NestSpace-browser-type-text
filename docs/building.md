@@ -114,7 +114,7 @@ Debug APK 还会为源码插件自动生成仅供插件中心分享和导出的 
   :app:testDebugUnitTest
 ```
 
-插件 Manifest、源码直开、自定义设置 View 和安装包格式见
+插件 Manifest、源码直开、声明式 SettingView 和安装包格式见
 [插件编写指南](plugin-authoring.md)。
 
 ## 版本号

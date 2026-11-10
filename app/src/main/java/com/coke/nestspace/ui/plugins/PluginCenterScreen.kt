@@ -108,17 +108,14 @@ import com.coke.nestspace.plugin.PluginPackageInstaller
 import com.coke.nestspace.plugin.PluginSourceRegistry
 import com.coke.nestspace.plugin.PluginSourceLoader
 import com.coke.nestspace.plugin.PluginSettingsField
-import com.coke.nestspace.plugin.PluginSettingsSchema
-import com.coke.nestspace.plugin.PluginSettingsSchemaParser
-import com.coke.nestspace.plugin.PluginSettingsViewPlugins
+import com.coke.nestspace.plugin.PluginSettingsField.Format
+import com.coke.nestspace.plugin.PluginSettingView
 import com.coke.nestspace.plugin.PluginSpeechProviders
 import com.coke.nestspace.plugin.PluginUiPlugins
-import com.coke.nestspace.plugin.RuntimeProxyExtensions
 import com.coke.nestspace.plugin.RuntimeProxyPlugins
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.TimeUnit
 
 private data class PluginDetail(
     val id: String,
@@ -156,14 +153,9 @@ private data class PluginMenuAction(
 private data class PluginSettingsTarget(
     val id: String,
     val title: String,
-    val schema: PluginSettingsSchema,
+    val view: PluginSettingView,
     val values: Map<String, String>,
     val configuredSecrets: Set<String>
-)
-
-private data class PluginSettingsDraft(
-    val values: Map<String, String>,
-    val secretsToClear: Set<String> = emptySet()
 )
 
 private enum class PluginCategory {
@@ -356,13 +348,6 @@ internal fun PluginCenterScreen() {
         manifest: PluginManifest,
         sourcePlugin: Boolean
     ) {
-        if (PluginSettingsViewPlugins.find(manifest.id) != null) {
-            context.startActivity(
-                Intent(context, PluginSettingsActivity::class.java)
-                    .putExtra(PluginSettingsActivity.EXTRA_PLUGIN_ID, manifest.id)
-            )
-            return
-        }
         scope.launch {
             settingsError = ""
             runCatching {
@@ -377,11 +362,14 @@ internal fun PluginCenterScreen() {
                         "Plugin does not provide a settings schema"
                     }
                 }
-                val schema = withContext(Dispatchers.IO) {
-                    PluginSettingsSchemaParser.parse(schemaFile.readText())
+                val view = withContext(Dispatchers.IO) {
+                    PluginSettingView.importSchema(schemaFile.readText())
                 }
                 val loaded = withContext(Dispatchers.IO) {
-                    readPluginSettings(context, manifest.id, schema)
+                    PluginSettingFormStore(
+                        AndroidPluginSettings(context, manifest.id),
+                        AndroidPluginSecrets(context, manifest.id)
+                    ).load(view)
                 }
                 PluginSettingsTarget(
                     id = manifest.id,
@@ -390,9 +378,9 @@ internal fun PluginCenterScreen() {
                         manifest.id,
                         manifest.name
                     ),
-                    schema = schema,
-                    values = loaded.first,
-                    configuredSecrets = loaded.second
+                    view = view,
+                    values = loaded.values,
+                    configuredSecrets = loaded.configuredSecrets
                 )
             }.onSuccess {
                 settingsTarget = it
@@ -408,19 +396,17 @@ internal fun PluginCenterScreen() {
 
     fun savePluginSettings(
         target: PluginSettingsTarget,
-        draft: PluginSettingsDraft
+        draft: PluginSettingDraft
     ) {
         settingsSaving = true
         settingsError = ""
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    writePluginSettings(
-                        context,
-                        target.id,
-                        target.schema,
-                        draft
-                    )
+                    PluginSettingFormStore(
+                        AndroidPluginSettings(context, target.id),
+                        AndroidPluginSecrets(context, target.id)
+                    ).save(target.view, draft)
                 }
             }.onSuccess {
                 settingsSaving = false
@@ -521,11 +507,7 @@ internal fun PluginCenterScreen() {
         val enabled = PluginCenterStore.isEnabled(context, manifest.id)
         return buildList {
             add(toggleAction(manifest.id, target.displayName, enabled))
-            if (enabled &&
-                (manifest.contributions.settingsPath.isNotBlank() ||
-                PluginSettingsViewPlugins.find(manifest.id) != null
-                )
-            ) {
+            if (enabled && manifest.contributions.settingsPath.isNotBlank()) {
                 add(settingsAction(manifest, sourcePlugin = false))
             }
             add(
@@ -655,8 +637,7 @@ internal fun PluginCenterScreen() {
                                     )
                                 )
                                 if (enabled &&
-                                    (manifest.contributions.settingsPath.isNotBlank() ||
-                                        PluginSettingsViewPlugins.find(manifest.id) != null)
+                                    manifest.contributions.settingsPath.isNotBlank()
                                 ) {
                                     add(
                                         settingsAction(
@@ -1333,105 +1314,6 @@ private fun RenamePluginDialog(
     )
 }
 
-private fun readPluginSettings(
-    context: android.content.Context,
-    pluginId: String,
-    schema: PluginSettingsSchema
-): Pair<Map<String, String>, Set<String>> {
-    val settings = AndroidPluginSettings(context, pluginId)
-    val secrets = AndroidPluginSecrets(context, pluginId)
-    val values = LinkedHashMap<String, String>()
-    val configuredSecrets = LinkedHashSet<String>()
-    schema.fields.forEach { field ->
-        val default = field.defaultValue
-        values[field.id] = when (field.type) {
-            PluginSettingsField.Type.BOOLEAN -> settings.getBoolean(
-                field.id,
-                default.equals("true", ignoreCase = true)
-            ).get(5, TimeUnit.SECONDS).toString()
-            PluginSettingsField.Type.SECRET -> {
-                if (secrets.contains(field.id).get(5, TimeUnit.SECONDS)) {
-                    configuredSecrets += field.id
-                }
-                ""
-            }
-            else -> settings.getString(
-                field.id,
-                default
-            ).get(5, TimeUnit.SECONDS)
-        }
-    }
-    return values to configuredSecrets
-}
-
-private fun writePluginSettings(
-    context: android.content.Context,
-    pluginId: String,
-    schema: PluginSettingsSchema,
-    draft: PluginSettingsDraft
-) {
-    val settings = AndroidPluginSettings(context, pluginId)
-    val secrets = AndroidPluginSecrets(context, pluginId)
-    schema.fields.forEach { field ->
-        val value = draft.values[field.id].orEmpty()
-        when (field.type) {
-            PluginSettingsField.Type.BOOLEAN -> {
-                val boolean = value.toBooleanStrictOrNull()
-                    ?: field.defaultValue.toBooleanStrictOrNull()
-                    ?: false
-                settings.putBoolean(field.id, boolean)
-                    .get(5, TimeUnit.SECONDS)
-            }
-            PluginSettingsField.Type.INTEGER -> {
-                require(value.isNotBlank() || !field.isRequired) {
-                    "${field.title} is required"
-                }
-                if (value.isNotBlank()) {
-                    requireNotNull(value.toLongOrNull()) {
-                        "${field.title} must be an integer"
-                    }
-                }
-                settings.putString(field.id, value)
-                    .get(5, TimeUnit.SECONDS)
-            }
-            PluginSettingsField.Type.SELECT -> {
-                require(value.isNotBlank() || !field.isRequired) {
-                    "${field.title} is required"
-                }
-                if (value.isNotBlank()) {
-                    require(value in field.options) {
-                        "${field.title} has an invalid option"
-                    }
-                }
-                settings.putString(field.id, value)
-                    .get(5, TimeUnit.SECONDS)
-            }
-            PluginSettingsField.Type.SECRET -> {
-                if (field.id in draft.secretsToClear) {
-                    secrets.remove(field.id)
-                        .get(5, TimeUnit.SECONDS)
-                }
-                if (value.isNotBlank()) {
-                    secrets.put(field.id, value)
-                        .get(5, TimeUnit.SECONDS)
-                }
-                if (field.isRequired) {
-                    require(
-                        secrets.contains(field.id).get(5, TimeUnit.SECONDS)
-                    ) { "${field.title} is required" }
-                }
-            }
-            PluginSettingsField.Type.TEXT -> {
-                require(value.isNotBlank() || !field.isRequired) {
-                    "${field.title} is required"
-                }
-                settings.putString(field.id, value)
-                    .get(5, TimeUnit.SECONDS)
-            }
-        }
-    }
-}
-
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun PluginSettingsDialog(
@@ -1439,8 +1321,15 @@ private fun PluginSettingsDialog(
     saving: Boolean,
     error: String,
     onDismiss: () -> Unit,
-    onSave: (PluginSettingsDraft) -> Unit
+    onSave: (PluginSettingDraft) -> Unit
 ) {
+    val context = LocalContext.current
+    val formStore = remember(target.id) {
+        PluginSettingFormStore(
+            AndroidPluginSettings(context, target.id),
+            AndroidPluginSecrets(context, target.id)
+        )
+    }
     var values by remember(target.id, target.values) {
         mutableStateOf(target.values)
     }
@@ -1454,7 +1343,7 @@ private fun PluginSettingsDialog(
         onDismissRequest = onDismiss,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(target.schema.title.ifBlank {
+                Text(target.view.title.ifBlank {
                     AppLanguage.tr("插件设置", "Plugin settings")
                 })
                 Text(
@@ -1462,6 +1351,13 @@ private fun PluginSettingsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (target.view.description.isNotBlank()) {
+                    Text(
+                        target.view.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         },
         text = {
@@ -1471,7 +1367,7 @@ private fun PluginSettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                if (target.schema.fields.isEmpty()) {
+                if (target.view.fields.isEmpty()) {
                     Text(
                         AppLanguage.tr(
                             "该插件没有可配置参数。",
@@ -1479,7 +1375,7 @@ private fun PluginSettingsDialog(
                         )
                     )
                 }
-                target.schema.fields.forEach { field ->
+                target.view.fields.forEach { field ->
                     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(
                             buildString {
@@ -1557,31 +1453,35 @@ private fun PluginSettingsDialog(
                                     singleLine = field.type !=
                                         PluginSettingsField.Type.TEXT,
                                     placeholder = {
-                                        if (field.type ==
+                                        val hint = if (field.type ==
                                             PluginSettingsField.Type.SECRET
                                         ) {
+                                            if (secretConfigured) {
+                                                AppLanguage.tr(
+                                                    "已保存，留空保持不变",
+                                                    "Saved; leave blank to keep"
+                                                )
+                                            } else {
+                                                field.placeholder
+                                            }
+                                        } else {
+                                            field.placeholder
+                                        }
+                                        if (hint.isNotBlank()) {
                                             Text(
-                                                if (secretConfigured) {
-                                                    AppLanguage.tr(
-                                                        "已保存，留空保持不变",
-                                                        "Saved; leave blank to keep"
-                                                    )
-                                                } else {
-                                                    AppLanguage.tr(
-                                                        "未设置",
-                                                        "Not configured"
-                                                    )
-                                                }
+                                                hint
                                             )
                                         }
                                     },
                                     keyboardOptions = KeyboardOptions(
-                                        keyboardType = if (field.type ==
-                                            PluginSettingsField.Type.INTEGER
-                                        ) {
-                                            KeyboardType.Number
-                                        } else {
-                                            KeyboardType.Text
+                                        keyboardType = when {
+                                            field.type ==
+                                                PluginSettingsField.Type.INTEGER ->
+                                                KeyboardType.Number
+                                            field.format == Format.URL ||
+                                                field.format == Format.EMAIL ->
+                                                KeyboardType.Uri
+                                            else -> KeyboardType.Text
                                         }
                                     )
                                 )
@@ -1623,38 +1523,16 @@ private fun PluginSettingsDialog(
             TextButton(
                 enabled = !saving,
                 onClick = {
-                    val invalid = target.schema.fields.firstNotNullOfOrNull {
-                        field ->
-                        val value = values[field.id].orEmpty()
-                        when {
-                            field.type == PluginSettingsField.Type.SECRET &&
-                                field.isRequired &&
-                                value.isBlank() &&
-                                (
-                                    field.id !in target.configuredSecrets ||
-                                        field.id in secretsToClear
-                                ) ->
-                                "${field.title} is required"
-                            field.type == PluginSettingsField.Type.INTEGER &&
-                                value.isNotBlank() &&
-                                value.toLongOrNull() == null ->
-                                "${field.title} must be an integer"
-                            field.type == PluginSettingsField.Type.SELECT &&
-                                value.isNotBlank() &&
-                                value !in field.options ->
-                                "${field.title} has an invalid option"
-                            field.type != PluginSettingsField.Type.BOOLEAN &&
-                                field.type != PluginSettingsField.Type.SECRET &&
-                                field.isRequired &&
-                                value.isBlank() ->
-                                "${field.title} is required"
-                            else -> null
-                        }
-                    }
+                    val invalid = formStore.validate(
+                        target.view,
+                        values,
+                        target.configuredSecrets,
+                        secretsToClear
+                    )
                     if (invalid == null) {
                         validationError = ""
                         onSave(
-                            PluginSettingsDraft(
+                            PluginSettingDraft(
                                 values = values,
                                 secretsToClear = secretsToClear
                             )
@@ -1678,7 +1556,7 @@ private fun PluginSettingsDialog(
                 TextButton(
                     enabled = !saving,
                     onClick = {
-                        values = target.schema.fields.associate {
+                        values = target.view.fields.associate {
                             it.id to it.defaultValue
                         }
                         secretsToClear = target.configuredSecrets
@@ -1990,8 +1868,7 @@ private fun Set<PluginCapability>.matchesCategory(
         )
     }
     PluginCategory.RUNTIME -> any {
-        it == PluginCapability.RUNTIME_LAUNCH_POLICY ||
-            it == PluginCapability.RUNTIME_PROXY
+        it == PluginCapability.RUNTIME_LAUNCH_POLICY
     }
     PluginCategory.SYSTEM -> any {
         it == PluginCapability.ANDROID_APIS ||
@@ -2004,9 +1881,6 @@ private fun Set<PluginCapability>.matchesCategory(
 private fun registeredPlugins(): List<PluginDescriptor> {
     val result = LinkedHashMap<String, PluginDescriptor>()
     RuntimeProxyPlugins.snapshot().forEach { result[it.id] = it }
-    RuntimeProxyExtensions.snapshot().forEach {
-        result[it.descriptor.id] = it.descriptor
-    }
     AgentPlugins.snapshot().forEach {
         result[it.descriptor.id] = it.descriptor
     }

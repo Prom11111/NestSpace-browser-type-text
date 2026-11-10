@@ -3,7 +3,6 @@ package com.coke.nestspace.plugin
 import android.content.Context
 import com.coke.nestspace.data.AppSettingsEvents
 import com.coke.nestspace.i18n.AppLanguage
-import com.coke.nestspace.runtime.RuntimePluginLoader
 import java.util.EnumSet
 
 internal data class BuiltInPluginEntry(
@@ -193,10 +192,6 @@ internal object PluginCenterStore {
         }
         check(editor.commit()) { "plugin display name could not be saved" }
         AppSettingsEvents.notifyChanged()
-    }
-
-    fun applyProcessRuntimePlugins(context: Context) {
-        RuntimePluginLoader.installCore()
     }
 
     fun toolModuleEnabled(context: Context, toolName: String): Boolean = when {

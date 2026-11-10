@@ -21,9 +21,10 @@ NestSpace 现在只保留两个 Gradle 模块：
 `plugin-api` 是唯一对外插件 SDK，包含：
 
 - Manifest、Descriptor、Capability 和 Plugin Lifecycle；
-- Agent Hook、Tool、命令、设置、Host API 和 LLM Provider；
-- `com.coke.nestspace.runtime.plugin` 下的 `RuntimeLaunchSpec`、`RuntimeProfile`、
-  `RuntimeProfileResolver`、`RuntimeProfiles`、类名索引和 ClassLoader scope。
+- Agent Hook、Tool、命令、声明式设置、Host API、LLM Provider 和 Speech Provider；
+- `RuntimeProxyPlugin` 的目标包名与版本启动策略；
+- `RuntimeProfileProvider` 的目标 Application / Activity 深层 Hook，由
+  `PluginRuntimeManager` 自动注册和注销。
 
 依赖方向只有：
 
